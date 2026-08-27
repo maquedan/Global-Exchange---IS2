@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+env/
+*.log
+db.sqlite3
+/media/
+/staticfiles/
+.env
+*.env
+!.env.example
+.coverage
+htmlcov/
+.pytest_cache/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+# Las migraciones SÍ se versionan

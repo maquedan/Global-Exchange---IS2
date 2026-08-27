@@ -1,0 +1,42 @@
+# Ambiente de PRODUCCIÓN: gunicorn + PostgreSQL + Keycloak
+# Uso: docker compose -f docker-compose.prod.yml up -d --build
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: globalexchange
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata_prod:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: start --http-enabled=true --hostname-strict=false
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://db:5432/globalexchange
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "8080:8080"
+    depends_on:
+      - db
+
+  web:
+    build: .
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    env_file:
+      - .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - keycloak
+
+volumes:
+  pgdata_prod:

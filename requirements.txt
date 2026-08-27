@@ -1,0 +1,18 @@
+# --- Core ---
+Django>=6.0,<6.2
+django-environ>=0.11
+psycopg[binary]>=3.1
+
+# --- Autenticación con Keycloak (OIDC) ---
+mozilla-django-oidc>=4.0
+
+# --- Servidor de producción ---
+gunicorn>=22.0
+
+# --- Pruebas (PUN) ---
+pytest>=8.0
+pytest-django>=4.8
+coverage>=7.5
+
+# --- Documentación de código (PDO) ---
+Sphinx>=7.3
