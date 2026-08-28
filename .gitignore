@@ -19,3 +19,9 @@ htmlcov/
 .DS_Store
 Thumbs.db
 # Las migraciones SÍ se versionan
+
+# Basura que genera Windows al copiar archivos a WSL
+*:Zone.Identifier
+
+# Copias de seguridad locales (pueden contener secretos)
+*.bak
