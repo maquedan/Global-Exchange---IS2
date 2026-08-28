@@ -7,5 +7,5 @@ urlpatterns = [
     path("oidc/", include("mozilla_django_oidc.urls")),
     # Apps del proyecto
     path("", include("apps.usuarios.urls")),
-    # path("clientes/", include("apps.clientes.urls")),  # se activa en GEG9-11
+    path("clientes/", include("apps.clientes.urls")),  # Registro de Clientes - GEG9-11
 ]

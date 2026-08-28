@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block titulo %}Clientes | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <a class="boton" href="{% url 'clientes:crear' %}">Registrar cliente</a>
+
+  <h1 style="margin-top: 1rem;">Clientes</h1>
+
+  {% if messages %}
+    {% for message in messages %}
+      <p>{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+
+  {% if clientes %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Cliente</th>
+          <th>Documento / RUC</th>
+          <th>Correo</th>
+          <th>Teléfono</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cliente in clientes %}
+          <tr>
+            <td>{{ cliente.get_tipo_display }}</td>
+            <td>
+              {% if cliente.tipo == "FISICA" %}
+                {{ cliente.nombres }} {{ cliente.apellidos }}
+              {% else %}
+                {{ cliente.razon_social }}
+              {% endif %}
+            </td>
+            <td>
+              {% if cliente.tipo == "FISICA" %}
+                {{ cliente.documento }}
+              {% else %}
+                {{ cliente.ruc }}
+              {% endif %}
+            </td>
+            <td>{{ cliente.email }}</td>
+            <td>{{ cliente.telefono }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Todavía no hay clientes registrados.</p>
+  {% endif %}
+</div>
+{% endblock %}
