@@ -47,6 +47,7 @@ TEMPLATES = [
                 "django.template.context_processors.request",
                 "django.contrib.auth.context_processors.auth",
                 "django.contrib.messages.context_processors.messages",
+                "apps.usuarios.context_processors.menu_principal",
             ],
         },
     },
@@ -69,22 +70,69 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # ===== Autenticación con Keycloak (OIDC) =====
+# Backend propio (apps/usuarios/auth.py): además de iniciar sesión, copia los
+# roles del realm de Keycloak a los Grupos de Django.
 AUTHENTICATION_BACKENDS = (
-    "mozilla_django_oidc.auth.OIDCAuthenticationBackend",
+    "apps.usuarios.auth.KeycloakOIDCBackend",
     "django.contrib.auth.backends.ModelBackend",
 )
+
+# Keycloak se alcanza por DOS caminos distintos y a veces con nombres distintos:
+#  - KEYCLOAK_SERVER_URL: lo abre el NAVEGADOR (pantalla de login y de logout).
+#  - KEYCLOAK_INTERNAL_URL: lo llama DJANGO por detrás (canjear el código por
+#    tokens, pedir los datos del usuario, bajar las claves públicas).
+# Corriendo todo en tu máquina son iguales (localhost:8080). Dentro de Docker,
+# el navegador sigue usando localhost:8080 pero Django tiene que usar
+# http://keycloak:8080, que es el nombre del servicio en docker-compose.
 KEYCLOAK_SERVER_URL = env("KEYCLOAK_SERVER_URL", default="http://localhost:8080")
+
+# ¿Estamos adentro de un contenedor? El archivo /.dockerenv solo existe ahí.
+# Si es así, Django tiene que llamar a Keycloak por el nombre del servicio de
+# docker-compose; si no, por localhost. Así el proyecto anda igual corriendo
+# con "docker compose up" que con "python manage.py runserver".
+CORRIENDO_EN_DOCKER = Path("/.dockerenv").exists()
+KEYCLOAK_INTERNAL_URL = env(
+    "KEYCLOAK_INTERNAL_URL",
+    default="http://keycloak:8080" if CORRIENDO_EN_DOCKER else KEYCLOAK_SERVER_URL,
+)
 KEYCLOAK_REALM = env("KEYCLOAK_REALM", default="global-exchange")
+
 _OIDC = f"{KEYCLOAK_SERVER_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect"
+_OIDC_INTERNO = f"{KEYCLOAK_INTERNAL_URL}/realms/{KEYCLOAK_REALM}/protocol/openid-connect"
+
 OIDC_RP_CLIENT_ID = env("OIDC_RP_CLIENT_ID", default="global-exchange-web")
 OIDC_RP_CLIENT_SECRET = env("OIDC_RP_CLIENT_SECRET", default="")
 OIDC_RP_SIGN_ALGO = "RS256"
+# Pedimos estos datos del usuario a Keycloak: correo, nombre y apellido.
+OIDC_RP_SCOPES = "openid email profile"
+
+# Los ve el navegador:
 OIDC_OP_AUTHORIZATION_ENDPOINT = f"{_OIDC}/auth"
-OIDC_OP_TOKEN_ENDPOINT = f"{_OIDC}/token"
-OIDC_OP_USER_ENDPOINT = f"{_OIDC}/userinfo"
-OIDC_OP_JWKS_ENDPOINT = f"{_OIDC}/certs"
-LOGIN_REDIRECT_URL = "/"
+OIDC_OP_LOGOUT_ENDPOINT = f"{_OIDC}/logout"
+# Los llama Django por detrás:
+OIDC_OP_TOKEN_ENDPOINT = f"{_OIDC_INTERNO}/token"
+OIDC_OP_USER_ENDPOINT = f"{_OIDC_INTERNO}/userinfo"
+OIDC_OP_JWKS_ENDPOINT = f"{_OIDC_INTERNO}/certs"
+
+# Al cerrar sesión no alcanza con salir de Django: también hay que salir de
+# Keycloak, si no volver a entrar es automático y parece que el logout falló.
+OIDC_OP_LOGOUT_URL_METHOD = "apps.usuarios.auth.cerrar_sesion_en_keycloak"
+# Guarda el id_token en la sesión; Keycloak lo pide para cerrar sesión.
+OIDC_STORE_ID_TOKEN = True
+
+# Crear el usuario en Django la primera vez que entra desde Keycloak.
+OIDC_CREATE_USER = True
+
+# A dónde manda Django a quien no inició sesión y entra a una vista protegida.
+LOGIN_URL = "/oidc/authenticate/"
+LOGIN_REDIRECT_URL = "/panel/"
 LOGOUT_REDIRECT_URL = "/"
+
+# ===== Roles del realm de Keycloak =====
+# Solo estos roles se copian a Grupos de Django (evita traer roles internos
+# de Keycloak como "default-roles-global-exchange" o "offline_access").
+ROLES_KEYCLOAK = ["administrador", "analista_cambiario", "usuario_cliente"]
+ROL_ADMINISTRADOR = "administrador"
 
 LANGUAGE_CODE = "es"
 TIME_ZONE = "America/Asuncion"
