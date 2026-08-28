@@ -98,17 +98,42 @@ Está en *Realm settings → Email*:
 | Port | `1025` |
 | Authentication / SSL / StartTLS | apagados |
 
-### Para producción (Gmail)
+### Para usuarios reales
 
-En *Realm settings → Email*, con una **contraseña de aplicación** de Google
-(no la contraseña normal de la cuenta; requiere verificación en dos pasos):
+Mailpit **no manda nada a internet**: si un usuario real se registra, no le
+llega nada. Para que sí lleguen, hay que configurar un SMTP de verdad.
 
-| Campo | Valor |
-|---|---|
-| Host | `smtp.gmail.com` |
-| Port | `587` |
-| StartTLS | activado |
-| Authentication | activado, usuario = el correo, clave = la contraseña de aplicación |
+Las credenciales van en el `.env` (que no se versiona), y se aplican con:
+
+```bash
+python3 scripts/configurar_smtp.py                    # lee el .env y lo aplica
+python3 scripts/configurar_smtp.py --probar tu@correo.com   # manda una prueba
+python3 scripts/configurar_smtp.py --mailpit          # vuelve a desarrollo
+```
+
+Si `EMAIL_HOST` está vacío, el script deja Mailpit. Las mismas variables las usa
+Django en producción, así que las credenciales quedan en un solo lugar.
+
+**Gmail** — necesita la verificación en dos pasos activada y una *contraseña de
+aplicación* (Google rechaza la contraseña normal de la cuenta desde 2022):
+
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=tucuenta@gmail.com
+EMAIL_HOST_PASSWORD=abcd efgh ijkl mnop     # la de 16 letras que da Google
+EMAIL_FROM=tucuenta@gmail.com               # tiene que ser la misma cuenta
+```
+
+Se genera en cuenta de Google → *Seguridad* → *Verificación en 2 pasos* →
+*Contraseñas de aplicaciones*. Límite: unos 500 correos por día.
+
+**Alternativa sin usar un Gmail personal:** Brevo, Mailgun o SendGrid tienen
+plan gratuito (Brevo: 300 correos/día). Cambian solo `EMAIL_HOST`, el usuario y
+la clave; el resto queda igual.
+
+> El puerto define el cifrado: **587 → STARTTLS**, **465 → SSL**. El script lo
+> resuelve solo según el puerto que pongas.
 
 ## Notas técnicas
 
