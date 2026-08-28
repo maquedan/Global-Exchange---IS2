@@ -1,0 +1,66 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Global Exchange{% endblock %}</title>
+  <style>
+    :root { --azul:#0b3d64; --azul-claro:#155a8a; --gris:#f4f6f8; --borde:#dde3e9; }
+    * { box-sizing:border-box; }
+    body { margin:0; font-family:system-ui,-apple-system,"Segoe UI",sans-serif;
+           background:var(--gris); color:#1c2b36; }
+    header { background:var(--azul); color:#fff; }
+    .barra { max-width:1000px; margin:0 auto; padding:.9rem 1.2rem;
+             display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap; }
+    .marca { font-weight:700; font-size:1.15rem; color:#fff; text-decoration:none; }
+    nav { display:flex; gap:1.1rem; flex:1; }
+    nav a { color:#cfe3f2; text-decoration:none; font-size:.94rem; }
+    nav a:hover { color:#fff; text-decoration:underline; }
+    .sesion { display:flex; align-items:center; gap:.8rem; font-size:.88rem; }
+    .boton { background:#1a9e5c; color:#fff; border:0; border-radius:6px;
+             padding:.45rem .9rem; font-size:.88rem; cursor:pointer;
+             text-decoration:none; display:inline-block; }
+    .boton.salir { background:#c0392b; }
+    main { max-width:1000px; margin:2rem auto; padding:0 1.2rem; }
+    .tarjeta { background:#fff; border:1px solid var(--borde); border-radius:10px;
+               padding:1.5rem; }
+    h1 { margin-top:0; color:var(--azul); font-size:1.5rem; }
+    table.datos { border-collapse:collapse; width:100%; margin-top:1rem; }
+    table.datos th, table.datos td { text-align:left; padding:.55rem .6rem;
+                                     border-bottom:1px solid var(--borde); font-size:.92rem; }
+    table.datos th { width:190px; color:#5a6b7a; font-weight:600; }
+    .etiqueta { display:inline-block; background:#e3eef7; color:var(--azul-claro);
+                border-radius:20px; padding:.2rem .7rem; font-size:.82rem; margin-right:.35rem; }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="barra">
+      <a class="marca" href="/">Global Exchange</a>
+
+      {# MENÚ PRINCIPAL (GEG9-25): lo arma apps/usuarios/menu.py según el rol #}
+      <nav>
+        {% for opcion in menu_principal %}
+          <a href="{{ opcion.url }}">{{ opcion.texto }}</a>
+        {% endfor %}
+      </nav>
+
+      <div class="sesion">
+        {% if user.is_authenticated %}
+          <span>{{ user.get_full_name|default:user.username }}</span>
+          {# El logout de mozilla-django-oidc exige POST (protección CSRF) #}
+          <form method="post" action="{% url 'oidc_logout' %}" style="margin:0">
+            {% csrf_token %}
+            <button class="boton salir" type="submit">Cerrar sesión</button>
+          </form>
+        {% else %}
+          <a class="boton" href="{% url 'oidc_authentication_init' %}">Iniciar sesión</a>
+        {% endif %}
+      </div>
+    </div>
+  </header>
+
+  <main>{% block contenido %}{% endblock %}</main>
+</body>
+</html>

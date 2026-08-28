@@ -1,10 +1,11 @@
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import include, path
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    # Autenticación con Keycloak
+    # Autenticación con Keycloak: /oidc/authenticate/, /oidc/callback/, /oidc/logout/
     path("oidc/", include("mozilla_django_oidc.urls")),
-    # Apps del proyecto (se agregan en la Fase 2)
-    # path("", include("apps.clientes.urls")),
+    # Apps del proyecto
+    path("", include("apps.usuarios.urls")),
+    # path("clientes/", include("apps.clientes.urls")),  # se activa en GEG9-11
 ]

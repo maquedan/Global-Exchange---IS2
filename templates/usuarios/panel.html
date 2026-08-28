@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block titulo %}Panel | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Panel principal</h1>
+  <p>Iniciaste sesión correctamente con Keycloak.</p>
+
+  <table class="datos">
+    <tr><th>Usuario</th><td>{{ user.username }}</td></tr>
+    <tr><th>Nombre</th><td>{{ user.get_full_name|default:"—" }}</td></tr>
+    <tr><th>Correo</th><td>{{ user.email|default:"—" }}</td></tr>
+    <tr>
+      <th>Roles (Keycloak)</th>
+      <td>
+        {% for rol in roles %}
+          <span class="etiqueta">{{ rol }}</span>
+        {% empty %}
+          <em>Sin roles asignados en Keycloak</em>
+        {% endfor %}
+      </td>
+    </tr>
+    <tr><th>Acceso al admin</th><td>{{ user.is_staff|yesno:"Sí,No" }}</td></tr>
+  </table>
+</div>
+{% endblock %}

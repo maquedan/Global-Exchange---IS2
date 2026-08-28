@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block titulo %}Bienvenido | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Bienvenido a Global Exchange</h1>
+  <p>Plataforma de compra y venta de divisas.</p>
+  <p>Para continuar, iniciá sesión con tu cuenta.</p>
+  <p style="margin-top:1.5rem">
+    <a class="boton" href="{% url 'oidc_authentication_init' %}">Iniciar sesión con Keycloak</a>
+  </p>
+</div>
+{% endblock %}
