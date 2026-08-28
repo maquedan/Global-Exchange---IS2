@@ -1,0 +1,9 @@
+[run]
+source = apps
+omit =
+    */tests/*
+    */migrations/*
+
+[report]
+show_missing = True
+skip_covered = False
