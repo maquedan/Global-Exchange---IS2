@@ -11,14 +11,51 @@ services:
     ports:
       - "5432:5432"
 
+  # Base de datos PROPIA de Keycloak. Sin esto, Keycloak guarda todo en una H2
+  # adentro del contenedor: al hacer "docker compose down" se pierde el realm,
+  # el client, los roles y los usuarios. Con este volumen, sobrevive.
+  keycloak-db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - keycloak_pgdata:/var/lib/postgresql/data
+
+  # Servidor de correo FALSO para desarrollo: recibe los mails de verificación
+  # que manda Keycloak y los muestra en http://localhost:8025
+  # No los reenvía a internet, así que se puede probar sin cuenta de Gmail.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"   # interfaz web: acá se leen los correos
+      - "1025:1025"   # SMTP: acá los deja Keycloak
+
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
-    command: start-dev
+    # --import-realm carga keycloak/realm-global-exchange.json la primera vez.
+    # Así, quien clone el repo levanta el realm ya configurado, sin clickear.
+    command: start-dev --import-realm
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      # Fija el emisor (issuer) de los tokens. Sin esto, Keycloak lo arma con el
+      # hostname por el que le entra cada consulta y rechaza tokens legítimos
+      # con 401 cuando Django le habla por "keycloak" y el navegador por
+      # "localhost".
+      KC_HOSTNAME: http://localhost:8080
+    volumes:
+      - ./keycloak/realm-global-exchange.json:/opt/keycloak/data/import/realm.json:ro
     ports:
       - "8080:8080"
+    depends_on:
+      - keycloak-db
+      - mailpit
 
   web:
     build: .
@@ -31,9 +68,15 @@ services:
       - .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
+      # El navegador (que corre en Windows, fuera de Docker) tiene que poder
+      # abrir la pantalla de login de Keycloak: para él siempre es localhost.
+      KEYCLOAK_SERVER_URL: http://localhost:8080
+      # Django, en cambio, la llama por la red interna de Docker.
+      KEYCLOAK_INTERNAL_URL: http://keycloak:8080
     depends_on:
       - db
       - keycloak
 
 volumes:
   pgdata:
+  keycloak_pgdata:
