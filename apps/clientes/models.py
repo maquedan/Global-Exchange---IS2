@@ -1,8 +1,10 @@
 from django.core.exceptions import ValidationError
 from django.db import models
 
+
 class Cliente(models.Model):
     """Entidad de cliente para RF001 — Registro de Clientes (GEG9-11)."""
+
     class Tipo(models.TextChoices):
         FISICA = "FISICA", "Persona física"
         JURIDICA = "JURIDICA", "Persona jurídica"
@@ -14,7 +16,6 @@ class Cliente(models.Model):
     apellidos = models.CharField(max_length=100, blank=True)
     documento = models.CharField(max_length=20, blank=True, null=True, unique=True)
 
-
     # Datos exclusivos de personas jurídicas
     razon_social = models.CharField(max_length=150, blank=True)
     ruc = models.CharField(max_length=20, blank=True, null=True, unique=True)
@@ -24,6 +25,7 @@ class Cliente(models.Model):
     telefono = models.CharField(max_length=30)
     direccion = models.CharField(max_length=255)
 
+    activo = models.BooleanField(default=True, db_index=True)
     creado_en = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -51,6 +53,16 @@ class Cliente(models.Model):
 
         if errores:
             raise ValidationError(errores)
+
+    def desactivar(self):
+        """Marca el cliente como inactivo sin eliminarlo físicamente."""
+        self.activo = False
+        self.save(update_fields=["activo"])
+
+    def activar(self):
+        """Rehabilita el cliente para operar nuevamente."""
+        self.activo = True
+        self.save(update_fields=["activo"])
 
     def __str__(self):
         if self.tipo == self.Tipo.FISICA:

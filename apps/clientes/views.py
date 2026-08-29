@@ -31,8 +31,8 @@ def requiere_administrador(vista):
 @login_required
 @requiere_administrador
 def lista(request):
-    """Muestra los clientes registrados para RF001 — GEG9-11."""
-    clientes = Cliente.objects.all()
+    """Muestra los clientes activos registrados para RF001 — GEG9-11."""
+    clientes = Cliente.objects.filter(activo=True)
     return render(request, "clientes/lista.html", {"clientes": clientes})
 
 
@@ -55,3 +55,13 @@ def crear(request):
         "clientes/formulario.html",
         {"formulario": formulario},
     )
+
+
+@login_required
+@requiere_administrador
+def eliminar(request, pk):
+    """Desactiva lógicamente un cliente."""
+    cliente = Cliente.objects.get(pk=pk)
+    cliente.desactivar()
+    messages.success(request, f"Cliente {cliente} dado de baja lógicamente.")
+    return redirect("clientes:lista")

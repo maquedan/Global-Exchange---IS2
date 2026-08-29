@@ -23,6 +23,7 @@
           <th>Documento / RUC</th>
           <th>Correo</th>
           <th>Teléfono</th>
+          <th>Acciones</th>
         </tr>
       </thead>
       <tbody>
@@ -45,6 +46,12 @@
             </td>
             <td>{{ cliente.email }}</td>
             <td>{{ cliente.telefono }}</td>
+            <td>
+              <form method="post" action="{% url 'clientes:eliminar' cliente.pk %}" onsubmit="return confirm('¿Seguro que deseas dar de baja lógicamente a este cliente?');">
+                {% csrf_token %}
+                <button type="submit" class="boton boton-secundario">Eliminar</button>
+              </form>
+            </td>
           </tr>
         {% endfor %}
       </tbody>
