@@ -226,3 +226,36 @@ class RegistroClientesTests(TestCase):
         cliente.refresh_from_db()
         self.assertEqual(cliente.categoria, Cliente.Categoria.CORPORATIVO)
         self.assertEqual(cliente.email, "luis.nuevo@example.com")
+
+    def test_administrador_puede_filtrar_clientes_por_criterios(self):
+        Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            categoria=Cliente.Categoria.MINORISTA,
+            nombres="Ana",
+            apellidos="García",
+            documento="1111111",
+            email="ana@example.com",
+            telefono="098111111",
+            direccion="Asunción",
+        )
+        Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            categoria=Cliente.Categoria.VIP,
+            nombres="Pedro",
+            apellidos="Rojas",
+            documento="2222222",
+            email="pedro@example.com",
+            telefono="098222222",
+            direccion="Ciudad del Este",
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(
+            reverse("clientes:lista"),
+            {"categoria": Cliente.Categoria.VIP, "q": "Pedro"},
+        )
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Pedro")
+        self.assertNotContains(respuesta, "Ana")
+        self.assertEqual(len(respuesta.context["clientes"]), 1)

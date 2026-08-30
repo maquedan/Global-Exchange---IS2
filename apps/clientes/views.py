@@ -3,6 +3,7 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.db import models
 from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.usuarios.menu import tiene_rol
@@ -33,7 +34,39 @@ def requiere_administrador(vista):
 def lista(request):
     """Muestra los clientes activos registrados para RF001 — GEG9-11."""
     clientes = Cliente.objects.filter(activo=True)
-    return render(request, "clientes/lista.html", {"clientes": clientes})
+
+    termino = (request.GET.get("q") or "").strip()
+    categoria = request.GET.get("categoria") or ""
+    tipo = request.GET.get("tipo") or ""
+
+    if termino:
+        clientes = clientes.filter(
+            models.Q(nombres__icontains=termino)
+            | models.Q(apellidos__icontains=termino)
+            | models.Q(razon_social__icontains=termino)
+            | models.Q(documento__icontains=termino)
+            | models.Q(ruc__icontains=termino)
+            | models.Q(email__icontains=termino)
+        )
+
+    if categoria:
+        clientes = clientes.filter(categoria=categoria)
+
+    if tipo:
+        clientes = clientes.filter(tipo=tipo)
+
+    return render(
+        request,
+        "clientes/lista.html",
+        {
+            "clientes": clientes,
+            "filtros": {
+                "q": termino,
+                "categoria": categoria,
+                "tipo": tipo,
+            },
+        },
+    )
 
 
 @login_required

@@ -11,6 +11,37 @@
 
   <h1 style="margin-top: 1rem;">Clientes</h1>
 
+  <form method="get" style="margin:1rem 0; padding:1rem; border:1px solid #dde3e9; border-radius:8px; background:#f9fafb;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem;">
+      <div>
+        <label for="q">Buscar</label><br>
+        <input id="q" type="text" name="q" value="{{ filtros.q|default:'' }}" placeholder="Nombre, documento, email..." style="width:100%; padding:.5rem;">
+      </div>
+      <div>
+        <label for="tipo">Tipo</label><br>
+        <select id="tipo" name="tipo" style="width:100%; padding:.5rem;">
+          <option value="">Todos</option>
+          <option value="FISICA" {% if filtros.tipo == "FISICA" %}selected{% endif %}>Persona física</option>
+          <option value="JURIDICA" {% if filtros.tipo == "JURIDICA" %}selected{% endif %}>Persona jurídica</option>
+        </select>
+      </div>
+      <div>
+        <label for="categoria">Categoría</label><br>
+        <select id="categoria" name="categoria" style="width:100%; padding:.5rem;">
+          <option value="">Todas</option>
+          <option value="MINORISTA" {% if filtros.categoria == "MINORISTA" %}selected{% endif %}>Minorista</option>
+          <option value="CORPORATIVO" {% if filtros.categoria == "CORPORATIVO" %}selected{% endif %}>Corporativo</option>
+          <option value="VIP" {% if filtros.categoria == "VIP" %}selected{% endif %}>VIP</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem; display:flex; gap:.75rem; flex-wrap:wrap;">
+      <button type="submit" class="boton">Aplicar filtros</button>
+      <a class="boton boton-secundario" href="{% url 'clientes:lista' %}">Limpiar</a>
+    </div>
+  </form>
+
   {% if messages %}
     {% for message in messages %}
       <p>{{ message }}</p>
