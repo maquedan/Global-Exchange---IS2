@@ -134,3 +134,42 @@ class RegistroClientesTests(TestCase):
             "documento",
             respuesta.context["formulario"].errors,
         )
+
+    def test_administrador_puede_ver_clientes_eliminados(self):
+        cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres="Pedro",
+            apellidos="López",
+            documento="7654321",
+            email="pedro@example.com",
+            telefono="097123456",
+            direccion="Encarnación",
+            activo=False,
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(reverse("clientes:eliminados"))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Pedro López")
+        self.assertContains(respuesta, "Activar")
+        self.assertIn(cliente, respuesta.context["clientes"])
+
+    def test_administrador_puede_activar_cliente_eliminado(self):
+        cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres="María",
+            apellidos="Ramírez",
+            documento="3322111",
+            email="maria@example.com",
+            telefono="098765432",
+            direccion="Ciudad del Este",
+            activo=False,
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.post(reverse("clientes:activar", args=[cliente.pk]))
+
+        self.assertRedirects(respuesta, reverse("clientes:eliminados"))
+        cliente.refresh_from_db()
+        self.assertTrue(cliente.activo)

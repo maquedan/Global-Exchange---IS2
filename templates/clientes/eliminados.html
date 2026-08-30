@@ -1,15 +1,15 @@
 {% extends "base.html" %}
 
-{% block titulo %}Clientes | Global Exchange{% endblock %}
+{% block titulo %}Clientes eliminados | Global Exchange{% endblock %}
 
 {% block contenido %}
 <div class="tarjeta">
-  <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;">
-    <a class="boton" href="{% url 'clientes:crear' %}">Registrar cliente</a>
-    <a class="boton boton-secundario" href="{% url 'clientes:eliminados' %}">Ver clientes eliminados</a>
+  <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+    <div>
+      <a class="boton" href="{% url 'clientes:lista' %}">Volver a clientes</a>
+    </div>
+    <h1 style="margin:0;">Clientes eliminados</h1>
   </div>
-
-  <h1 style="margin-top: 1rem;">Clientes</h1>
 
   {% if messages %}
     {% for message in messages %}
@@ -50,9 +50,9 @@
             <td>{{ cliente.email }}</td>
             <td>{{ cliente.telefono }}</td>
             <td>
-              <form method="post" action="{% url 'clientes:eliminar' cliente.pk %}" onsubmit="return confirm('¿Seguro que deseas dar de baja lógicamente a este cliente?');">
+              <form method="post" action="{% url 'clientes:activar' cliente.pk %}" onsubmit="return confirm('¿Seguro que deseas activar este cliente?');">
                 {% csrf_token %}
-                <button type="submit" class="boton boton-secundario">Eliminar</button>
+                <button type="submit" class="boton">Activar</button>
               </form>
             </td>
           </tr>
@@ -60,7 +60,7 @@
       </tbody>
     </table>
   {% else %}
-    <p>Todavía no hay clientes registrados.</p>
+    <p>No hay clientes eliminados.</p>
   {% endif %}
 </div>
 {% endblock %}

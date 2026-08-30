@@ -3,7 +3,7 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import redirect, render
+from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.usuarios.menu import tiene_rol
 
@@ -34,6 +34,24 @@ def lista(request):
     """Muestra los clientes activos registrados para RF001 — GEG9-11."""
     clientes = Cliente.objects.filter(activo=True)
     return render(request, "clientes/lista.html", {"clientes": clientes})
+
+
+@login_required
+@requiere_administrador
+def eliminados(request):
+    """Muestra los clientes que fueron dados de baja lógicamente."""
+    clientes = Cliente.objects.filter(activo=False)
+    return render(request, "clientes/eliminados.html", {"clientes": clientes})
+
+
+@login_required
+@requiere_administrador
+def activar(request, pk):
+    """Rehabilita un cliente que había sido dado de baja."""
+    cliente = get_object_or_404(Cliente, pk=pk)
+    cliente.activar()
+    messages.success(request, f"Cliente {cliente} activado correctamente.")
+    return redirect("clientes:eliminados")
 
 
 @login_required
