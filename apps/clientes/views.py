@@ -71,7 +71,29 @@ def crear(request):
     return render(
         request,
         "clientes/formulario.html",
-        {"formulario": formulario},
+        {"formulario": formulario, "accion": "Registrar"},
+    )
+
+
+@login_required
+@requiere_administrador
+def editar(request, pk):
+    """Modifica los datos de un cliente existente."""
+    cliente = get_object_or_404(Cliente, pk=pk)
+
+    if request.method == "POST":
+        formulario = ClienteForm(request.POST, instance=cliente)
+        if formulario.is_valid():
+            formulario.save()
+            messages.success(request, "Cliente actualizado correctamente.")
+            return redirect("clientes:lista")
+    else:
+        formulario = ClienteForm(instance=cliente)
+
+    return render(
+        request,
+        "clientes/formulario.html",
+        {"formulario": formulario, "accion": "Modificar"},
     )
 
 

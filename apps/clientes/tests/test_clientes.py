@@ -173,3 +173,56 @@ class RegistroClientesTests(TestCase):
         self.assertRedirects(respuesta, reverse("clientes:eliminados"))
         cliente.refresh_from_db()
         self.assertTrue(cliente.activo)
+
+    def test_registra_cliente_con_categoria(self):
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.post(
+            reverse("clientes:crear"),
+            {
+                "tipo": Cliente.Tipo.FISICA,
+                "categoria": Cliente.Categoria.VIP,
+                "nombres": "Ana",
+                "apellidos": "Gómez",
+                "documento": "1234567",
+                "email": "ana@example.com",
+                "telefono": "0981123456",
+                "direccion": "Asunción",
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse("clientes:lista"))
+        cliente = Cliente.objects.get(documento="1234567")
+        self.assertEqual(cliente.categoria, Cliente.Categoria.VIP)
+
+    def test_administrador_puede_editar_cliente(self):
+        cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            categoria=Cliente.Categoria.MINORISTA,
+            nombres="Luis",
+            apellidos="Pérez",
+            documento="1010101",
+            email="luis@example.com",
+            telefono="098765432",
+            direccion="Asunción",
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.post(
+            reverse("clientes:editar", args=[cliente.pk]),
+            {
+                "tipo": Cliente.Tipo.FISICA,
+                "categoria": Cliente.Categoria.CORPORATIVO,
+                "nombres": "Luis",
+                "apellidos": "Pérez",
+                "documento": "1010101",
+                "email": "luis.nuevo@example.com",
+                "telefono": "098765432",
+                "direccion": "Asunción",
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse("clientes:lista"))
+        cliente.refresh_from_db()
+        self.assertEqual(cliente.categoria, Cliente.Categoria.CORPORATIVO)
+        self.assertEqual(cliente.email, "luis.nuevo@example.com")

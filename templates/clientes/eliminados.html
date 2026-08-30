@@ -22,6 +22,7 @@
       <thead>
         <tr>
           <th>Tipo</th>
+          <th>Categoría</th>
           <th>Cliente</th>
           <th>Documento / RUC</th>
           <th>Correo</th>
@@ -33,6 +34,7 @@
         {% for cliente in clientes %}
           <tr>
             <td>{{ cliente.get_tipo_display }}</td>
+            <td>{{ cliente.get_categoria_display }}</td>
             <td>
               {% if cliente.tipo == "FISICA" %}
                 {{ cliente.nombres }} {{ cliente.apellidos }}

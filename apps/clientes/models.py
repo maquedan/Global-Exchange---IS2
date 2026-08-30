@@ -9,7 +9,18 @@ class Cliente(models.Model):
         FISICA = "FISICA", "Persona física"
         JURIDICA = "JURIDICA", "Persona jurídica"
 
+    class Categoria(models.TextChoices):
+        MINORISTA = "MINORISTA", "Minorista"
+        CORPORATIVO = "CORPORATIVO", "Corporativo"
+        VIP = "VIP", "VIP"
+
     tipo = models.CharField(max_length=10, choices=Tipo.choices)
+    categoria = models.CharField(
+        max_length=20,
+        choices=Categoria.choices,
+        default=Categoria.MINORISTA,
+        blank=True,
+    )
 
     # Datos exclusivos de personas físicas
     nombres = models.CharField(max_length=100, blank=True)
