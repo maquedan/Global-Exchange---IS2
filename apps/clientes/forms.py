@@ -10,6 +10,7 @@ class ClienteForm(forms.ModelForm):
         model = Cliente
         fields = (
             "tipo",
+            "categoria",
             "nombres",
             "apellidos",
             "documento",

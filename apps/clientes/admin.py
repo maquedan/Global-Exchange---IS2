@@ -7,15 +7,17 @@ from .models import Cliente
 class ClienteAdmin(admin.ModelAdmin):
     """Administración de clientes para RF001 — GEG9-11."""
 
+    actions = ["desactivar_clientes"]
     list_display = (
         "tipo",
         "nombre_completo",
         "documento_o_ruc",
         "email",
         "telefono",
+        "activo",
         "creado_en",
     )
-    list_filter = ("tipo",)
+    list_filter = ("tipo", "activo")
     search_fields = (
         "nombres",
         "apellidos",
@@ -25,6 +27,10 @@ class ClienteAdmin(admin.ModelAdmin):
         "email",
     )
     readonly_fields = ("creado_en",)
+
+    @admin.action(description="Desactivar clientes seleccionados")
+    def desactivar_clientes(self, request, queryset):
+        queryset.update(activo=False)
 
     @admin.display(description="Cliente")
     def nombre_completo(self, cliente):
