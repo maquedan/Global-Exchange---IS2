@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ accion|default:'Registrar' }} cliente | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>{{ accion|default:'Registrar' }} cliente</h1>
+  <p>Completá los datos según corresponda a una persona física o jurídica.</p>
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% if formulario.non_field_errors %}
+      {{ formulario.non_field_errors }}
+    {% endif %}
+
+    <p>
+      <label for="{{ formulario.tipo.id_for_label }}">Tipo de cliente</label><br>
+      {{ formulario.tipo }}
+      {{ formulario.tipo.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.categoria.id_for_label }}">Categoría</label><br>
+      {{ formulario.categoria }}
+      {{ formulario.categoria.errors }}
+    </p>
+
+    <div data-campos="FISICA">
+      <p>
+        <label for="{{ formulario.nombres.id_for_label }}">Nombres</label><br>
+        {{ formulario.nombres }}
+        {{ formulario.nombres.errors }}
+      </p>
+
+      <p>
+        <label for="{{ formulario.apellidos.id_for_label }}">Apellidos</label><br>
+        {{ formulario.apellidos }}
+        {{ formulario.apellidos.errors }}
+      </p>
+
+      <p>
+        <label for="{{ formulario.documento.id_for_label }}">Documento</label><br>
+        {{ formulario.documento }}
+        {{ formulario.documento.errors }}
+      </p>
+    </div>
+
+    <div data-campos="JURIDICA">
+      <p>
+        <label for="{{ formulario.razon_social.id_for_label }}">Razón social</label><br>
+        {{ formulario.razon_social }}
+        {{ formulario.razon_social.errors }}
+      </p>
+
+      <p>
+        <label for="{{ formulario.ruc.id_for_label }}">RUC</label><br>
+        {{ formulario.ruc }}
+        {{ formulario.ruc.errors }}
+      </p>
+    </div>
+
+    <p>
+      <label for="{{ formulario.email.id_for_label }}">Correo electrónico</label><br>
+      {{ formulario.email }}
+      {{ formulario.email.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.telefono.id_for_label }}">Teléfono</label><br>
+      {{ formulario.telefono }}
+      {{ formulario.telefono.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.direccion.id_for_label }}">Dirección</label><br>
+      {{ formulario.direccion }}
+      {{ formulario.direccion.errors }}
+    </p>
+
+    <button class="boton" type="submit">Guardar cliente</button>
+    <a href="{% url 'clientes:lista' %}">Cancelar</a>
+  </form>
+</div>
+
+<script>
+  const selectorTipo = document.getElementById("id_tipo");
+  const grupos = document.querySelectorAll("[data-campos]");
+
+  function actualizarCamposPorTipo() {
+    grupos.forEach((grupo) => {
+      grupo.hidden = grupo.dataset.campos !== selectorTipo.value;
+    });
+  }
+
+  selectorTipo.addEventListener("change", actualizarCamposPorTipo);
+  actualizarCamposPorTipo();
+</script>
+{% endblock %}
