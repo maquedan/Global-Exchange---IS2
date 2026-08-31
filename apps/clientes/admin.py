@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Cliente
+from .models import AsociacionUsuarioCliente, Cliente
 
 
 @admin.register(Cliente)
@@ -43,3 +43,11 @@ class ClienteAdmin(admin.ModelAdmin):
         if cliente.tipo == Cliente.Tipo.FISICA:
             return cliente.documento
         return cliente.ruc
+
+
+@admin.register(AsociacionUsuarioCliente)
+class AsociacionUsuarioClienteAdmin(admin.ModelAdmin):
+    list_display = ("usuario", "cliente", "creado_en")
+    list_select_related = ("usuario", "cliente")
+    search_fields = ("usuario__username", "usuario__email", "cliente__email")
+    readonly_fields = ("creado_en",)

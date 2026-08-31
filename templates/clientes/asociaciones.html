@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+
+{% block titulo %}Asociar usuarios | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <div style="display:flex; justify-content:space-between; gap:1rem; flex-wrap:wrap; align-items:center;">
+    <h1>Asociación de usuarios a clientes</h1>
+    <a class="boton boton-secundario" href="{% url 'clientes:lista' %}">Volver a clientes</a>
+  </div>
+
+  {% if messages %}
+    {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+  {% endif %}
+
+  <p>Elegí un usuario y marcá los clientes para los que puede operar.</p>
+  <form method="post">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    <p>
+      {{ formulario.usuario.label_tag }}<br>
+      {{ formulario.usuario }}
+      {{ formulario.usuario.errors }}
+    </p>
+    <fieldset style="border:1px solid #dde3e9; border-radius:8px; padding:1rem;">
+      <legend>{{ formulario.clientes.label }}</legend>
+      {{ formulario.clientes.errors }}
+      {% for opcion in formulario.clientes %}
+        <div style="margin:.35rem 0;">{{ opcion.tag }} <label for="{{ opcion.id_for_label }}">{{ opcion.choice_label }}</label></div>
+      {% empty %}
+        <p>No hay clientes activos disponibles.</p>
+      {% endfor %}
+    </fieldset>
+    <button class="boton" type="submit" style="margin-top:1rem;">Guardar asociaciones</button>
+  </form>
+</div>
+
+<div class="tarjeta" style="margin-top:1rem;">
+  <h2>Asociaciones actuales</h2>
+  {% if asociaciones %}
+    <table class="datos">
+      <thead><tr><th>Usuario</th><th>Cliente</th><th>Correo del cliente</th><th>Acción</th></tr></thead>
+      <tbody>
+        {% for asociacion in asociaciones %}
+          <tr>
+            <td>{{ asociacion.usuario.get_full_name|default:asociacion.usuario.username }}</td>
+            <td>{{ asociacion.cliente }}</td>
+            <td>{{ asociacion.cliente.email }}</td>
+            <td><a class="boton" href="?usuario={{ asociacion.usuario.pk }}">Editar</a></td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Todavía no hay asociaciones registradas.</p>
+  {% endif %}
+</div>
+{% endblock %}
