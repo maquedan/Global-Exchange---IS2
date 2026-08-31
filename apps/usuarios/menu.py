@@ -14,7 +14,11 @@ MENU_PRINCIPAL = [
         "url": "clientes:lista",
         "roles": ["administrador", "analista_cambiario"],
     },
-    {"texto": "Administración", "url": "admin:index", "roles": ["administrador"]},
+    {
+        "texto": "Roles y permisos",
+        "url": "usuarios:roles_permisos",
+        "roles": ["administrador"],
+    },
 ]
 
 
@@ -28,6 +32,19 @@ def roles_de(usuario):
 def tiene_rol(usuario, *roles):
     """¿El usuario tiene AL MENOS uno de estos roles?"""
     return bool(roles_de(usuario) & set(roles))
+
+
+def tiene_permiso(usuario, codigo):
+    """Indica si alguno de los roles del usuario habilita una funcionalidad.
+
+    Las vistas nuevas pueden usar esta función para proteger una capacidad sin
+    codificar roles concretos: el administrador cambia el vínculo en RF011.
+    """
+    if not usuario.is_authenticated:
+        return False
+    from .models import PermisoRol
+
+    return PermisoRol.objects.filter(rol__in=roles_de(usuario), permiso__codigo=codigo).exists()
 
 
 def construir_menu(usuario):

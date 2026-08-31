@@ -96,9 +96,12 @@ class KeycloakOIDCBackend(OIDCAuthenticationBackend):
             if not ya_usado:
                 usuario.username = nombre_keycloak
 
-        # Nos quedamos solo con los roles que declaramos en settings.
+        # Keycloak es el catálogo de roles. Ignoramos únicamente sus roles
+        # técnicos; cualquier rol creado desde RF011 se sincroniza también.
         roles_keycloak = set(claims.get("roles", []))
-        roles = [r for r in settings.ROLES_KEYCLOAK if r in roles_keycloak]
+        internos = set(settings.ROLES_KEYCLOAK_INTERNOS)
+        internos.add(f"default-roles-{settings.KEYCLOAK_REALM}")
+        roles = sorted(roles_keycloak - internos)
 
         # El administrador entra al /admin de Django.
         usuario.is_staff = settings.ROL_ADMINISTRADOR in roles

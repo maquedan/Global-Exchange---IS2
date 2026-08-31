@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block titulo %}Clientes | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;">
+    <a class="boton" href="{% url 'clientes:crear' %}">Registrar cliente</a>
+    <a class="boton boton-secundario" href="{% url 'clientes:asociaciones' %}">Asociar usuarios</a>
+    <a class="boton boton-secundario" href="{% url 'clientes:eliminados' %}">Ver clientes eliminados</a>
+  </div>
+
+  <h1 style="margin-top: 1rem;">Clientes</h1>
+
+  <form method="get" style="margin:1rem 0; padding:1rem; border:1px solid #dde3e9; border-radius:8px; background:#f9fafb;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem;">
+      <div>
+        <label for="q">Buscar</label><br>
+        <input id="q" type="text" name="q" value="{{ filtros.q|default:'' }}" placeholder="Nombre, documento, email..." style="width:100%; padding:.5rem;">
+      </div>
+      <div>
+        <label for="tipo">Tipo</label><br>
+        <select id="tipo" name="tipo" style="width:100%; padding:.5rem;">
+          <option value="">Todos</option>
+          <option value="FISICA" {% if filtros.tipo == "FISICA" %}selected{% endif %}>Persona física</option>
+          <option value="JURIDICA" {% if filtros.tipo == "JURIDICA" %}selected{% endif %}>Persona jurídica</option>
+        </select>
+      </div>
+      <div>
+        <label for="categoria">Categoría</label><br>
+        <select id="categoria" name="categoria" style="width:100%; padding:.5rem;">
+          <option value="">Todas</option>
+          <option value="MINORISTA" {% if filtros.categoria == "MINORISTA" %}selected{% endif %}>Minorista</option>
+          <option value="CORPORATIVO" {% if filtros.categoria == "CORPORATIVO" %}selected{% endif %}>Corporativo</option>
+          <option value="VIP" {% if filtros.categoria == "VIP" %}selected{% endif %}>VIP</option>
+        </select>
+      </div>
+    </div>
+
+    <div style="margin-top:1rem; display:flex; gap:.75rem; flex-wrap:wrap;">
+      <button type="submit" class="boton">Aplicar filtros</button>
+      <a class="boton boton-secundario" href="{% url 'clientes:lista' %}">Limpiar</a>
+    </div>
+  </form>
+
+  {% if messages %}
+    {% for message in messages %}
+      <p>{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+
+  {% if clientes %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Categoría</th>
+          <th>Cliente</th>
+          <th>Documento / RUC</th>
+          <th>Correo</th>
+          <th>Teléfono</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cliente in clientes %}
+          <tr>
+            <td>{{ cliente.get_tipo_display }}</td>
+            <td>{{ cliente.get_categoria_display }}</td>
+            <td>
+              {% if cliente.tipo == "FISICA" %}
+                {{ cliente.nombres }} {{ cliente.apellidos }}
+              {% else %}
+                {{ cliente.razon_social }}
+              {% endif %}
+            </td>
+            <td>
+              {% if cliente.tipo == "FISICA" %}
+                {{ cliente.documento }}
+              {% else %}
+                {{ cliente.ruc }}
+              {% endif %}
+            </td>
+            <td>{{ cliente.email }}</td>
+            <td>{{ cliente.telefono }}</td>
+            <td>
+              <a class="boton" href="{% url 'clientes:editar' cliente.pk %}">Modificar</a>
+              <form method="post" action="{% url 'clientes:eliminar' cliente.pk %}" onsubmit="return confirm('¿Seguro que deseas dar de baja lógicamente a este cliente?');" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="boton boton-secundario">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Todavía no hay clientes registrados.</p>
+  {% endif %}
+</div>
+{% endblock %}

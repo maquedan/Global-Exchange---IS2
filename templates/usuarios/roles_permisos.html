@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% load usuarios_extras %}
+{% block titulo %}Roles y permisos | Global Exchange{% endblock %}
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Roles y permisos</h1>
+  <p>Los roles y sus asignaciones se administran en Keycloak. Los permisos representan funcionalidades de esta aplicación y se vinculan a cada rol.</p>
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  <h2>Crear rol</h2>
+  <form method="post" class="formulario">{% csrf_token %}<input type="hidden" name="accion" value="crear_rol">
+    <label>Nombre <input name="nombre" required pattern="[a-zA-Z0-9_-]+"></label>
+    <label>Descripción <input name="descripcion"></label><button class="boton">Crear rol</button>
+  </form>
+
+  <h2>Permisos disponibles</h2>
+  <form method="post" class="formulario">{% csrf_token %}<input type="hidden" name="accion" value="crear_permiso">
+    <label>Código <input name="codigo" required pattern="[a-z0-9_-]+" placeholder="gestionar_clientes"></label>
+    <label>Nombre <input name="nombre_permiso" required></label>
+    <label>Descripción <input name="descripcion_permiso"></label><button class="boton">Crear permiso</button>
+  </form>
+  {% if permisos %}<p>{% for permiso in permisos %}<span class="etiqueta">{{ permiso.codigo }}</span>{% endfor %}</p>{% endif %}
+
+  <h2>Roles del sistema</h2>
+  {% for rol in roles %}
+    <section class="rol">
+      <div><strong>{{ rol.name }}</strong>{% if rol.description %} — {{ rol.description }}{% endif %}
+        <form method="post" class="en-linea">{% csrf_token %}<input type="hidden" name="accion" value="eliminar_rol"><input type="hidden" name="rol" value="{{ rol.name }}"><button class="enlace-peligro" onclick="return confirm('¿Eliminar este rol?')">Eliminar</button></form>
+      </div>
+      <form method="post">{% csrf_token %}<input type="hidden" name="accion" value="guardar_permisos"><input type="hidden" name="rol" value="{{ rol.name }}">
+        {% for permiso in permisos %}<label class="check"><input type="checkbox" name="permisos" value="{{ permiso.pk }}" {% if permiso.pk in permisos_por_rol|get_item:rol.name %}checked{% endif %}> {{ permiso.codigo }}</label>{% empty %}<em>Primero cree un permiso.</em>{% endfor %}
+        <button class="boton">Guardar permisos</button>
+      </form>
+    </section>
+  {% empty %}<p>No se pudieron cargar roles o aún no existen.</p>{% endfor %}
+
+  <h2>Asignar roles a un usuario</h2>
+  <form method="post">{% csrf_token %}<input type="hidden" name="accion" value="asignar_roles">
+    <label>Usuario <select name="usuario" required><option value="">Seleccione…</option>{% for usuario in usuarios_keycloak %}<option value="{{ usuario.id }}">{{ usuario.username }} ({{ usuario.email|default:"sin correo" }})</option>{% endfor %}</select></label>
+    <p>{% for rol in roles %}<label class="check"><input type="checkbox" name="roles" value="{{ rol.name }}"> {{ rol.name }}</label>{% endfor %}</p><button class="boton">Guardar asignación</button>
+  </form>
+</div>
+{% endblock %}

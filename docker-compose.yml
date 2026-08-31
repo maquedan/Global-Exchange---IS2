@@ -2,6 +2,9 @@
 services:
   db:
     image: postgres:16
+    # Vuelve a levantarse solo al reiniciar la máquina o Docker Desktop.
+    # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
+    restart: unless-stopped
     environment:
       POSTGRES_DB: globalexchange
       POSTGRES_USER: postgres
@@ -16,6 +19,9 @@ services:
   # el client, los roles y los usuarios. Con este volumen, sobrevive.
   keycloak-db:
     image: postgres:16
+    # Vuelve a levantarse solo al reiniciar la máquina o Docker Desktop.
+    # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
+    restart: unless-stopped
     environment:
       POSTGRES_DB: keycloak
       POSTGRES_USER: keycloak
@@ -28,12 +34,18 @@ services:
   # No los reenvía a internet, así que se puede probar sin cuenta de Gmail.
   mailpit:
     image: axllent/mailpit:latest
+    # Vuelve a levantarse solo al reiniciar la máquina o Docker Desktop.
+    # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
+    restart: unless-stopped
     ports:
       - "8025:8025"   # interfaz web: acá se leen los correos
       - "1025:1025"   # SMTP: acá los deja Keycloak
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
+    # Vuelve a levantarse solo al reiniciar la máquina o Docker Desktop.
+    # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
+    restart: unless-stopped
     # --import-realm carga keycloak/realm-global-exchange.json la primera vez.
     # Así, quien clone el repo levanta el realm ya configurado, sin clickear.
     command: start-dev --import-realm
@@ -59,6 +71,9 @@ services:
 
   web:
     build: .
+    # Vuelve a levantarse solo al reiniciar la máquina o Docker Desktop.
+    # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
+    restart: unless-stopped
     command: python manage.py runserver 0.0.0.0:8000
     volumes:
       - .:/app

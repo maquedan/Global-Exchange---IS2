@@ -1,4 +1,4 @@
-# Keycloak — Global Exchange (GEG9-16, GEG9-21, GEG9-24)
+# Keycloak — Global Exchange (GEG9-16, GEG9-21, GEG9-24, RF011)
 
 Autenticación con Keycloak: autorregistro con verificación por correo, login
 para todos los roles, y roles sincronizados con Django.
@@ -49,6 +49,18 @@ python3 scripts/sincronizar_secret.py && docker compose restart web
 > `analista_cambiario` cuando se implemente el CRUD (GEG9-11): el menú
 > saltea las rutas que todavía no existen.
 
+## Administración dinámica de roles (RF011)
+
+El menú del administrador incorpora **Roles y permisos**. La pantalla usa el
+cliente técnico `global-exchange-admin` para crear/eliminar realm roles y
+asignarlos a usuarios de Keycloak. Los permisos de funcionalidades se guardan
+en Django y se vinculan a esos roles. La guía completa está en
+[`rf011-roles-permisos.md`](rf011-roles-permisos.md).
+
+Después de importar un realm nuevo, ejecutar nuevamente
+`python3 scripts/sincronizar_secret.py`: ahora también incorpora
+`KEYCLOAK_ADMIN_CLIENT_SECRET` en `.env`.
+
 ## Demostración
 
 ### 1. Login para todos los roles
@@ -98,17 +110,42 @@ Está en *Realm settings → Email*:
 | Port | `1025` |
 | Authentication / SSL / StartTLS | apagados |
 
-### Para producción (Gmail)
+### Para usuarios reales
 
-En *Realm settings → Email*, con una **contraseña de aplicación** de Google
-(no la contraseña normal de la cuenta; requiere verificación en dos pasos):
+Mailpit **no manda nada a internet**: si un usuario real se registra, no le
+llega nada. Para que sí lleguen, hay que configurar un SMTP de verdad.
 
-| Campo | Valor |
-|---|---|
-| Host | `smtp.gmail.com` |
-| Port | `587` |
-| StartTLS | activado |
-| Authentication | activado, usuario = el correo, clave = la contraseña de aplicación |
+Las credenciales van en el `.env` (que no se versiona), y se aplican con:
+
+```bash
+python3 scripts/configurar_smtp.py                    # lee el .env y lo aplica
+python3 scripts/configurar_smtp.py --probar tu@correo.com   # manda una prueba
+python3 scripts/configurar_smtp.py --mailpit          # vuelve a desarrollo
+```
+
+Si `EMAIL_HOST` está vacío, el script deja Mailpit. Las mismas variables las usa
+Django en producción, así que las credenciales quedan en un solo lugar.
+
+**Gmail** — necesita la verificación en dos pasos activada y una *contraseña de
+aplicación* (Google rechaza la contraseña normal de la cuenta desde 2022):
+
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=tucuenta@gmail.com
+EMAIL_HOST_PASSWORD=abcd efgh ijkl mnop     # la de 16 letras que da Google
+EMAIL_FROM=tucuenta@gmail.com               # tiene que ser la misma cuenta
+```
+
+Se genera en cuenta de Google → *Seguridad* → *Verificación en 2 pasos* →
+*Contraseñas de aplicaciones*. Límite: unos 500 correos por día.
+
+**Alternativa sin usar un Gmail personal:** Brevo, Mailgun o SendGrid tienen
+plan gratuito (Brevo: 300 correos/día). Cambian solo `EMAIL_HOST`, el usuario y
+la clave; el resto queda igual.
+
+> El puerto define el cifrado: **587 → STARTTLS**, **465 → SSL**. El script lo
+> resuelve solo según el puerto que pongas.
 
 ## Notas técnicas
 
