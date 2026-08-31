@@ -26,3 +26,6 @@ node_modules/
 
 # Copias de seguridad locales (pueden contener secretos)
 *.bak
+
+# Documentación generada por Sphinx (se regenera con un comando)
+docs/sphinx/_build/
