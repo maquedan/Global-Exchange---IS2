@@ -27,6 +27,27 @@ Este proyecto tiene dos ambientes montados con Docker:
    docker compose exec web python manage.py createsuperuser
    ```
 
+## Tailwind CSS
+
+El CSS de la interfaz se compila localmente con Tailwind CSS v4 y se guarda en
+`static/css/app.css`. No se usa React, Vite ni CDN.
+
+Para regenerarlo al editar las plantillas, en otra terminal ejecutá:
+
+```bash
+npm install
+npm run dev
+```
+
+Antes de crear una imagen o desplegar a producción, generá el CSS minificado:
+
+```bash
+npm run build
+```
+
+El archivo ya compilado se incluye en el repositorio y Django lo recoge desde
+`static/` mediante `collectstatic`.
+
 ## Accesos
 - Aplicación Django: http://localhost:8000
 - Admin de Django: http://localhost:8000/admin

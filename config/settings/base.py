@@ -148,6 +148,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+# Archivos estáticos propios del proyecto (incluye el CSS compilado por Tailwind).
+STATICFILES_DIRS = [BASE_DIR / "static"]
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
