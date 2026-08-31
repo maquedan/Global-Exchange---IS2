@@ -19,7 +19,6 @@ MENU_PRINCIPAL = [
         "url": "usuarios:roles_permisos",
         "roles": ["administrador"],
     },
-    {"texto": "Administración", "url": "admin:index", "roles": ["administrador"]},
 ]
 
 

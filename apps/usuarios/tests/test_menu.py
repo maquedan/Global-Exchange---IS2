@@ -35,10 +35,9 @@ def test_tiene_rol_acepta_varios():
 
 # ---------------------------------------------------------------------- menú
 @pytest.mark.django_db
-def test_solo_el_administrador_ve_administracion():
-    assert "Administración" in textos_del_menu(usuario_con("administrador"))
-    assert "Administración" not in textos_del_menu(usuario_con("usuario_cliente"))
-    assert "Administración" not in textos_del_menu(usuario_con("analista_cambiario"))
+def test_el_menu_no_muestra_el_admin_de_django():
+    for rol in ("administrador", "usuario_cliente", "analista_cambiario"):
+        assert "Administración" not in textos_del_menu(usuario_con(rol))
 
 
 @pytest.mark.django_db
@@ -48,9 +47,11 @@ def test_todos_los_autenticados_ven_el_panel():
 
 
 @pytest.mark.django_db
-def test_saltea_las_rutas_que_todavia_no_existen():
-    """'Clientes' aparecerá sola cuando exista apps.clientes.urls (GEG9-11)."""
-    assert "Clientes" not in textos_del_menu(usuario_con("administrador"))
+def test_clientes_se_muestra_a_los_roles_autorizados():
+    """La ruta de Clientes ya existe y respeta las reglas del menú."""
+    assert "Clientes" in textos_del_menu(usuario_con("administrador"))
+    assert "Clientes" in textos_del_menu(usuario_con("analista_cambiario"))
+    assert "Clientes" not in textos_del_menu(usuario_con("usuario_cliente"))
 
 
 @pytest.mark.django_db

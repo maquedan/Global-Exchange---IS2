@@ -1,0 +1,24 @@
+{
+  "name": "global-exchange---is2",
+  "version": "1.0.0",
+  "description": "Plataforma digital de cambio de divisas. Proyecto Django + Keycloak.",
+  "scripts": {
+    "dev": "npx @tailwindcss/cli -i ./assets/css/tailwind.css -o ./static/css/app.css --watch",
+    "build": "npx @tailwindcss/cli -i ./assets/css/tailwind.css -o ./static/css/app.css --minify"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/maquedan/Global-Exchange---IS2.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "bugs": {
+    "url": "https://github.com/maquedan/Global-Exchange---IS2/issues"
+  },
+  "homepage": "https://github.com/maquedan/Global-Exchange---IS2#readme",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "tailwindcss": "^4.3.3"
+  }
+}

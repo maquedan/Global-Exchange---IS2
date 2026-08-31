@@ -18,6 +18,7 @@ htmlcov/
 .vscode/
 .DS_Store
 Thumbs.db
+node_modules/
 # Las migraciones SÍ se versionan
 
 # Basura que genera Windows al copiar archivos a WSL
