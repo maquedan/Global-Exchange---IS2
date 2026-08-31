@@ -129,10 +129,18 @@ LOGIN_REDIRECT_URL = "/panel/"
 LOGOUT_REDIRECT_URL = "/"
 
 # ===== Roles del realm de Keycloak =====
-# Solo estos roles se copian a Grupos de Django (evita traer roles internos
-# de Keycloak como "default-roles-global-exchange" o "offline_access").
+# Roles internos que nunca se copian a Grupos de Django. Los demás roles del
+# realm se sincronizan dinámicamente: así un rol creado desde RF011 queda
+# disponible en la aplicación en el siguiente inicio de sesión.
 ROLES_KEYCLOAK = ["administrador", "analista_cambiario", "usuario_cliente"]
+ROLES_KEYCLOAK_INTERNOS = ["offline_access", "uma_authorization"]
 ROL_ADMINISTRADOR = "administrador"
+
+# Cliente de servicio usado exclusivamente por el panel RF011 para administrar
+# el realm mediante la API de Keycloak. Su secreto no se versiona: el script
+# scripts/sincronizar_secret.py lo carga en .env al preparar el ambiente.
+KEYCLOAK_ADMIN_CLIENT_ID = env("KEYCLOAK_ADMIN_CLIENT_ID", default="global-exchange-admin")
+KEYCLOAK_ADMIN_CLIENT_SECRET = env("KEYCLOAK_ADMIN_CLIENT_SECRET", default="")
 
 LANGUAGE_CODE = "es"
 TIME_ZONE = "America/Asuncion"

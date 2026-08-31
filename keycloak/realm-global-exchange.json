@@ -46,6 +46,17 @@
       "attributes": {
         "post.logout.redirect.uris": "http://localhost:8000/*"
       }
+    },
+    {
+      "clientId": "global-exchange-admin",
+      "name": "Global Exchange (administración interna)",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "clientAuthenticatorType": "client-secret",
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": true
     }
   ],
 

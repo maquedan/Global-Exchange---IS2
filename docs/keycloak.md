@@ -1,4 +1,4 @@
-# Keycloak — Global Exchange (GEG9-16, GEG9-21, GEG9-24)
+# Keycloak — Global Exchange (GEG9-16, GEG9-21, GEG9-24, RF011)
 
 Autenticación con Keycloak: autorregistro con verificación por correo, login
 para todos los roles, y roles sincronizados con Django.
@@ -48,6 +48,18 @@ python3 scripts/sincronizar_secret.py && docker compose restart web
 > La opción **Clientes** aparece sola en el menú de `administrador` y
 > `analista_cambiario` cuando se implemente el CRUD (GEG9-11): el menú
 > saltea las rutas que todavía no existen.
+
+## Administración dinámica de roles (RF011)
+
+El menú del administrador incorpora **Roles y permisos**. La pantalla usa el
+cliente técnico `global-exchange-admin` para crear/eliminar realm roles y
+asignarlos a usuarios de Keycloak. Los permisos de funcionalidades se guardan
+en Django y se vinculan a esos roles. La guía completa está en
+[`rf011-roles-permisos.md`](rf011-roles-permisos.md).
+
+Después de importar un realm nuevo, ejecutar nuevamente
+`python3 scripts/sincronizar_secret.py`: ahora también incorpora
+`KEYCLOAK_ADMIN_CLIENT_SECRET` en `.env`.
 
 ## Demostración
 
