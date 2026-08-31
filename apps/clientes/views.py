@@ -8,8 +8,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.usuarios.menu import tiene_rol
 
-from .forms import ClienteForm
-from .models import Cliente
+from .forms import AsociacionUsuarioClienteForm, ClienteForm
+from .models import AsociacionUsuarioCliente, Cliente
 
 
 def es_administrador(usuario):
@@ -138,3 +138,60 @@ def eliminar(request, pk):
     cliente.desactivar()
     messages.success(request, f"Cliente {cliente} dado de baja lógicamente.")
     return redirect("clientes:lista")
+
+
+@login_required
+@requiere_administrador
+def asociaciones(request):
+    """Consulta y administra las asociaciones de RF007 — GEG9-17."""
+    usuario_id = request.GET.get("usuario")
+
+    if request.method == "POST":
+        formulario = AsociacionUsuarioClienteForm(request.POST)
+        if formulario.is_valid():
+            usuario = formulario.cleaned_data["usuario"]
+            clientes = formulario.cleaned_data["clientes"]
+            ids_clientes = set(clientes.values_list("pk", flat=True))
+
+            AsociacionUsuarioCliente.objects.filter(usuario=usuario).exclude(
+                cliente_id__in=ids_clientes,
+            ).delete()
+            existentes = set(
+                AsociacionUsuarioCliente.objects.filter(usuario=usuario).values_list(
+                    "cliente_id",
+                    flat=True,
+                ),
+            )
+            AsociacionUsuarioCliente.objects.bulk_create(
+                [
+                    AsociacionUsuarioCliente(usuario=usuario, cliente=cliente)
+                    for cliente in clientes
+                    if cliente.pk not in existentes
+                ],
+            )
+            messages.success(request, "Asociaciones actualizadas correctamente.")
+            return redirect(f"{request.path}?usuario={usuario.pk}")
+    else:
+        inicial = {}
+        if usuario_id:
+            asociaciones_usuario = AsociacionUsuarioCliente.objects.filter(
+                usuario_id=usuario_id,
+            )
+            inicial = {
+                "usuario": usuario_id,
+                "clientes": asociaciones_usuario.values_list("cliente_id", flat=True),
+            }
+        formulario = AsociacionUsuarioClienteForm(initial=inicial)
+
+    asociaciones_existentes = AsociacionUsuarioCliente.objects.select_related(
+        "usuario",
+        "cliente",
+    )
+    return render(
+        request,
+        "clientes/asociaciones.html",
+        {
+            "formulario": formulario,
+            "asociaciones": asociaciones_existentes,
+        },
+    )

@@ -3,7 +3,7 @@ from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.clientes.models import Cliente
+from apps.clientes.models import AsociacionUsuarioCliente, Cliente
 
 
 class RegistroClientesTests(TestCase):
@@ -259,3 +259,106 @@ class RegistroClientesTests(TestCase):
         self.assertContains(respuesta, "Pedro")
         self.assertNotContains(respuesta, "Ana")
         self.assertEqual(len(respuesta.context["clientes"]), 1)
+
+    def test_administrador_puede_asociar_usuario_a_varios_clientes(self):
+        usuario = self.crear_usuario_con_rol("operador-prueba", "usuario_cliente")
+        primer_cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres="Ana",
+            apellidos="García",
+            documento="3333333",
+            email="ana.garcia@example.com",
+            telefono="098111111",
+            direccion="Asunción",
+        )
+        segundo_cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.JURIDICA,
+            razon_social="Empresa S.A.",
+            ruc="80012345-7",
+            email="empresa@example.com",
+            telefono="021123456",
+            direccion="Asunción",
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.post(
+            reverse("clientes:asociaciones"),
+            {"usuario": usuario.pk, "clientes": [primer_cliente.pk, segundo_cliente.pk]},
+        )
+
+        self.assertRedirects(
+            respuesta,
+            f"{reverse('clientes:asociaciones')}?usuario={usuario.pk}",
+        )
+        self.assertSetEqual(
+            set(
+                AsociacionUsuarioCliente.objects.filter(usuario=usuario).values_list(
+                    "cliente_id",
+                    flat=True,
+                ),
+            ),
+            {primer_cliente.pk, segundo_cliente.pk},
+        )
+
+    def test_actualizar_asociaciones_elimina_las_que_no_selecciona(self):
+        usuario = self.crear_usuario_con_rol("operador-prueba", "usuario_cliente")
+        primer_cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres="Ana",
+            apellidos="García",
+            documento="4444444",
+            email="ana.garcia@example.com",
+            telefono="098111111",
+            direccion="Asunción",
+        )
+        segundo_cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres="Pedro",
+            apellidos="Rojas",
+            documento="5555555",
+            email="pedro.rojas@example.com",
+            telefono="098222222",
+            direccion="Asunción",
+        )
+        AsociacionUsuarioCliente.objects.create(usuario=usuario, cliente=primer_cliente)
+        AsociacionUsuarioCliente.objects.create(usuario=usuario, cliente=segundo_cliente)
+        self.client.force_login(self.administrador)
+
+        self.client.post(
+            reverse("clientes:asociaciones"),
+            {"usuario": usuario.pk, "clientes": [segundo_cliente.pk]},
+        )
+
+        self.assertSetEqual(
+            set(
+                AsociacionUsuarioCliente.objects.filter(usuario=usuario).values_list(
+                    "cliente_id",
+                    flat=True,
+                ),
+            ),
+            {segundo_cliente.pk},
+        )
+
+    def test_usuario_no_administrador_no_puede_gestionar_asociaciones(self):
+        self.client.force_login(self.analista)
+
+        respuesta = self.client.get(reverse("clientes:asociaciones"))
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_no_muestra_clientes_inactivos_para_asociar(self):
+        cliente_inactivo = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres="Cliente",
+            apellidos="Inactivo",
+            documento="6666666",
+            email="inactivo@example.com",
+            telefono="098333333",
+            direccion="Asunción",
+            activo=False,
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.get(reverse("clientes:asociaciones"))
+
+        self.assertNotContains(respuesta, str(cliente_inactivo))

@@ -1,4 +1,5 @@
 from django.core.exceptions import ValidationError
+from django.conf import settings
 from django.db import models
 
 
@@ -79,3 +80,42 @@ class Cliente(models.Model):
         if self.tipo == self.Tipo.FISICA:
             return f"{self.nombres} {self.apellidos}"
         return self.razon_social
+
+
+class AsociacionUsuarioCliente(models.Model):
+    """Vincula los usuarios de la plataforma con los clientes que operan."""
+
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="asociaciones_clientes",
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name="asociaciones_usuarios",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["usuario", "cliente"],
+                name="asociacion_usuario_cliente_unica",
+            ),
+        ]
+        ordering = ["usuario__username", "cliente__creado_en"]
+        verbose_name = "asociación usuario-cliente"
+        verbose_name_plural = "asociaciones usuario-cliente"
+
+    def clean(self):
+        errores = {}
+        if self.usuario_id and not self.usuario.is_active:
+            errores["usuario"] = "Solo se pueden asociar usuarios activos."
+        if self.cliente_id and not self.cliente.activo:
+            errores["cliente"] = "Solo se pueden asociar clientes activos."
+        if errores:
+            raise ValidationError(errores)
+
+    def __str__(self):
+        return f"{self.usuario} — {self.cliente}"
