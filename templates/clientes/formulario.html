@@ -78,8 +78,10 @@
       {{ formulario.direccion.errors }}
     </p>
 
-    <button class="boton" type="submit">Guardar cliente</button>
-    <a href="{% url 'clientes:lista' %}">Cancelar</a>
+    <div class="acciones mt-6">
+      <button class="boton" type="submit">Guardar cliente</button>
+      <a class="boton boton-secundario" href="{% url 'clientes:lista' %}">Cancelar</a>
+    </div>
   </form>
 </div>
 
