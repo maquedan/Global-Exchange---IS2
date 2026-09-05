@@ -19,6 +19,11 @@ MENU_PRINCIPAL = [
         "url": "usuarios:roles_permisos",
         "roles": ["administrador"],
     },
+    {
+        "texto": "Mis medios de pago",
+        "url": "cuentas:lista",
+        "roles": ["usuario_cliente"],
+    },
 ]
 
 

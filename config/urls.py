@@ -8,4 +8,5 @@ urlpatterns = [
     # Apps del proyecto
     path("", include("apps.usuarios.urls")),
     path("clientes/", include("apps.clientes.urls")),  # Registro de Clientes - GEG9-11
+    path("cuentas/", include("apps.cuentas.urls")),  # Registro de Cuentas de Pago - GEG9-30
 ]
