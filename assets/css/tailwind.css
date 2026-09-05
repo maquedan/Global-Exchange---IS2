@@ -53,12 +53,25 @@
     @apply inline-block cursor-pointer rounded-lg border-0 bg-gradient-to-br from-sky-700 to-blue-700 px-4 py-2.5 text-sm font-bold text-white no-underline shadow-md shadow-sky-900/15 transition hover:-translate-y-0.5 hover:from-sky-600 hover:to-blue-600 hover:shadow-lg;
   }
 
+  /* .boton pinta el fondo con un degradado (background-image), no con
+     background-color. Sin este reset, cualquier color que se intente poner
+     acá queda TAPADO por ese degradado y nunca se ve. */
   .boton.salir {
+    background-image: none;
     @apply bg-rose-600 hover:bg-rose-500;
   }
 
+  /* Para acciones neutras (Cancelar, Limpiar, Cerrar): ni azul ni gris apagado,
+     un estilo con borde, limpio y con buen contraste. */
   .boton-secundario {
-    @apply bg-slate-100 text-sky-900 shadow-none ring-1 ring-inset ring-slate-200 hover:bg-sky-50 hover:text-sky-950;
+    background-image: none;
+    @apply bg-white text-slate-700 shadow-none ring-1 ring-inset ring-slate-300 hover:bg-slate-50 hover:text-slate-900;
+  }
+
+  /* Fila de botones de acción (ej. "Modificar" + "Eliminar" en una tabla).
+     Sin esto, quedan pegados uno al otro sin ningún espacio entre ambos. */
+  .acciones {
+    @apply flex flex-wrap items-center gap-2;
   }
 
   .etiqueta {
