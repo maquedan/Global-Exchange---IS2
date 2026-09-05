@@ -138,6 +138,14 @@ def probar(destino):
         "username": usuario, "email": destino,
         "firstName": "Prueba", "lastName": "SMTP", "enabled": True,
     })
+    if estado == 409:
+        sys.exit(
+            f"Ya existe un usuario con el correo {destino} en el realm.\n"
+            "Keycloak no permite dos cuentas con la misma direccion.\n\n"
+            "Probá con una variante del mismo correo, que llega a la misma\n"
+            f"bandeja pero Keycloak toma como distinta:\n"
+            f"  python3 scripts/configurar_smtp.py --probar tucuenta+prueba@gmail.com"
+        )
     if estado >= 400:
         sys.exit(f"No pude crear el usuario de prueba (HTTP {estado}).")
 
