@@ -1,0 +1,86 @@
+[
+{
+  "model": "monedas.moneda",
+  "pk": 1,
+  "fields": {
+    "codigo": "USD",
+    "nombre": "Dólar estadounidense",
+    "simbolo": "$",
+    "activo": true,
+    "creado_en": "2026-09-06T18:50:44.593Z",
+    "actualizado_en": "2026-09-06T18:50:44.593Z"
+  }
+},
+{
+  "model": "monedas.moneda",
+  "pk": 2,
+  "fields": {
+    "codigo": "PYG",
+    "nombre": "Guaraní",
+    "simbolo": "₲",
+    "activo": true,
+    "creado_en": "2026-09-06T18:50:44.596Z",
+    "actualizado_en": "2026-09-06T18:50:44.596Z"
+  }
+},
+{
+  "model": "monedas.moneda",
+  "pk": 3,
+  "fields": {
+    "codigo": "EUR",
+    "nombre": "Euro",
+    "simbolo": "€",
+    "activo": true,
+    "creado_en": "2026-09-06T18:53:50.986Z",
+    "actualizado_en": "2026-09-06T18:53:50.986Z"
+  }
+},
+{
+  "model": "monedas.moneda",
+  "pk": 4,
+  "fields": {
+    "codigo": "BRL",
+    "nombre": "Real brasileño",
+    "simbolo": "R$",
+    "activo": true,
+    "creado_en": "2026-09-06T18:53:50.990Z",
+    "actualizado_en": "2026-09-06T18:53:50.990Z"
+  }
+},
+{
+  "model": "monedas.moneda",
+  "pk": 5,
+  "fields": {
+    "codigo": "ARS",
+    "nombre": "Peso argentino",
+    "simbolo": "$",
+    "activo": true,
+    "creado_en": "2026-09-06T19:32:20.637Z",
+    "actualizado_en": "2026-09-06T19:32:20.637Z"
+  }
+},
+{
+  "model": "monedas.moneda",
+  "pk": 6,
+  "fields": {
+    "codigo": "GBP",
+    "nombre": "Libra esterlina",
+    "simbolo": "£",
+    "activo": true,
+    "creado_en": "2026-09-06T19:32:20.654Z",
+    "actualizado_en": "2026-09-06T19:32:20.654Z"
+  }
+},
+{
+  "model": "monedas.moneda",
+  "pk": 7,
+  "fields": {
+    "codigo": "JPY",
+    "nombre": "Yen japonés",
+    "simbolo": "¥",
+    "activo": true,
+    "creado_en": "2026-09-06T19:32:20.658Z",
+    "actualizado_en": "2026-09-06T19:32:20.658Z"
+  }
+}
+]
