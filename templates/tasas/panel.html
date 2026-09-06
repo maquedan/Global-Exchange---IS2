@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+{% load tasas_extras %}
+
+{% block titulo %}Cotizaciones | Global Exchange{% endblock %}
+
+{% block contenido %}
+{# Estilos propios de esta pantalla. Son únicos de esta página, por eso van #}
+{# acá y no en el sistema de diseño compartido (assets/css/tailwind.css). #}
+<style>
+  .punto-vivo {
+    width: 8px; height: 8px; border-radius: 9999px; background: #10b981;
+    display: inline-block; animation: pulso-vivo 1.6s ease-in-out infinite;
+  }
+  @keyframes pulso-vivo {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, .55); }
+    50%      { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+  }
+  .valor-actualizado { animation: destello-valor 1s ease; border-radius: .375rem; }
+  @keyframes destello-valor {
+    0%   { background-color: #fef9c3; }
+    100% { background-color: transparent; }
+  }
+  .selector-monedas {
+    display: flex; align-items: end; gap: .75rem; flex-wrap: wrap;
+    margin-top: 1rem; padding: 1rem; background: #f8fafc;
+    border: 1px solid #e2e8f0; border-radius: .75rem;
+  }
+  .selector-monedas select {
+    display: flex; align-items: center; gap: .5rem;
+  }
+  .boton-intercambiar {
+    border: 1px solid #cbd5e1; background: #fff; border-radius: 9999px;
+    width: 2.25rem; height: 2.25rem; cursor: pointer; font-size: 1rem;
+    align-self: center; margin-top: 1.1rem;
+  }
+  .boton-intercambiar:hover { background: #f1f5f9; }
+  .badge-variacion {
+    font-weight: 700; padding: .15rem .6rem; border-radius: 9999px; font-size: .95rem;
+  }
+  .badge-sube { color: #047857; background: #ecfdf5; }
+  .badge-baja { color: #b91c1c; background: #fef2f2; }
+  .badge-neutro { color: #64748b; background: #f1f5f9; }
+  .rango-tiempo button {
+    border: 1px solid #e2e8f0; background: #fff; color: #475569;
+    font-size: .8rem; font-weight: 600; padding: .3rem .7rem; border-radius: .5rem;
+    cursor: pointer;
+  }
+  .rango-tiempo button.activo { background: #0369a1; color: #fff; border-color: #0369a1; }
+  .grafico-envoltorio { position: relative; margin-top: 1rem; }
+  .grafico-historial { width: 100%; height: 260px; display: block; overflow: visible; }
+  .tooltip-grafico {
+    position: absolute; pointer-events: none; background: #0f172a; color: #fff;
+    font-size: .78rem; padding: .4rem .6rem; border-radius: .4rem; white-space: nowrap;
+    transform: translate(-50%, -115%); display: none; z-index: 5;
+  }
+  .grilla-pares {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: 1rem; margin-top: 1rem;
+  }
+  .tarjeta-par-mini {
+    border: 1px solid #e2e8f0; border-radius: .75rem; padding: 1rem;
+    display: flex; flex-direction: column; gap: .35rem;
+  }
+</style>
+
+<div class="tarjeta">
+  <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.5rem;">
+    <h1 style="margin:0;">Cotizaciones</h1>
+    <span style="font-size:.85rem; color:#64748b; display:flex; align-items:center; gap:.4rem;">
+      <span class="punto-vivo"></span>
+      En vivo — se actualiza sola cada 20 segundos
+    </span>
+  </div>
+  <p style="margin:.35rem 0 0; font-size:.85rem; color:#94a3b8;">
+    Mostramos las tasas cargadas por nuestros analistas cambiarios.
+  </p>
+
+  {# ---- Selector de monedas (inspirado en xe.com/es/currencycharts) ---- #}
+  <form method="get" class="selector-monedas" id="formulario-selector">
+    <div>
+      <label for="id_origen">De</label><br>
+      <div style="display:flex; align-items:center;">
+        {{ codigo_origen|bandera }}
+        <select name="origen" id="id_origen" onchange="this.form.submit()">
+          {% for moneda in monedas %}
+            <option value="{{ moneda.codigo }}" {% if moneda.codigo == codigo_origen %}selected{% endif %}>
+              {{ moneda.codigo }} — {{ moneda.nombre }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <button type="button" class="boton-intercambiar" title="Invertir el par" onclick="intercambiarMonedas()">⇄</button>
+
+    <div>
+      <label for="id_destino">A</label><br>
+      <div style="display:flex; align-items:center;">
+        {{ codigo_destino|bandera }}
+        <select name="destino" id="id_destino" onchange="this.form.submit()">
+          {% for moneda in monedas %}
+            <option value="{{ moneda.codigo }}" {% if moneda.codigo == codigo_destino %}selected{% endif %}>
+              {{ moneda.codigo }} — {{ moneda.nombre }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+  </form>
+
+  {% if historial %}
+    {# ---- Título del gráfico + variación + tasa vigente ---- #}
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem; margin-top:1.5rem;">
+      <div>
+        <div style="display:flex; align-items:center; gap:.6rem; flex-wrap:wrap;">
+          <h2 style="margin:0; font-size:1.15rem;">
+            {{ codigo_origen|bandera }}{{ codigo_destino|bandera }} Gráfico de {{ codigo_origen }} a {{ codigo_destino }}
+          </h2>
+          <span id="badge-variacion" class="badge-variacion {% if estadisticas_venta.subio %}badge-sube{% elif estadisticas_venta.bajo %}badge-baja{% else %}badge-neutro{% endif %}">
+            {{ estadisticas_venta.variacion }}%
+          </span>
+        </div>
+        <p style="margin:.15rem 0 0; color:#64748b; font-size:.85rem;">
+          {{ historial.0.moneda_origen.nombre }} a {{ historial.0.moneda_destino.nombre }}
+        </p>
+      </div>
+
+      <div style="text-align:right;">
+        <div style="font-size:.9rem; color:#334155;">
+          1 {{ codigo_origen }} =
+          <strong id="valor-venta-cabecera" class="valor-venta">
+            {% if activa %}{{ activa.tasa_venta|stringformat:".2f" }}{% else %}—{% endif %}
+          </strong>
+          {{ codigo_destino }}
+        </div>
+        <div style="font-size:.75rem; color:#94a3b8;">
+          {% if activa %}Actualizado: {{ activa.actualizado_en|date:"d/m/Y H:i" }}{% else %}Sin tasa vigente ahora{% endif %}
+        </div>
+      </div>
+    </div>
+
+    {# ---- Rango de tiempo (filtra el gráfico, sin recargar la página) ---- #}
+    <div class="rango-tiempo" style="display:flex; gap:.4rem; margin-top:1rem; flex-wrap:wrap;">
+      <button type="button" data-dias="7">7D</button>
+      <button type="button" data-dias="30">1M</button>
+      <button type="button" data-dias="90">3M</button>
+      <button type="button" data-dias="0" class="activo">Todo</button>
+    </div>
+
+    {% if historial|length > 1 %}
+      <div class="grafico-envoltorio">
+        <svg class="grafico-historial" id="grafico-principal" viewBox="0 0 640 260" preserveAspectRatio="none"></svg>
+        <div class="tooltip-grafico" id="tooltip-grafico"></div>
+      </div>
+      {{ historial_json|json_script:"datos-historial" }}
+    {% else %}
+      <p style="font-size:.85rem; color:#94a3b8; margin-top:1rem;">
+        Todavía hay una sola tasa cargada para este par — el gráfico se
+        completa con las próximas actualizaciones.
+      </p>
+    {% endif %}
+
+    {# ---- Estadísticas del período mostrado ---- #}
+    <table class="datos" id="tabla-estadisticas">
+      <thead>
+        <tr><th></th><th>Variación</th><th>Máximo</th><th>Mínimo</th><th>Promedio</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <th>Compra</th>
+          <td class="celda-variacion {% if estadisticas_compra.subio %}variacion-sube{% elif estadisticas_compra.bajo %}variacion-baja{% endif %}">
+            {{ estadisticas_compra.variacion }}%
+          </td>
+          <td class="celda-maximo">{{ estadisticas_compra.maximo }}</td>
+          <td class="celda-minimo">{{ estadisticas_compra.minimo }}</td>
+          <td class="celda-promedio">{{ estadisticas_compra.promedio }}</td>
+        </tr>
+        <tr>
+          <th>Venta</th>
+          <td class="celda-variacion {% if estadisticas_venta.subio %}variacion-sube{% elif estadisticas_venta.bajo %}variacion-baja{% endif %}">
+            {{ estadisticas_venta.variacion }}%
+          </td>
+          <td class="celda-maximo">{{ estadisticas_venta.maximo }}</td>
+          <td class="celda-minimo">{{ estadisticas_venta.minimo }}</td>
+          <td class="celda-promedio">{{ estadisticas_venta.promedio }}</td>
+        </tr>
+      </tbody>
+    </table>
+  {% else %}
+    <div style="margin-top:1.5rem;">
+      <p>Todavía no hay tasas cargadas para {{ codigo_origen|default:"esa moneda" }} → {{ codigo_destino|default:"esa moneda" }}.</p>
+      {% if pares_disponibles %}
+        <p style="font-size:.9rem; color:#64748b;">Pares con datos disponibles:</p>
+        <p>
+          {% for origen, destino in pares_disponibles %}
+            <a class="boton boton-secundario" style="margin:.2rem;" href="?origen={{ origen }}&destino={{ destino }}">{{ origen }} → {{ destino }}</a>
+          {% endfor %}
+        </p>
+      {% endif %}
+    </div>
+  {% endif %}
+</div>
+
+{# ---- Pares populares: vista rápida de todo lo que hay cargado ---- #}
+{% if resumen_pares %}
+<div class="tarjeta" style="margin-top:1.5rem;">
+  <h2 style="margin-top:0;">Pares disponibles</h2>
+  <div class="grilla-pares">
+    {% for par in resumen_pares %}
+      <div class="tarjeta-par-mini">
+        <div style="display:flex; align-items:center; gap:.5rem;">
+          <span style="font-size:1.3rem;">{{ par.origen.codigo|bandera }}{{ par.destino.codigo|bandera }}</span>
+          <strong>{{ par.origen.codigo }} → {{ par.destino.codigo }}</strong>
+        </div>
+        <div style="font-size:.8rem; color:#64748b;">
+          Compra {{ par.compra }} · Venta {{ par.venta }}
+        </div>
+        {% if par.cambio is not None %}
+          <div class="{% if par.cambio > 0 %}variacion-sube{% elif par.cambio < 0 %}variacion-baja{% endif %}" style="font-size:.8rem; font-weight:600;">
+            {{ par.cambio }}% desde la actualización anterior
+          </div>
+        {% endif %}
+        <a class="boton boton-secundario" style="margin-top:.4rem; text-align:center;" href="?origen={{ par.origen.codigo }}&destino={{ par.destino.codigo }}">Ver gráfico</a>
+      </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  var svg = document.getElementById("grafico-principal");
+  // OJO: antes esto era "if (!svg) return;", y ese return cortaba TODO el
+  // script de acá para abajo — incluido el botón de intercambiar y el
+  // auto-refresco — cada vez que la página no tenía gráfico (una sola tasa,
+  // o un par sin datos). Por eso el botón "andaba una vez y después no":
+  // el segundo intercambio caía justo en un par sin gráfico. Ahora el
+  // dibujo del gráfico queda adentro de este "if", pero todo lo de abajo
+  // (intercambiar, auto-refresco) corre siempre, tenga gráfico o no.
+  if (svg) {
+  var puntosCompletos = JSON.parse(document.getElementById("datos-historial").textContent)
+    .map(function (p) { return Object.assign({}, p, { fechaObj: new Date(p.fecha) }); });
+
+  var ANCHO = 640, ALTO = 260, MARGEN_IZQ = 55, MARGEN_DER = 15, MARGEN_TOP = 15, MARGEN_INF = 30;
+  var MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+  function formatearFecha(fecha) {
+    return fecha.getDate() + " " + MESES[fecha.getMonth()];
+  }
+
+  var puntosFiltrados = puntosCompletos;
+  var escalaX, escalaYCompra, escalaYVenta; // se completan en cada render()
+
+  function coordenadaX(indice) {
+    if (puntosFiltrados.length === 1) return (ANCHO - MARGEN_IZQ - MARGEN_DER) / 2 + MARGEN_IZQ;
+    return MARGEN_IZQ + (indice * (ANCHO - MARGEN_IZQ - MARGEN_DER)) / (puntosFiltrados.length - 1);
+  }
+  function coordenadaY(valor, minimo, maximo) {
+    var alto = ALTO - MARGEN_TOP - MARGEN_INF;
+    if (minimo === maximo) return MARGEN_TOP + alto / 2;
+    return MARGEN_TOP + alto - ((valor - minimo) / (maximo - minimo)) * alto;
+  }
+
+  function recalcularEstadisticas(campo, prefijoCelda) {
+    var valores = puntosFiltrados.map(function (p) { return p[campo]; });
+    var primero = valores[0], ultimo = valores[valores.length - 1];
+    var variacion = primero ? ((ultimo - primero) / primero) * 100 : 0;
+    var maximo = Math.max.apply(null, valores), minimo = Math.min.apply(null, valores);
+    var promedio = valores.reduce(function (a, b) { return a + b; }, 0) / valores.length;
+
+    var fila = document.querySelector("#tabla-estadisticas tbody tr:nth-child(" + (campo === "compra" ? 1 : 2) + ")");
+    fila.querySelector(".celda-variacion").textContent = (variacion >= 0 ? "+" : "") + variacion.toFixed(2) + "%";
+    fila.querySelector(".celda-variacion").className = "celda-variacion " + (variacion > 0 ? "variacion-sube" : variacion < 0 ? "variacion-baja" : "");
+    fila.querySelector(".celda-maximo").textContent = maximo.toFixed(2);
+    fila.querySelector(".celda-minimo").textContent = minimo.toFixed(2);
+    fila.querySelector(".celda-promedio").textContent = promedio.toFixed(2);
+
+    if (campo === "venta") {
+      var badge = document.getElementById("badge-variacion");
+      badge.textContent = (variacion >= 0 ? "+" : "") + variacion.toFixed(2) + "%";
+      badge.className = "badge-variacion " + (variacion > 0 ? "badge-sube" : variacion < 0 ? "badge-baja" : "badge-neutro");
+    }
+    return { minimo: minimo, maximo: maximo };
+  }
+
+  function dibujar() {
+    var rangoCompra = recalcularEstadisticas("compra");
+    var rangoVenta = recalcularEstadisticas("venta");
+    var minimo = Math.min(rangoCompra.minimo, rangoVenta.minimo);
+    var maximo = Math.max(rangoCompra.maximo, rangoVenta.maximo);
+    if (minimo === maximo) { minimo -= 1; maximo += 1; }
+
+    function trazarLinea(campo) {
+      return puntosFiltrados.map(function (p, i) {
+        return coordenadaX(i) + "," + coordenadaY(p[campo], minimo, maximo);
+      }).join(" ");
+    }
+
+    var svgHtml =
+      '<polyline points="' + trazarLinea("compra") + '" fill="none" stroke="#0369a1" stroke-width="2.5"></polyline>' +
+      '<polyline points="' + trazarLinea("venta") + '" fill="none" stroke="#047857" stroke-width="2.5"></polyline>';
+
+    // Eje Y: 4 niveles de referencia con línea punteada y etiqueta.
+    for (var nivel = 0; nivel <= 3; nivel++) {
+      var valor = minimo + ((maximo - minimo) * nivel) / 3;
+      var y = coordenadaY(valor, minimo, maximo);
+      svgHtml +=
+        '<line x1="' + MARGEN_IZQ + '" y1="' + y + '" x2="' + (ANCHO - MARGEN_DER) + '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"></line>' +
+        '<text x="' + (MARGEN_IZQ - 8) + '" y="' + (y + 3) + '" font-size="10" fill="#94a3b8" text-anchor="end">' + valor.toFixed(2) + '</text>';
+    }
+
+    // Eje X: hasta 5 fechas, repartidas parejo entre los puntos mostrados.
+    var pasos = Math.min(4, puntosFiltrados.length - 1);
+    for (var i = 0; i <= pasos; i++) {
+      var indice = Math.round((i * (puntosFiltrados.length - 1)) / (pasos || 1));
+      svgHtml +=
+        '<text x="' + coordenadaX(indice) + '" y="' + (ALTO - 8) + '" font-size="10" fill="#94a3b8" text-anchor="middle">' +
+        formatearFecha(puntosFiltrados[indice].fechaObj) + '</text>';
+    }
+
+    svg.innerHTML = svgHtml;
+  }
+
+  function aplicarRango(dias) {
+    if (!dias) {
+      puntosFiltrados = puntosCompletos;
+    } else {
+      var limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+      puntosFiltrados = puntosCompletos.filter(function (p) { return p.fechaObj >= limite; });
+      if (puntosFiltrados.length < 2) puntosFiltrados = puntosCompletos.slice(-2); // no dejar el gráfico vacío
+    }
+    dibujar();
+  }
+
+  document.querySelectorAll(".rango-tiempo button").forEach(function (boton) {
+    boton.addEventListener("click", function () {
+      document.querySelectorAll(".rango-tiempo button").forEach(function (b) { b.classList.remove("activo"); });
+      boton.classList.add("activo");
+      aplicarRango(Number(boton.dataset.dias));
+    });
+  });
+
+  // ---- Tooltip al pasar el mouse: valor exacto y fecha de cada punto ----
+  var tooltip = document.getElementById("tooltip-grafico");
+  svg.addEventListener("mousemove", function (evento) {
+    var caja = svg.getBoundingClientRect();
+    var xRelativo = ((evento.clientX - caja.left) / caja.width) * ANCHO;
+    var indice = Math.round(((xRelativo - MARGEN_IZQ) / (ANCHO - MARGEN_IZQ - MARGEN_DER)) * (puntosFiltrados.length - 1));
+    indice = Math.max(0, Math.min(puntosFiltrados.length - 1, indice));
+    var punto = puntosFiltrados[indice];
+    if (!punto) return;
+
+    tooltip.style.display = "block";
+    tooltip.style.left = ((coordenadaX(indice) / ANCHO) * caja.width) + "px";
+    tooltip.style.top = "20px";
+    tooltip.innerHTML =
+      "Compra " + punto.compra.toFixed(2) + " · Venta " + punto.venta.toFixed(2) + "<br>" +
+      formatearFecha(punto.fechaObj) + " " + punto.fechaObj.getFullYear();
+  });
+  svg.addEventListener("mouseleave", function () { tooltip.style.display = "none"; });
+
+  dibujar();
+  } // fin del "if (svg)"
+
+  // ---- Botón para invertir el par (De <-> A) ----
+  window.intercambiarMonedas = function () {
+    var origen = document.getElementById("id_origen");
+    var destino = document.getElementById("id_destino");
+    var temp = origen.value;
+    origen.value = destino.value;
+    destino.value = temp;
+    document.getElementById("formulario-selector").submit();
+  };
+
+  // ---- Auto-refresco: consulta las tasas vigentes cada 20 segundos y
+  //      actualiza los números en pantalla, sin recargar la página. ----
+  function actualizarTasasEnVivo() {
+    var parActual = "{{ codigo_origen }}/{{ codigo_destino }}";
+    fetch("{% url 'tasas:datos_actuales' %}")
+      .then(function (respuesta) { return respuesta.json(); })
+      .then(function (datos) {
+        var tasa = datos.tasas.find(function (t) { return t.par === parActual; });
+        if (!tasa) return;
+
+        [".valor-compra", ".valor-venta"].forEach(function (selector) {
+          document.querySelectorAll(selector).forEach(function (elemento) {
+            var valorNuevo = (selector === ".valor-compra" ? tasa.compra : tasa.venta).toFixed(2);
+            if (elemento.textContent.trim() === valorNuevo) return;
+            elemento.textContent = valorNuevo;
+            elemento.classList.remove("valor-actualizado");
+            void elemento.offsetWidth;
+            elemento.classList.add("valor-actualizado");
+          });
+        });
+      })
+      .catch(function () {});
+  }
+
+  setInterval(actualizarTasasEnVivo, 20000);
+})();
+</script>
+{% endblock %}

@@ -9,6 +9,7 @@ from django.urls import NoReverseMatch, reverse
 # "url" es el NOMBRE de la ruta (el name= de urls.py), no la dirección.
 MENU_PRINCIPAL = [
     {"texto": "Panel", "url": "usuarios:panel", "roles": []},
+    {"texto": "Cotizaciones", "url": "tasas:panel", "roles": []},
     {
         "texto": "Clientes",
         "url": "clientes:lista",
