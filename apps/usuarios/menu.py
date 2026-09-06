@@ -35,6 +35,11 @@ MENU_PRINCIPAL = [
         "url": "cuentas:lista",
         "roles": ["usuario_cliente"],
     },
+    {
+        "texto": "Simular conversion",
+        "url": "conversiones:simular",
+        "roles": ["usuario_cliente"],
+    },
 ]
 
 

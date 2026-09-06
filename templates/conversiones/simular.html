@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block titulo %}Simular conversion | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Simular conversion</h1>
+  <p>Consulta cuanto recibirias o pagarias antes de confirmar la operacion.</p>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+
+    {% for error in formulario.non_field_errors %}
+      <p class="mensaje error">{{ error }}</p>
+    {% endfor %}
+
+    <p>
+      <label for="{{ formulario.moneda_origen.id_for_label }}">{{ formulario.moneda_origen.label }}</label><br>
+      {{ formulario.moneda_origen }}
+      {% for error in formulario.moneda_origen.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.moneda_destino.id_for_label }}">{{ formulario.moneda_destino.label }}</label><br>
+      {{ formulario.moneda_destino }}
+      {% for error in formulario.moneda_destino.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.monto.id_for_label }}">{{ formulario.monto.label }}</label><br>
+      {{ formulario.monto }}
+      {% for error in formulario.monto.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+    </p>
+
+    <fieldset>
+      <legend>{{ formulario.tipo_operacion.label }}</legend>
+      {{ formulario.tipo_operacion }}
+      {% for error in formulario.tipo_operacion.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+    </fieldset>
+
+    <button class="boton" type="submit">Calcular simulacion</button>
+  </form>
+</div>
+
+{% if resultado %}
+<div class="tarjeta mt-6">
+  <h2>Resultado estimado</h2>
+  <p>{{ resultado.monto }} {{ resultado.tasa_cambio.moneda_origen.codigo }} a {{ resultado.tasa_cambio.moneda_destino.codigo }}</p>
+  <p>Tasa aplicada: {{ resultado.tasa }}</p>
+  <p>Recibirias {{ resultado.resultado }} {{ resultado.tasa_cambio.moneda_destino.codigo }}</p>
+  <p class="mensaje">Este resultado es una simulacion. La operacion todavia no fue confirmada ni registrada.</p>
+</div>
+{% endif %}
+{% endblock %}

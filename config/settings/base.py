@@ -27,6 +27,7 @@ INSTALLED_APPS = [
     "apps.monedas",
     "apps.tasa_cambios",
     "apps.tasas",
+    "apps.conversiones",
 ]
 
 MIDDLEWARE = [
