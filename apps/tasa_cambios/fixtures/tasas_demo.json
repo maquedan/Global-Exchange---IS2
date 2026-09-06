@@ -1,0 +1,198 @@
+[
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 1,
+  "fields": {
+    "moneda_origen": 1,
+    "moneda_destino": 2,
+    "tasa_compra": "7050.00",
+    "tasa_venta": "7150.00",
+    "vigente_desde": "2026-08-22T18:50:44.597Z",
+    "activo": false,
+    "creado_en": "2026-09-06T18:50:44.598Z",
+    "actualizado_en": "2026-09-06T18:50:44.598Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 2,
+  "fields": {
+    "moneda_origen": 1,
+    "moneda_destino": 2,
+    "tasa_compra": "7100.00",
+    "tasa_venta": "7200.00",
+    "vigente_desde": "2026-08-27T18:50:44.597Z",
+    "activo": false,
+    "creado_en": "2026-09-06T18:50:44.599Z",
+    "actualizado_en": "2026-09-06T18:50:44.599Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 3,
+  "fields": {
+    "moneda_origen": 1,
+    "moneda_destino": 2,
+    "tasa_compra": "7080.00",
+    "tasa_venta": "7180.00",
+    "vigente_desde": "2026-09-01T18:50:44.597Z",
+    "activo": false,
+    "creado_en": "2026-09-06T18:50:44.601Z",
+    "actualizado_en": "2026-09-06T18:50:44.601Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 4,
+  "fields": {
+    "moneda_origen": 1,
+    "moneda_destino": 2,
+    "tasa_compra": "7120.00",
+    "tasa_venta": "7220.00",
+    "vigente_desde": "2026-09-06T18:50:44.597Z",
+    "activo": true,
+    "creado_en": "2026-09-06T18:50:44.602Z",
+    "actualizado_en": "2026-09-06T18:50:44.602Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 5,
+  "fields": {
+    "moneda_origen": 3,
+    "moneda_destino": 2,
+    "tasa_compra": "7650.00",
+    "tasa_venta": "7780.00",
+    "vigente_desde": "2026-08-29T18:53:50.992Z",
+    "activo": false,
+    "creado_en": "2026-09-06T18:53:50.992Z",
+    "actualizado_en": "2026-09-06T18:53:50.992Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 6,
+  "fields": {
+    "moneda_origen": 3,
+    "moneda_destino": 2,
+    "tasa_compra": "7700.00",
+    "tasa_venta": "7820.00",
+    "vigente_desde": "2026-09-06T18:53:50.992Z",
+    "activo": true,
+    "creado_en": "2026-09-06T18:53:50.994Z",
+    "actualizado_en": "2026-09-06T18:53:50.994Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 7,
+  "fields": {
+    "moneda_origen": 4,
+    "moneda_destino": 2,
+    "tasa_compra": "1290.00",
+    "tasa_venta": "1340.00",
+    "vigente_desde": "2026-09-06T18:53:50.992Z",
+    "activo": false,
+    "creado_en": "2026-09-06T18:53:50.995Z",
+    "actualizado_en": "2026-09-06T18:53:50.995Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 8,
+  "fields": {
+    "moneda_origen": 5,
+    "moneda_destino": 2,
+    "tasa_compra": "6.80",
+    "tasa_venta": "7.10",
+    "vigente_desde": "2026-08-31T19:32:20.660Z",
+    "activo": false,
+    "creado_en": "2026-09-06T19:32:20.661Z",
+    "actualizado_en": "2026-09-06T19:32:20.661Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 9,
+  "fields": {
+    "moneda_origen": 5,
+    "moneda_destino": 2,
+    "tasa_compra": "7.05",
+    "tasa_venta": "7.35",
+    "vigente_desde": "2026-09-06T19:32:20.660Z",
+    "activo": true,
+    "creado_en": "2026-09-06T19:32:20.663Z",
+    "actualizado_en": "2026-09-06T19:32:20.663Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 10,
+  "fields": {
+    "moneda_origen": 6,
+    "moneda_destino": 2,
+    "tasa_compra": "9050.00",
+    "tasa_venta": "9200.00",
+    "vigente_desde": "2026-09-06T19:32:20.660Z",
+    "activo": false,
+    "creado_en": "2026-09-06T19:32:20.666Z",
+    "actualizado_en": "2026-09-06T19:32:20.666Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 11,
+  "fields": {
+    "moneda_origen": 7,
+    "moneda_destino": 2,
+    "tasa_compra": "47.50",
+    "tasa_venta": "49.80",
+    "vigente_desde": "2026-09-03T19:32:20.660Z",
+    "activo": false,
+    "creado_en": "2026-09-06T19:32:20.669Z",
+    "actualizado_en": "2026-09-06T19:32:20.669Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 12,
+  "fields": {
+    "moneda_origen": 7,
+    "moneda_destino": 2,
+    "tasa_compra": "48.20",
+    "tasa_venta": "50.40",
+    "vigente_desde": "2026-09-06T19:32:20.660Z",
+    "activo": true,
+    "creado_en": "2026-09-06T19:32:20.672Z",
+    "actualizado_en": "2026-09-06T19:32:20.672Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 13,
+  "fields": {
+    "moneda_origen": 4,
+    "moneda_destino": 2,
+    "tasa_compra": "1300.00",
+    "tasa_venta": "1350.00",
+    "vigente_desde": "2026-09-06T19:33:04.645Z",
+    "activo": true,
+    "creado_en": "2026-09-06T19:33:04.661Z",
+    "actualizado_en": "2026-09-06T19:33:04.661Z"
+  }
+},
+{
+  "model": "tasa_cambios.tasacambio",
+  "pk": 14,
+  "fields": {
+    "moneda_origen": 6,
+    "moneda_destino": 2,
+    "tasa_compra": "9100.00",
+    "tasa_venta": "9250.00",
+    "vigente_desde": "2026-09-06T19:33:04.645Z",
+    "activo": true,
+    "creado_en": "2026-09-06T19:33:04.666Z",
+    "actualizado_en": "2026-09-06T19:33:04.666Z"
+  }
+}
+]
