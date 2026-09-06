@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ accion }} tasa de cambio | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>{{ accion }} tasa de cambio</h1>
+  <p>Define la compra, venta y vigencia para un par de monedas.</p>
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% if formulario.non_field_errors %}
+      {{ formulario.non_field_errors }}
+    {% endif %}
+
+    <p>
+      <label for="{{ formulario.moneda_origen.id_for_label }}">Moneda de origen</label><br>
+      {{ formulario.moneda_origen }}
+      {{ formulario.moneda_origen.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.moneda_destino.id_for_label }}">Moneda de destino</label><br>
+      {{ formulario.moneda_destino }}
+      {{ formulario.moneda_destino.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.tasa_compra.id_for_label }}">Tasa de compra</label><br>
+      {{ formulario.tasa_compra }}
+      {{ formulario.tasa_compra.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.tasa_venta.id_for_label }}">Tasa de venta</label><br>
+      {{ formulario.tasa_venta }}
+      {{ formulario.tasa_venta.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.vigente_desde.id_for_label }}">Vigente desde</label><br>
+      {{ formulario.vigente_desde }}
+      {{ formulario.vigente_desde.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.activo.id_for_label }}">Estado</label><br>
+      {{ formulario.activo }} Activa
+      {{ formulario.activo.errors }}
+    </p>
+
+    <button class="boton" type="submit">{{ accion }} tasa</button>
+    <a href="{% url 'tasa_cambios:lista' %}">Cancelar</a>
+  </form>
+</div>
+{% endblock %}

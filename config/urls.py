@@ -10,4 +10,5 @@ urlpatterns = [
     path("clientes/", include("apps.clientes.urls")),  # Registro de Clientes - GEG9-11
     path("cuentas/", include("apps.cuentas.urls")),  # Registro de Cuentas de Pago - GEG9-30
     path("monedas/", include("apps.monedas.urls")), # Administración de Monedas - GEG9-26
+    path("tasas-cambio/", include("apps.tasa_cambios.urls")),
 ]
