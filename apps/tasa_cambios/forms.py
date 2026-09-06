@@ -19,8 +19,8 @@ class TasaCambioForm(forms.ModelForm):
             "activo",
         )
         widgets = {
-            "tasa_compra": forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
-            "tasa_venta": forms.NumberInput(attrs={"step": "0.000001", "min": "0.000001"}),
+            "tasa_compra": forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
+            "tasa_venta": forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
             "vigente_desde": forms.DateTimeInput(
                 format="%Y-%m-%dT%H:%M",
                 attrs={"type": "datetime-local"},

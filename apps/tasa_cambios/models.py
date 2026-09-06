@@ -22,13 +22,13 @@ class TasaCambio(models.Model):
 	)
 	tasa_compra = models.DecimalField(
 		max_digits=12,
-		decimal_places=6,
-		validators=[MinValueValidator(Decimal("0.000001"))],
+		decimal_places=2,
+		validators=[MinValueValidator(Decimal("0.01"))],
 	)
 	tasa_venta = models.DecimalField(
 		max_digits=12,
-		decimal_places=6,
-		validators=[MinValueValidator(Decimal("0.000001"))],
+		decimal_places=2,
+		validators=[MinValueValidator(Decimal("0.01"))],
 	)
 	vigente_desde = models.DateTimeField()
 	activo = models.BooleanField(default=True, db_index=True)

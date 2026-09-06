@@ -34,8 +34,8 @@ def datos_tasa(moneda_origen, moneda_destino, **cambios):
 	datos = {
 		"moneda_origen": moneda_origen.pk,
 		"moneda_destino": moneda_destino.pk,
-		"tasa_compra": "7.100000",
-		"tasa_venta": "7.200000",
+		"tasa_compra": "7.10",
+		"tasa_venta": "7.20",
 		"vigente_desde": datetime(2026, 9, 6, 10, 0).strftime("%Y-%m-%dT%H:%M"),
 		"activo": "on",
 	}
@@ -77,8 +77,8 @@ def test_formulario_rechaza_dos_tasas_activas_para_el_mismo_par(monedas):
 	TasaCambio.objects.create(
 		moneda_origen=monedas[0],
 		moneda_destino=monedas[1],
-		tasa_compra=Decimal("7.100000"),
-		tasa_venta=Decimal("7.200000"),
+		tasa_compra=Decimal("7.10"),
+		tasa_venta=Decimal("7.20"),
 		vigente_desde=timezone.now(),
 	)
 
