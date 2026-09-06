@@ -2,4 +2,5 @@ from django.apps import AppConfig
 
 
 class TasaCambiosConfig(AppConfig):
-    name = 'tasa_cambios'
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.tasa_cambios"
