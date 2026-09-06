@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block titulo %}Monedas inactivas | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <a href="{% url 'monedas:lista' %}">Volver a monedas admitidas</a>
+
+  <h1 style="margin-top:1rem;">Monedas inactivas</h1>
+
+  {% if messages %}
+    {% for message in messages %}
+      <p>{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+
+  {% if monedas %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Símbolo</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for moneda in monedas %}
+          <tr>
+            <td>{{ moneda.codigo }}</td>
+            <td>{{ moneda.nombre }}</td>
+            <td>{{ moneda.simbolo }}</td>
+            <td>
+              <form method="post" action="{% url 'monedas:activar' moneda.pk %}">
+                {% csrf_token %}
+                <button class="boton" type="submit">Reactivar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No hay monedas inactivas.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -9,17 +9,17 @@ Referencia: https://www.atlassian.com/es/git/tutorials/comparing-workflows/gitfl
 |------|-----|
 | `main` | Código estable y entregado. De aquí se generan los **tags de release**. No se trabaja directamente sobre ella. |
 | `develop` | Rama de integración. Aquí se unen las funcionalidades terminadas. |
-| `feature/IS2-<id>` | Una rama por historia de usuario. Nace de `develop` y se integra de vuelta a `develop`. |
+| `feature/GEG9-<id>` | Una rama por historia de usuario. Nace de `develop` y se integra de vuelta a `develop`. |
 
-> **Nomenclatura de las ramas de funcionalidad:** `feature/IS2-<id_historia>`
-> - `IS2`: acrónimo del proyecto en Jira.
-> - `<id_historia>`: ID de la historia de usuario (ej. `IS2-11` = Registro de Clientes).
+> **Nomenclatura de las ramas de funcionalidad:** `feature/GEG9-<id_historia>`
+> - `GEG9`: acrónimo del proyecto en Jira.
+> - `<id_historia>`: ID de la historia de usuario (ej. `GEG9-11` = Registro de Clientes).
 >
-> Ejemplo: `feature/IS2-11`
+> Ejemplo: `feature/GEG9-11`
 
 ## Convención de mensajes de commit
 
-Formato: `<tipo>(IS2-<id>): descripción breve`
+Formato: `<tipo>(GEG9-<id>): descripción breve`
 
 - `feat`: nueva funcionalidad
 - `fix`: corrección de error
@@ -28,7 +28,7 @@ Formato: `<tipo>(IS2-<id>): descripción breve`
 - `refactor`: refactorización
 - `chore`: tareas de mantenimiento
 
-Ejemplo: `feat(IS2-11): registro de clientes con segmentación`
+Ejemplo: `feat(GEG9-11): registro de clientes con segmentación`
 
 ## Flujo de una historia de usuario
 
@@ -38,19 +38,19 @@ git checkout develop
 git pull origin develop
 
 # 2. Crear la rama de la historia
-git checkout -b feature/IS2-11
+git checkout -b feature/GEG9-11
 
 # 3. Trabajar y commitear
 git add .
-git commit -m "feat(IS2-11): registro de clientes"
-git push -u origin feature/IS2-11
+git commit -m "feat(GEG9-11): registro de clientes"
+git push -u origin feature/GEG9-11
 
 # 4. Integrar a develop y cerrar la rama
 git checkout develop
-git merge --no-ff feature/IS2-11
+git merge --no-ff feature/GEG9-11
 git push origin develop
-git branch -d feature/IS2-11
-git push origin --delete feature/IS2-11
+git branch -d feature/GEG9-11
+git push origin --delete feature/GEG9-11
 ```
 
 El `--no-ff` (no fast-forward) conserva el registro del merge de la feature en el historial.
@@ -72,6 +72,6 @@ Convención de versiones (SemVer): `vMAYOR.MENOR.PARCHE` (ej. `v1.0.0` para el c
 
 ## Resumen del ciclo
 
-1. Cada historia → rama `feature/IS2-<id>` creada desde `develop`.
+1. Cada historia → rama `feature/GEG9-<id>` creada desde `develop`.
 2. Historia terminada → merge a `develop` + cierre de la rama.
 3. Fin del Sprint → `develop` a `main` + **tag de release**.

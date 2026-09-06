@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ accion }} moneda | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>{{ accion }} moneda</h1>
+  <p>Completá los datos de la divisa que estará admitida para operar.</p>
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% if formulario.non_field_errors %}
+      {{ formulario.non_field_errors }}
+    {% endif %}
+
+    <p>
+      <label for="{{ formulario.codigo.id_for_label }}">Código ISO</label><br>
+      {{ formulario.codigo }}
+      {{ formulario.codigo.errors }}
+      <small>Ejemplos: USD, EUR, PYG o BRL.</small>
+    </p>
+
+    <p>
+      <label for="{{ formulario.nombre.id_for_label }}">Nombre</label><br>
+      {{ formulario.nombre }}
+      {{ formulario.nombre.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.simbolo.id_for_label }}">Símbolo</label><br>
+      {{ formulario.simbolo }}
+      {{ formulario.simbolo.errors }}
+    </p>
+
+    <button class="boton" type="submit">{{ accion }} moneda</button>
+    <a href="{% url 'monedas:lista' %}">Cancelar</a>
+  </form>
+</div>
+{% endblock %}
