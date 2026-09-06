@@ -24,6 +24,7 @@ INSTALLED_APPS = [
     "apps.clientes",
     "apps.usuarios",
     "apps.cuentas",
+    "apps.monedas",
 ]
 
 MIDDLEWARE = [

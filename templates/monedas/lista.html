@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block titulo %}Monedas | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <div style="display:flex; gap:.75rem; flex-wrap:wrap;">
+    <a class="boton" href="{% url 'monedas:crear' %}">Registrar moneda</a>
+    <a href="{% url 'monedas:inactivas' %}">Ver monedas inactivas</a>
+  </div>
+
+  <h1 style="margin-top:1rem;">Monedas admitidas</h1>
+
+  {% if messages %}
+    {% for message in messages %}
+      <p>{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+
+  {% if monedas %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Código</th>
+          <th>Nombre</th>
+          <th>Símbolo</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for moneda in monedas %}
+          <tr>
+            <td>{{ moneda.codigo }}</td>
+            <td>{{ moneda.nombre }}</td>
+            <td>{{ moneda.simbolo }}</td>
+            <td>
+              <a class="boton" href="{% url 'monedas:editar' moneda.pk %}">
+                Modificar
+              </a>
+
+              <form
+                method="post"
+                action="{% url 'monedas:desactivar' moneda.pk %}"
+                style="display:inline"
+                onsubmit="return confirm('¿Deseás desactivar {{ moneda.codigo }}?');"
+              >
+                {% csrf_token %}
+                <button class="boton" type="submit">Desactivar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No hay monedas admitidas actualmente.</p>
+  {% endif %}
+</div>
+{% endblock %}

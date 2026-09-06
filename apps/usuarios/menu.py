@@ -14,6 +14,11 @@ MENU_PRINCIPAL = [
         "url": "clientes:lista",
         "roles": ["administrador", "analista_cambiario"],
     },
+        {
+        "texto": "Monedas",
+        "url": "monedas:lista",
+        "roles": ["administrador"],
+    },
     {
         "texto": "Roles y permisos",
         "url": "usuarios:roles_permisos",
