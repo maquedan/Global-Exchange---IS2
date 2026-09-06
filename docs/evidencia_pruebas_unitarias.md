@@ -50,6 +50,50 @@ clientes inactivos). Ver [`apps/cuentas/tests/test_cuentas.py`](../apps/cuentas/
 
 ---
 
+## Leyda Fleitas — RF016, Visualización de Tasas en Tiempo Real (GEG9-28)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | domingo 6 de septiembre de 2026, 17:03:42 (-03, hora de Paraguay) |
+| **Comando** | `docker compose exec web pytest apps/tasas/ -v` |
+| **Resultado** | **11 passed** en 3.45s |
+
+```
+$ date
+Sun Sep  6 17:03:42 -03 2026
+
+$ docker compose exec web pytest apps/tasas/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 11 items
+
+apps/tasas/tests/test_tasas.py ...........                               [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 11 passed, 1 warning in 3.45s =========================
+```
+
+Esta app no tiene modelos propios: solo lee `Moneda` (Daniela) y `TasaCambio`
+(ryutoma23) para mostrarlos. Las 11 pruebas cubren: que exija sesión iniciada,
+que sin datos muestre un mensaje claro en vez de romperse, que se pueda elegir
+un par de monedas por la URL, que un par sin tasas sugiera los que sí tienen,
+que las estadísticas (variación, máximo, mínimo, promedio) se calculen bien
+sobre el historial completo —no solo la tasa vigente—, que con un solo dato no
+intente dibujar un gráfico vacío, que la grilla de "pares disponibles" muestre
+todos sin importar cuál esté elegido, y que el endpoint del auto-refresco
+devuelva solo la tasa activa. Ver [`apps/tasas/tests/test_tasas.py`](../apps/tasas/tests/test_tasas.py).
+
+---
+
 ## Daniela Gonzalez — RF014, Administración de Monedas (GEG9-26)
 
 | Campo | Valor |
