@@ -174,6 +174,45 @@ puedan tener dos tasas activas al mismo tiempo para el mismo par de monedas.
 
 ---
 
+## Fabrizio Cardozo — RF017, Simulación de Conversión (GEG9-29)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | domingo 6 de septiembre de 2026, 18:24:55 (-03, hora de Paraguay) |
+| **Comando** | `docker compose exec web pytest apps/conversiones/ -v` |
+| **Resultado** | **5 passed** en 0.65s |
+
+```
+$ date
+Sun Sep  6 18:24:55 -03 2026
+
+$ docker compose exec web pytest apps/conversiones/ -v
+=================================================================== test session starts ===================================================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 5 items
+
+apps/conversiones/tests/test_conversiones.py .....                                                                                                  [100%]
+
+==================================================================== warnings summary =====================================================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================================================== 5 passed, 1 warning in 0.65s ===============================================================
+```
+
+Estas 5 pruebas cubren: cálculo de compra con redondeo a dos decimales,
+cálculo de venta, simulación exitosa con una tasa activa, rechazo de monedas
+iguales y restricción para usuarios sin rol `usuario_cliente`. Ver
+[`apps/conversiones/tests/test_conversiones.py`](../apps/conversiones/tests/test_conversiones.py).
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
