@@ -1,4 +1,5 @@
 from django.core.validators import RegexValidator
+from django.core.exceptions import ValidationError
 from django.db import models
 
 
@@ -28,6 +29,16 @@ class Moneda(models.Model):
 
     def desactivar(self):
         """Deja la moneda fuera de operación sin eliminar su historial."""
+        from apps.tasa_cambios.models import TasaCambio
+
+        if TasaCambio.objects.filter(
+            models.Q(moneda_origen=self) | models.Q(moneda_destino=self),
+            activo=True,
+        ).exists():
+            raise ValidationError(
+                "No se puede desactivar una moneda con tasas de cambio activas."
+            )
+
         self.activo = False
         self.save(update_fields=["activo", "actualizado_en"])
 
