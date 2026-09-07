@@ -157,10 +157,65 @@ usaste para esta historia.)*
 
 ---
 
-## 5. [Nombre del compañero] — RF015, Actualización de Tasas (GEG9-27)
+## 5. Ryuto Maehara — RF015, Actualización de Tasas (GEG9-27)
 
-*(Pendiente: completar con tus propias consultas reales a la IA, si la
-usaste para esta historia.)*
+### 5.1 «Necesito implementar el modelo `TasaCambio` respetando la estructura actual del proyecto»
+
+**Lo que se consultó.** Se pidió analizar primero las apps, modelos,
+relaciones, configuración de base de datos, migraciones y autenticación antes
+de escribir código.
+
+**Lo que aprendimos.** El proyecto ya tenía el modelo `Moneda` en
+`apps.monedas`, con los campos `activo`, `creado_en` y `actualizado_en`. La app
+`apps.tasa_cambios` existía, pero solo contenía la estructura inicial generada
+por Django.
+
+**Decisión.** Crear `TasaCambio` en `apps.tasa_cambios`, relacionándolo dos
+veces con `Moneda` mediante `moneda_origen` y `moneda_destino`. Se reutilizaron
+las convenciones existentes para estado y fechas, sin modificar `Moneda`.
+
+### 5.2 «La tasa debe conservar históricos y no permitir dos tasas activas para el mismo par»
+
+**Lo que aprendimos.** Las tasas anteriores deben conservarse como registros
+inactivos. La unicidad debía aplicarse solamente a los registros activos.
+
+**Decisión.** Usar una `UniqueConstraint` condicional para
+`moneda_origen`, `moneda_destino` y `activo=True`. También se agregaron
+restricciones para impedir que las monedas sean iguales y para exigir valores
+positivos en compra y venta.
+
+### 5.3 «Quiero una lógica y una interfaz para crear y modificar tasas de cambio»
+
+**Lo que se consultó.** Se pidió continuar con la app y agregar el flujo de
+alta y modificación siguiendo la interfaz existente.
+
+**Decisión.** Crear un `ModelForm`, vistas protegidas por roles, rutas,
+plantilla de listado y plantilla de formulario. El acceso se habilitó para los
+roles `administrador` y `analista_cambiario`, siguiendo el patrón de las otras
+apps.
+
+### 5.4 «No quiero trabajar con SQLite; ya estoy usando PostgreSQL en Docker»
+
+**Decisión.** Se dejó de usar la base temporal SQLite y se continuó la
+validación exclusivamente con PostgreSQL mediante Docker Compose. La
+migración de `TasaCambio` se aplicó en el contenedor `web`.
+
+### 5.5 «La parte de precio no quiero que tenga muchos decimales, sino solo dos»
+
+**Lo que aprendimos.** El modelo y el formulario inicialmente permitían seis
+decimales.
+
+**Decisión.** Cambiar `tasa_compra` y `tasa_venta` a `DecimalField` con
+`decimal_places=2`, valor mínimo `0.01` y controles HTML con `step="0.01"`.
+Se generó y aplicó la migración correspondiente en PostgreSQL.
+
+### 5.6 Verificaciones realizadas
+
+- `manage.py check` sin errores.
+- Migraciones de `tasa_cambios` aplicadas en PostgreSQL Docker.
+- Pruebas focalizadas de la app `tasa_cambios`: 4 pasaron.
+- Suite completa del proyecto después de implementar el CRUD: 62 pruebas
+  pasaron.
 
 ---
 
