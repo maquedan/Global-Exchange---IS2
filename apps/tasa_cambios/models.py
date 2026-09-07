@@ -78,6 +78,15 @@ class TasaCambio(models.Model):
 
 	def activar(self):
 		"""Vuelve a poner la tasa en vigencia."""
+		monedas_activas = Moneda.objects.filter(
+			pk__in=[self.moneda_origen_id, self.moneda_destino_id],
+			activo=True,
+		).count()
+		if monedas_activas != 2:
+			raise ValidationError(
+				"No se puede activar una tasa con monedas inactivas."
+			)
+
 		self.activo = True
 		self.save(update_fields=["activo", "actualizado_en"])
 

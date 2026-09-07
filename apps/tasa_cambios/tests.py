@@ -128,4 +128,33 @@ def test_usuario_autorizado_puede_activar_tasa(client, monedas):
 	tasa.refresh_from_db()
 	assert tasa.activo
 
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("moneda_inactiva", [0, 1])
+def test_no_se_puede_activar_tasa_si_una_moneda_esta_inactiva(
+	client, monedas, moneda_inactiva
+):
+	usuario = usuario_con_rol("analista_cambiario")
+	tasa = TasaCambio.objects.create(
+		moneda_origen=monedas[0],
+		moneda_destino=monedas[1],
+		tasa_compra=Decimal("7.10"),
+		tasa_venta=Decimal("7.20"),
+		vigente_desde=timezone.now(),
+		activo=False,
+	)
+	monedas[moneda_inactiva].activo = False
+	monedas[moneda_inactiva].save(update_fields=["activo", "actualizado_en"])
+	client.force_login(usuario)
+
+	respuesta = client.post(
+		reverse("tasa_cambios:activar", args=[tasa.pk]),
+		follow=True,
+	)
+
+	assert respuesta.status_code == 200
+	tasa.refresh_from_db()
+	assert not tasa.activo
+	assert "No se puede activar una tasa con monedas inactivas." in respuesta.content.decode()
+
 # Create your tests here.
