@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ accion|default:'Registrar' }} cuenta | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>{{ accion|default:'Registrar' }} cuenta de pago</h1>
+
+  {# novalidate: dejamos que Django valide, no el navegador (que muestra sus #}
+  {# propios mensajes en inglés y nunca deja ver el mensaje en español). #}
+  <form method="post" novalidate>
+    {% csrf_token %}
+
+    {% for error in formulario.non_field_errors %}
+      <p class="mensaje error">{{ error }}</p>
+    {% endfor %}
+
+    <p>
+      <label for="{{ formulario.cliente.id_for_label }}">Cliente</label><br>
+      {{ formulario.cliente }}
+      {% for error in formulario.cliente.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.tipo.id_for_label }}">Tipo</label><br>
+      {{ formulario.tipo }}
+      {% for error in formulario.tipo.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.entidad.id_for_label }}">Banco / billetera</label><br>
+      {{ formulario.entidad }}
+      {% for error in formulario.entidad.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.numero_cuenta.id_for_label }}">Número de cuenta / teléfono</label><br>
+      {{ formulario.numero_cuenta }}
+      {% for error in formulario.numero_cuenta.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.titular.id_for_label }}">Titular</label><br>
+      {{ formulario.titular }}
+      {% for error in formulario.titular.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+    </p>
+
+    <p>
+      <label for="{{ formulario.alias.id_for_label }}">Alias (opcional)</label><br>
+      {{ formulario.alias }}
+      {% for error in formulario.alias.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+    </p>
+
+    <div class="acciones mt-6">
+      <button class="boton" type="submit">Guardar</button>
+      <a class="boton boton-secundario" href="{% url 'cuentas:lista' %}">Cancelar</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

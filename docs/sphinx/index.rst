@@ -19,6 +19,10 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
 
    usuarios
    clientes
+   cuentas
+   monedas
+   tasa_cambios
+   tasas
 
 .. toctree::
    :maxdepth: 1

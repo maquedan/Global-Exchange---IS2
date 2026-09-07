@@ -23,6 +23,11 @@ INSTALLED_APPS = [
     # Apps del proyecto
     "apps.clientes",
     "apps.usuarios",
+    "apps.cuentas",
+    "apps.monedas",
+    "apps.tasa_cambios",
+    "apps.tasas",
+    "apps.conversiones",
 ]
 
 MIDDLEWARE = [

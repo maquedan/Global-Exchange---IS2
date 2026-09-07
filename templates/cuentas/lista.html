@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block titulo %}Mis medios de pago | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <a class="boton" href="{% url 'cuentas:crear' %}">Agregar cuenta</a>
+
+  <h1>Mis medios de pago</h1>
+
+  {% for message in messages %}
+    <p class="mensaje {{ message.tags }}">{{ message }}</p>
+  {% endfor %}
+
+  {% if cuentas %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Tipo</th>
+          <th>Cliente</th>
+          <th>Entidad</th>
+          <th>Número</th>
+          <th>Titular</th>
+          <th>Alias</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cuenta in cuentas %}
+          <tr>
+            <td>{{ cuenta.get_tipo_display }}</td>
+            <td>{{ cuenta.cliente }}</td>
+            <td>{{ cuenta.entidad }}</td>
+            <td>{{ cuenta.numero_cuenta }}</td>
+            <td>{{ cuenta.titular }}</td>
+            <td>{{ cuenta.alias|default:"—" }}</td>
+            <td class="acciones">
+              <a class="boton" href="{% url 'cuentas:editar' cuenta.pk %}">Modificar</a>
+              <form method="post" action="{% url 'cuentas:eliminar' cuenta.pk %}" class="form-eliminar">
+                {% csrf_token %}
+                <button type="submit" class="boton salir">Eliminar</button>
+              </form>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Todavía no registraste ninguna cuenta de pago.</p>
+  {% endif %}
+</div>
+
+{# Reemplaza el confirm() nativo del navegador (feo, sin estilo) por un #}
+{# cuadro propio, usando <dialog>: HTML puro, sin librerías de JS. #}
+<dialog id="dialogo-eliminar" class="tarjeta" style="max-width:26rem; border:0;">
+  <p>¿Seguro que querés eliminar esta cuenta de pago? Vas a poder volver a activarla más adelante.</p>
+  <div style="display:flex; gap:.75rem; justify-content:flex-end; margin-top:1rem;">
+    <button type="button" class="boton boton-secundario" data-accion="cancelar">Cancelar</button>
+    <button type="button" class="boton salir" data-accion="confirmar">Sí, eliminar</button>
+  </div>
+</dialog>
+
+<script>
+  const dialogoEliminar = document.getElementById("dialogo-eliminar");
+  let formularioAEliminar = null;
+
+  document.querySelectorAll(".form-eliminar").forEach((formulario) => {
+    formulario.addEventListener("submit", (evento) => {
+      evento.preventDefault();
+      formularioAEliminar = formulario;
+      dialogoEliminar.showModal();
+    });
+  });
+
+  dialogoEliminar.querySelector('[data-accion="cancelar"]').addEventListener("click", () => {
+    dialogoEliminar.close();
+  });
+
+  dialogoEliminar.querySelector('[data-accion="confirmar"]').addEventListener("click", () => {
+    if (formularioAEliminar) formularioAEliminar.submit();
+  });
+</script>
+{% endblock %}

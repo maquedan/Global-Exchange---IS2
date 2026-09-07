@@ -87,7 +87,7 @@
               <a class="boton" href="{% url 'clientes:editar' cliente.pk %}">Modificar</a>
               <form method="post" action="{% url 'clientes:eliminar' cliente.pk %}" onsubmit="return confirm('¿Seguro que deseas dar de baja lógicamente a este cliente?');" style="display:inline;">
                 {% csrf_token %}
-                <button type="submit" class="boton boton-secundario">Eliminar</button>
+                <button type="submit" class="boton salir">Eliminar</button>
               </form>
             </td>
           </tr>
