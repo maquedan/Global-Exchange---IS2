@@ -150,10 +150,44 @@ condición. Se verificó ejecutando el script real en Node.js, con
 
 ---
 
-## 4. [Nombre del compañero] — RF014, Administración de Monedas (GEG9-26)
+## 4. Daniela González — RF014, Administración de Monedas (GEG9-26)
 
-*(Pendiente: completar con tus propias consultas reales a la IA, si la
-usaste para esta historia.)*
+### 4.1 «¿Qué datos debe tener una moneda para poder reutilizarse en otros módulos?»
+
+**Lo que aprendimos.** El identificador de una divisa debe ser estable y único.
+Para representar correctamente una moneda admitida se necesitan su código ISO,
+nombre, símbolo y estado de disponibilidad.
+
+**Decisión.** Definir el modelo `Moneda` con los campos `codigo`, `nombre`,
+`simbolo`, `activo`, `creado_en` y `actualizado_en`. El código ISO se valida
+con exactamente tres letras mayúsculas y es único; por ejemplo: `USD`, `EUR`,
+`PYG` y `BRL`.
+
+### 4.2 «¿Debo eliminar una moneda cuando deja de poder operar?»
+
+**Lo que aprendimos.** Eliminar físicamente una moneda puede afectar tasas,
+simulaciones u operaciones históricas que la referencien en el futuro. Que una
+moneda ya no esté admitida no significa que deba desaparecer del historial.
+
+**Decisión.** Implementar baja lógica mediante el campo `activo`. La interfaz
+permite desactivar monedas para excluirlas de operaciones futuras y
+reactivarlas cuando vuelvan a estar admitidas.
+
+## 4.3 «¿Cómo proteger la gestión de monedas para que nadie más la use?»
+**Lo que aprendimos.** Ocultar un enlace del menú no protege una funcionalidad:
+un usuario podría escribir la URL directamente. La autorización debe aplicarse
+también en las vistas.
+
+**Decisión.** Reutilizar el patrón del proyecto con `login_required` y
+`requiere_administrador` en las vistas de listado, alta, edición, desactivación
+y reactivación. El menú muestra la opción Monedas únicamente al rol
+`administrador`.
+
+## 4.4 Verificaciones realizadas
+- Migración inicial de `apps.monedas` creada y aplicada en PostgreSQL mediante Docker Compose.
+- `python manage.py check` ejecutado sin errores.
+- Gestión manual comprobada desde `/monedas/`: alta, modificación, desactivación y reactivación.
+- Pruebas unitarias de Monedas ejecutadas con 6 pruebas aprobadas.
 
 ---
 
