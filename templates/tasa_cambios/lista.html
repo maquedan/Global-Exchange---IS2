@@ -39,6 +39,27 @@
             <td>{% if tasa.activo %}Activa{% else %}Inactiva{% endif %}</td>
             <td>
               <a class="boton" href="{% url 'tasa_cambios:editar' tasa.pk %}">Modificar</a>
+              {% if tasa.activo %}
+                <form
+                  method="post"
+                  action="{% url 'tasa_cambios:desactivar' tasa.pk %}"
+                  style="display:inline"
+                  onsubmit="return confirm('¿Deseás desactivar esta tasa?');"
+                >
+                  {% csrf_token %}
+                  <button class="boton" type="submit">Desactivar</button>
+                </form>
+
+              {% else %}
+                <form
+                  method="post"
+                  action="{% url 'tasa_cambios:activar' tasa.pk %}"
+                  style="display:inline"
+                >
+                  {% csrf_token %}
+                  <button class="boton" type="submit">Activar</button>
+                </form>
+              {% endif %}
             </td>
           </tr>
         {% endfor %}

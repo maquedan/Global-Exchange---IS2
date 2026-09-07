@@ -71,6 +71,17 @@ class TasaCambio(models.Model):
 		if errores:
 			raise ValidationError(errores)
 
+	def desactivar(self):
+		"""Deja la tasa fuera de vigencia sin eliminar su historial."""
+		self.activo = False
+		self.save(update_fields=["activo", "actualizado_en"])
+
+	def activar(self):
+		"""Vuelve a poner la tasa en vigencia."""
+		self.activo = True
+		self.save(update_fields=["activo", "actualizado_en"])
+
+
 	def __str__(self):
 		return f"{self.moneda_origen.codigo}/{self.moneda_destino.codigo}"
 
