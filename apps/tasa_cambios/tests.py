@@ -87,4 +87,45 @@ def test_formulario_rechaza_dos_tasas_activas_para_el_mismo_par(monedas):
 	assert not formulario.is_valid()
 	assert "moneda_origen" in formulario.errors or "__all__" in formulario.errors
 
+
+@pytest.mark.django_db
+def test_usuario_autorizado_puede_desactivar_tasa(client, monedas):
+	usuario = usuario_con_rol("analista_cambiario")
+	tasa = TasaCambio.objects.create(
+		moneda_origen=monedas[0],
+		moneda_destino=monedas[1],
+		tasa_compra=Decimal("7.10"),
+		tasa_venta=Decimal("7.20"),
+		vigente_desde=timezone.now(),
+	)
+	client.force_login(usuario)
+
+	respuesta = client.post(reverse("tasa_cambios:desactivar", args=[tasa.pk]))
+
+	assert respuesta.status_code == 302
+	assert respuesta.url == reverse("tasa_cambios:lista")
+	tasa.refresh_from_db()
+	assert not tasa.activo
+
+
+@pytest.mark.django_db
+def test_usuario_autorizado_puede_activar_tasa(client, monedas):
+	usuario = usuario_con_rol("analista_cambiario")
+	tasa = TasaCambio.objects.create(
+		moneda_origen=monedas[0],
+		moneda_destino=monedas[1],
+		tasa_compra=Decimal("7.10"),
+		tasa_venta=Decimal("7.20"),
+		vigente_desde=timezone.now(),
+		activo=False,
+	)
+	client.force_login(usuario)
+
+	respuesta = client.post(reverse("tasa_cambios:activar", args=[tasa.pk]))
+
+	assert respuesta.status_code == 302
+	assert respuesta.url == reverse("tasa_cambios:lista")
+	tasa.refresh_from_db()
+	assert tasa.activo
+
 # Create your tests here.

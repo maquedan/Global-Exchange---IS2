@@ -2,8 +2,10 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 
 from apps.monedas.models import Moneda
+from apps.tasa_cambios.models import TasaCambio
 
 
 class AdministracionMonedasTests(TestCase):
@@ -134,3 +136,41 @@ class AdministracionMonedasTests(TestCase):
         self.assertRedirects(respuesta, reverse("monedas:inactivas"))
         moneda.refresh_from_db()
         self.assertTrue(moneda.activo)
+
+    def test_no_puede_desactivar_moneda_con_tasa_activa(self):
+        moneda_origen = Moneda.objects.create(
+            codigo="USD",
+            nombre="Dólar estadounidense",
+            simbolo="$",
+        )
+        moneda_destino = Moneda.objects.create(
+            codigo="EUR",
+            nombre="Euro",
+            simbolo="€",
+        )
+        TasaCambio.objects.create(
+            moneda_origen=moneda_origen,
+            moneda_destino=moneda_destino,
+            tasa_compra="7.10",
+            tasa_venta="7.20",
+            vigente_desde=timezone.now(),
+        )
+        self.client.force_login(self.administrador)
+
+        respuesta = self.client.post(
+            reverse("monedas:desactivar", args=[moneda_origen.pk]),
+            follow=True,
+        )
+
+        self.assertEqual(
+            respuesta.redirect_chain,
+            [(reverse("monedas:lista"), 302)],
+        )
+        moneda_origen.refresh_from_db()
+        moneda_destino.refresh_from_db()
+        self.assertTrue(moneda_origen.activo)
+        self.assertTrue(moneda_destino.activo)
+        self.assertContains(
+            respuesta,
+            "No se puede desactivar una moneda con tasas de cambio activas.",
+        )

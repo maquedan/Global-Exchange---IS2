@@ -3,6 +3,7 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -95,7 +96,12 @@ def editar(request, pk):
 def desactivar(request, pk):
     """Deja una moneda fuera de operación."""
     moneda = get_object_or_404(Moneda, pk=pk)
-    moneda.desactivar()
+    try:
+        moneda.desactivar()
+    except ValidationError as error:
+        messages.error(request, error.message)
+        return redirect("monedas:lista")
+
     messages.success(request, f"{moneda.codigo} fue desactivada correctamente.")
     return redirect("monedas:lista")
 

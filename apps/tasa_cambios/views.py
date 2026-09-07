@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from apps.usuarios.menu import tiene_rol
 
@@ -70,6 +71,28 @@ def editar(request, pk):
         "tasa_cambios/formulario.html",
         {"formulario": formulario, "accion": "Modificar"},
     )
+
+
+@login_required
+@requiere_gestion_tasas
+@require_POST
+def desactivar(request, pk):
+    """Deja una tasa de cambio fuera de vigencia."""
+    tasa = get_object_or_404(TasaCambio, pk=pk)
+    tasa.desactivar()
+    messages.success(request, "Tasa de cambio desactivada correctamente.")
+    return redirect("tasa_cambios:lista")
+
+
+@login_required
+@requiere_gestion_tasas
+@require_POST
+def activar(request, pk):
+    """Vuelve a poner una tasa de cambio en vigencia."""
+    tasa = get_object_or_404(TasaCambio, pk=pk)
+    tasa.activar()
+    messages.success(request, "Tasa de cambio activada correctamente.")
+    return redirect("tasa_cambios:lista")
 from django.shortcuts import render
 
 # Create your views here.
