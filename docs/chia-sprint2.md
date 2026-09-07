@@ -253,7 +253,69 @@ Se generó y aplicó la migración correspondiente en PostgreSQL.
 
 ---
 
-## 6. [Nombre del compañero] — RF0XX, Simulación de Conversión (GEG9-29)
+## 6. Fabrizio Cardozo — RF017, Simulación de Conversión (GEG9-29)
 
-*(Pendiente: completar con tus propias consultas reales a la IA, si la
-usaste para esta historia.)*
+### 6.1 «¿Cómo organizar la simulación de conversión sin registrar todavía una operación?»
+
+**Lo que aprendimos.** Una simulación es una consulta temporal: debe recibir
+los datos del formulario, buscar una tasa activa y mostrar un resultado, pero
+no crear una cuenta, movimiento ni operación confirmada. La lógica de cálculo
+conviene separarla de la vista para poder probarla de forma independiente.
+
+**Decisión.** Crear la función `calcular_conversion` en `services.py`, usar la
+vista únicamente para coordinar el formulario y la búsqueda de la tasa, y
+mostrar el resultado en la misma pantalla de simulación.
+
+### 6.2 «¿Cómo calcular correctamente una conversión de compra y una de venta?»
+
+**Lo que aprendimos.** En una compra se multiplica el monto por
+`tasa_compra`; en una venta se divide por `tasa_venta`. Para importes
+monetarios no conviene usar `float`, porque puede introducir errores de
+precisión. `Decimal` permite conservar el valor exacto y redondear de forma
+explícita.
+
+**Decisión.** Convertir monto y tasa a `Decimal`, seleccionar la operación
+según el tipo elegido y redondear el resultado a dos decimales con
+`ROUND_HALF_UP`.
+
+### 6.3 «¿Cómo debe elegir la aplicación la tasa para el par de monedas?»
+
+**Lo que aprendimos.** La simulación no debe usar una tasa histórica o
+inactiva. La consulta tiene que filtrar por moneda de origen, moneda de
+destino y `activo=True`; si existe más de una, debe preferir la más reciente
+según `vigente_desde`.
+
+**Decisión.** Buscar la tasa activa más reciente y mostrar un error en el
+formulario cuando no exista una tasa para el par seleccionado, en vez de
+inventar un valor o usar una tasa por defecto.
+
+### 6.4 «¿Qué validaciones necesita el formulario de simulación?»
+
+**Lo que aprendimos.** El monto debe ser positivo y limitarse a dos decimales.
+Además, no tiene sentido convertir una moneda hacia sí misma, por lo que esa
+regla debe validarse en el formulario antes de consultar la base de datos.
+
+**Decisión.** Usar un `DecimalField` con mínimo `0.01`, dos decimales y
+`step="0.01"`, y agregar un error sobre la moneda de destino cuando origen y
+destino sean iguales.
+
+### 6.5 «¿Cómo restringir la simulación a los clientes?»
+
+**Lo que aprendimos.** `login_required` solo comprueba que exista una sesión;
+no comprueba que el usuario tenga el rol funcional correcto. También es
+necesario validar el rol en la vista, porque ocultar el enlace del menú no
+impide que alguien acceda directamente a la URL.
+
+**Decisión.** Proteger la vista con `login_required` y un decorador
+`requiere_cliente`, que exige el grupo `usuario_cliente` y responde con `403`
+para usuarios sin ese rol.
+
+### 6.6 Verificaciones realizadas
+
+- Pruebas focalizadas de `apps/conversiones/`: **5 pasaron**.
+- Se verificó el cálculo de compra con redondeo a dos decimales.
+- Se verificó el cálculo de venta mediante división por la tasa.
+- Se comprobó la simulación exitosa con una tasa activa y que no se cree una
+  operación persistente.
+- Se comprobó el rechazo de monedas iguales y el bloqueo de usuarios sin rol
+  `usuario_cliente`.
