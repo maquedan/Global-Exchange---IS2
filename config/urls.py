@@ -13,4 +13,5 @@ urlpatterns = [
     path("tasas-cambio/", include("apps.tasa_cambios.urls")),
     path("tasas/", include("apps.tasas.urls")),  # Visualización de Tasas - GEG9-28
     path("conversiones/", include("apps.conversiones.urls")),
+    path("comisiones/", include("apps.comisiones.urls")), # Configuración de Comisiones - GEG9-35
 ]

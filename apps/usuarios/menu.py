@@ -20,11 +20,11 @@ MENU_PRINCIPAL = [
         "url": "monedas:lista",
         "roles": ["administrador"],
     },
-        {
-            "texto": "Tasas de cambio",
-            "url": "tasa_cambios:lista",
-            "roles": ["administrador", "analista_cambiario"],
-        },
+    {
+        "texto": "Tasas de cambio",
+        "url": "tasa_cambios:lista",
+        "roles": ["administrador", "analista_cambiario"],
+    },
     {
         "texto": "Roles y permisos",
         "url": "usuarios:roles_permisos",
@@ -39,6 +39,11 @@ MENU_PRINCIPAL = [
         "texto": "Simular conversion",
         "url": "conversiones:simular",
         "roles": ["usuario_cliente"],
+    },
+    {
+        "texto": "Comisiones",
+        "url": "comisiones:lista",
+        "roles": ["administrador"],
     },
 ]
 
