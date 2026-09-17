@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ accion }} comisión | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>{{ accion }} comisión</h1>
+  <p>El porcentaje se aplicará a futuras compras y ventas de clientes de esta categoría.</p>
+
+  <form method="post">
+    {% csrf_token %}
+
+    {% if formulario.non_field_errors %}
+      <div class="mensaje error">
+        {{ formulario.non_field_errors }}
+      </div>
+    {% endif %}
+
+    <p>
+      <label for="{{ formulario.categoria.id_for_label }}">Categoría de cliente</label><br>
+      {{ formulario.categoria }}
+      {{ formulario.categoria.errors }}
+    </p>
+
+    <p>
+      <label for="{{ formulario.porcentaje.id_for_label }}">Porcentaje de comisión</label><br>
+      {{ formulario.porcentaje }}
+      <span>%</span>
+      {{ formulario.porcentaje.errors }}
+      <small>Ingresá un valor entre 0.00 y 100.00.</small>
+    </p>
+
+    <div class="acciones">
+      <button class="boton" type="submit">{{ accion }} comisión</button>
+      <a class="boton boton-secundario" href="{% url 'comisiones:lista' %}">
+        Cancelar
+      </a>
+    </div>
+  </form>
+</div>
+{% endblock %}

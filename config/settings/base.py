@@ -28,6 +28,7 @@ INSTALLED_APPS = [
     "apps.tasa_cambios",
     "apps.tasas",
     "apps.conversiones",
+    "apps.comisiones",
 ]
 
 MIDDLEWARE = [
