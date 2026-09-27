@@ -1,13 +1,16 @@
 from functools import wraps
 
+from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.shortcuts import render
+from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
 
-from .forms import SimulacionConversionForm, construir_resultado
+from .forms import CompraDivisaForm, SimulacionConversionForm, construir_resultado
+from .models import CompraDivisa
+from .services import CompraNoDisponible, confirmar_compra
 
 
 def requiere_cliente(vista):
@@ -46,3 +49,40 @@ def simular(request):
             contexto["resultado"] = construir_resultado(formulario, tasa)
 
     return render(request, "conversiones/simular.html", contexto)
+
+
+@login_required
+@requiere_cliente
+def comprar(request):
+    """Confirma una compra con los valores vigentes al enviar el formulario."""
+    formulario = CompraDivisaForm(request.POST or None, usuario=request.user)
+    if request.method == "POST" and formulario.is_valid():
+        datos = formulario.cleaned_data
+        try:
+            compra = confirmar_compra(
+                cliente_id=datos["cliente"].pk,
+                moneda_pagada=datos["moneda_pagada"],
+                moneda_adquirida=datos["moneda_adquirida"],
+                monto_pagado=datos["monto_pagado"],
+            )
+        except CompraNoDisponible as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(request, "La compra de divisas fue confirmada correctamente.")
+            return redirect("conversiones:comprobante_compra", pk=compra.pk)
+
+    return render(request, "conversiones/comprar.html", {"formulario": formulario})
+
+
+@login_required
+@requiere_cliente
+def comprobante_compra(request, pk):
+    """Muestra el comprobante solo al usuario asociado al cliente de la compra."""
+    compra = get_object_or_404(
+        CompraDivisa.objects.select_related(
+            "cliente", "moneda_pagada", "moneda_adquirida"
+        ),
+        pk=pk,
+        cliente__asociaciones_usuarios__usuario=request.user,
+    )
+    return render(request, "conversiones/comprobante_compra.html", {"compra": compra})

@@ -41,6 +41,11 @@ MENU_PRINCIPAL = [
         "roles": ["usuario_cliente"],
     },
     {
+        "texto": "Comprar divisas",
+        "url": "conversiones:comprar",
+        "roles": ["usuario_cliente"],
+    },
+    {
         "texto": "Comisiones",
         "url": "comisiones:lista",
         "roles": ["administrador"],

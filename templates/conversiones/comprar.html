@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block titulo %}Comprar divisas | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Comprar divisas</h1>
+  <p>Indicá el importe base. Al confirmar, se aplicarán la tasa y comisión vigentes en ese momento.</p>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for error in formulario.non_field_errors %}
+      <p class="mensaje error">{{ error }}</p>
+    {% endfor %}
+
+    {% for campo in formulario %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {% if campo.help_text %}<small>{{ campo.help_text }}</small>{% endif %}
+        {% for error in campo.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+      </p>
+    {% endfor %}
+
+    <button class="boton" type="submit">Confirmar compra</button>
+  </form>
+</div>
+{% endblock %}
