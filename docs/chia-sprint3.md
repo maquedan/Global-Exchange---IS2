@@ -66,3 +66,52 @@ dentro de cada transacción confirmada.
   `docs/sphinx/comisiones.rst`.
 
 ---
+
+## 2. Fabrizio Cardozo — RF018, Compra de Divisas (GEG9-31)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 2.1. «¿Cómo se obtiene la tasa y comisión aplicables al confirmar?»
+
+**Lo que aprendimos.** Una tasa futura no debe utilizarse antes de su fecha de
+vigencia, y la comisión depende de la categoría del cliente (Minorista,
+Corporativo o VIP).
+
+**Decisión.** Al confirmar, buscar la tasa activa más reciente cuyo
+`vigente_desde` sea menor o igual al momento actual, y la configuración de
+comisión de la categoría del cliente. Si falta alguna de las dos, cancelar la
+operación y mostrar un mensaje explicativo.
+
+### 2.2. «¿Por qué se guardan la tasa y la comisión dentro de la compra?»
+
+**Lo que aprendimos.** Las cotizaciones y los porcentajes de comisión pueden
+cambiar después de una operación. Consultar siempre la configuración actual
+alteraría el comprobante histórico.
+
+**Decisión.** Crear el modelo `CompraDivisa` con el monto base, porcentaje y
+monto de comisión, total a pagar, tasa aplicada y monto recibido. Esos valores
+son una fotografía de la operación confirmada.
+
+### 2.3. «¿Cómo se impide que un cliente opere para otra persona?»
+
+**Lo que aprendimos.** El rol `usuario_cliente` no basta para autorizar una
+operación: el usuario debe estar asociado al cliente seleccionado.
+
+**Decisión.** Limitar el selector de clientes a las asociaciones activas del
+usuario autenticado y restringir el comprobante al propietario de la compra.
+
+## 2.4. Verificaciones realizadas
+
+- Migración `0001_compra_divisa` generada para persistir las compras de
+  divisas.
+- Flujo disponible para el rol `usuario_cliente` en
+  `/conversiones/comprar/`.
+- Validación de monedas diferentes, cliente asociado, tasa vigente y comisión
+  configurada para la categoría del cliente.
+- Pruebas unitarias de RF018 y suite completa ejecutadas: **94 pruebas
+  aprobadas**. La evidencia está registrada en
+  `docs/evidencia_pruebas_unitarias_sprint3.md`.
+- Documentación técnica incorporada a Sphinx en
+  `docs/sphinx/conversiones.rst`.
+
+---

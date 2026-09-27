@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block titulo %}Compra confirmada | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Compra confirmada</h1>
+  <p>Operación #{{ compra.pk }} confirmada el {{ compra.confirmado_en|date:"d/m/Y H:i" }}.</p>
+
+  <h2>Detalle de la operación</h2>
+  <p>Cliente: {{ compra.cliente }}</p>
+  <p>Monto base: {{ compra.monto_pagado }} {{ compra.moneda_pagada.codigo }}</p>
+  <p>Comisión aplicada: {{ compra.porcentaje_comision }}% ({{ compra.monto_comision }} {{ compra.moneda_pagada.codigo }})</p>
+  <p>Total a pagar: {{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}</p>
+  <p>Tasa aplicada: {{ compra.tasa_aplicada }}</p>
+  <p><strong>Recibirás {{ compra.monto_recibido }} {{ compra.moneda_adquirida.codigo }}</strong></p>
+
+  <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
+</div>
+{% endblock %}
