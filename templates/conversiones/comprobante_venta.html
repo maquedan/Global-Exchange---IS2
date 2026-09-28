@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block titulo %}Venta confirmada | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Venta confirmada</h1>
+  <p>Operación #{{ venta.pk }} confirmada el {{ venta.confirmado_en|date:"d/m/Y H:i" }}.</p>
+
+  <h2>Detalle de la operación</h2>
+  <p>Cliente: {{ venta.cliente }}</p>
+  <p>Divisa entregada: {{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }}</p>
+  <p>Tasa aplicada: {{ venta.tasa_aplicada }}</p>
+  <p>Importe convertido: {{ venta.monto_convertido }} {{ venta.moneda_acreditada.codigo }}</p>
+  <p>Comisión aplicada: {{ venta.porcentaje_comision }}% ({{ venta.monto_comision }} {{ venta.moneda_acreditada.codigo }})</p>
+  <p>Destino: {{ venta.cuenta_destino.get_tipo_display }} — {{ venta.cuenta_destino.entidad }} ({{ venta.cuenta_destino.numero_cuenta }})</p>
+  <p><strong>Importe neto a acreditar: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+
+  <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}">Realizar otra venta</a>
+</div>
+{% endblock %}

@@ -8,9 +8,19 @@ from django.shortcuts import get_object_or_404, redirect, render
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
 
-from .forms import CompraDivisaForm, SimulacionConversionForm, construir_resultado
-from .models import CompraDivisa
-from .services import CompraNoDisponible, confirmar_compra
+from .forms import (
+    CompraDivisaForm,
+    SimulacionConversionForm,
+    VentaDivisaForm,
+    construir_resultado,
+)
+from .models import CompraDivisa, VentaDivisa
+from .services import (
+    CompraNoDisponible,
+    VentaNoDisponible,
+    confirmar_compra,
+    confirmar_venta,
+)
 
 
 def requiere_cliente(vista):
@@ -86,3 +96,41 @@ def comprobante_compra(request, pk):
         cliente__asociaciones_usuarios__usuario=request.user,
     )
     return render(request, "conversiones/comprobante_compra.html", {"compra": compra})
+
+
+@login_required
+@requiere_cliente
+def vender(request):
+    """Registra una venta de divisa con la cuenta de acreditación elegida."""
+    formulario = VentaDivisaForm(request.POST or None, usuario=request.user)
+    if request.method == "POST" and formulario.is_valid():
+        datos = formulario.cleaned_data
+        try:
+            venta = confirmar_venta(
+                cliente_id=datos["cliente"].pk,
+                moneda_entregada=datos["moneda_entregada"],
+                moneda_acreditada=datos["moneda_acreditada"],
+                cuenta_destino=datos["cuenta_destino"],
+                monto_entregado=datos["monto_entregado"],
+            )
+        except VentaNoDisponible as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(request, "La venta de divisas fue confirmada correctamente.")
+            return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+    return render(request, "conversiones/vender.html", {"formulario": formulario})
+
+
+@login_required
+@requiere_cliente
+def comprobante_venta(request, pk):
+    """Muestra el comprobante solo al usuario asociado al cliente de la venta."""
+    venta = get_object_or_404(
+        VentaDivisa.objects.select_related(
+            "cliente", "moneda_entregada", "moneda_acreditada", "cuenta_destino"
+        ),
+        pk=pk,
+        cliente__asociaciones_usuarios__usuario=request.user,
+    )
+    return render(request, "conversiones/comprobante_venta.html", {"venta": venta})

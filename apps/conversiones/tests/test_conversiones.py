@@ -9,11 +9,17 @@ from django.utils import timezone
 
 from apps.clientes.models import AsociacionUsuarioCliente, Cliente
 from apps.comisiones.models import ComisionCategoria
+from apps.cuentas.models import CuentaPago
 from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
 
-from apps.conversiones.models import CompraDivisa
-from apps.conversiones.services import calcular_comision, calcular_conversion
+from apps.conversiones.models import CompraDivisa, VentaDivisa
+from apps.conversiones.services import (
+    VentaNoDisponible,
+    calcular_comision,
+    calcular_conversion,
+    confirmar_venta,
+)
 
 
 @pytest.fixture
@@ -117,6 +123,18 @@ def comision_minorista(db):
     )
 
 
+@pytest.fixture
+def cuenta_destino(cliente_asociado):
+    return CuentaPago.objects.create(
+        cliente=cliente_asociado,
+        tipo=CuentaPago.Tipo.BANCARIA,
+        entidad="Banco Itaú",
+        numero_cuenta="00123456789",
+        titular="Ana Gomez",
+        alias="Cuenta principal",
+    )
+
+
 @pytest.mark.django_db
 def test_cliente_confirma_compra_y_guarda_valores_historicos(
     client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
@@ -181,6 +199,64 @@ def test_compra_rechaza_tasa_programada_para_el_futuro(
     assert respuesta.status_code == 200
     assert "No existe una tasa vigente" in str(respuesta.context["formulario"].non_field_errors())
     assert CompraDivisa.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_venta_calcula_comision_y_registra_importe_y_cuenta_destino(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista, cuenta_destino
+):
+    client.force_login(usuario_cliente)
+
+    respuesta = client.post(reverse("conversiones:vender"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_entregada": monedas[0].pk,
+        "moneda_acreditada": monedas[1].pk,
+        "cuenta_destino": cuenta_destino.pk,
+        "monto_entregado": "100.00",
+    })
+
+    venta = VentaDivisa.objects.get()
+    assert respuesta.status_code == 302
+    assert respuesta.url == reverse("conversiones:comprobante_venta", args=[venta.pk])
+    assert venta.tasa_aplicada == Decimal("7.10")
+    assert venta.monto_convertido == Decimal("710.00")
+    assert venta.porcentaje_comision == Decimal("2.50")
+    assert venta.monto_comision == Decimal("17.75")
+    assert venta.monto_acreditado == Decimal("692.25")
+    assert venta.cuenta_destino == cuenta_destino
+
+
+@pytest.mark.django_db
+def test_venta_no_permite_usar_cuenta_de_otro_cliente(
+    usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    otro_cliente = Cliente.objects.create(
+        tipo=Cliente.Tipo.FISICA,
+        nombres="Luis",
+        apellidos="Lopez",
+        documento="7654321",
+        email="luis@example.com",
+        telefono="0981222222",
+        direccion="Asuncion",
+    )
+    cuenta_ajena = CuentaPago.objects.create(
+        cliente=otro_cliente,
+        tipo=CuentaPago.Tipo.BILLETERA,
+        entidad="Tigo Money",
+        numero_cuenta="0981999999",
+        titular="Luis Lopez",
+    )
+
+    with pytest.raises(VentaNoDisponible, match="no pertenece al cliente"):
+        confirmar_venta(
+            cliente_id=cliente_asociado.pk,
+            moneda_entregada=monedas[0],
+            moneda_acreditada=monedas[1],
+            cuenta_destino=cuenta_ajena,
+            monto_entregado="100.00",
+        )
+
+    assert VentaDivisa.objects.count() == 0
 
 
 @pytest.mark.django_db

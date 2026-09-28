@@ -46,6 +46,11 @@ MENU_PRINCIPAL = [
         "roles": ["usuario_cliente"],
     },
     {
+        "texto": "Vender divisas",
+        "url": "conversiones:vender",
+        "roles": ["usuario_cliente"],
+    },
+    {
         "texto": "Comisiones",
         "url": "comisiones:lista",
         "roles": ["administrador"],
