@@ -115,3 +115,105 @@ usuario autenticado y restringir el comprobante al propietario de la compra.
   `docs/sphinx/conversiones.rst`.
 
 ---
+
+## 3. Leyda Fleitas — RF051, Cancelación de Transacción por Cambio de Cotización (GEG9-51)
+
+
+### 3.1. «Comprar/Vender ya confirman todo en un solo paso, ¿cómo se cancela algo que nunca queda pendiente?»
+
+**Lo que aprendimos.** `confirmar_compra`/`confirmar_venta` creaban la
+operación ya resuelta: no existía ningún momento intermedio entre que el
+cliente ve la cotización y que la operación queda en firme. Sin un estado
+"pendiente", no hay nada que cancelar.
+
+**Decisión.** Partir el flujo en dos pasos: `iniciar_compra`/`iniciar_venta`
+congelan la tasa y la comisión vigentes y crean la operación en estado
+PENDIENTE; una acción posterior y explícita del cliente
+(`confirmar_pago_compra`/`confirmar_pago_venta`) la pasa a CONFIRMADA.
+
+### 3.2. «Si la tasa cambió entre que se inició y se confirmó, ¿qué tasa se cobra?»
+
+**Lo que aprendimos.** Ninguna de las dos es correcta por sí sola: cobrar la
+tasa vieja ignora que ya no está vigente, y cobrar la tasa nueva rompe la
+promesa de la historia ("no verme afectado por una tasa distinta a la que
+acepté"). La única opción consistente con lo pedido es no cobrar nada.
+
+**Decisión.** Al confirmar, comparar la tasa activa actual para el par contra
+la que quedó guardada en la operación. Si difieren, cancelar automáticamente
+(`motivo_cancelacion = CAMBIO_COTIZACION`) en vez de confirmar con cualquiera
+de las dos.
+
+### 3.3. «¿Alcanza con la cancelación automática, o el cliente necesita poder cancelar él mismo?»
+
+**Lo que aprendimos.** El texto de la historia pide explícitamente "quiero
+**poder** cancelar", no solo que el sistema cancele solo. Son dos casos
+distintos: cancelación automática (la tasa cambió) y cancelación manual (el
+cliente se arrepiente antes de pagar, cambie o no la tasa).
+
+**Decisión.** Agregar también un botón de cancelar manual sobre la operación
+pendiente, con su propio motivo (`motivo_cancelacion = CLIENTE`), para
+distinguirlo en el historial de una cancelación automática.
+
+### 3.4. «¿Cómo migrar el campo `confirmado_en` sin perder las operaciones ya confirmadas de antes?»
+
+**Lo que aprendimos.** El campo `confirmado_en` (con `auto_now_add`) en
+realidad guardaba la fecha de **creación**, porque antes se creaba ya
+confirmada. Al agregar el estado, ese significado deja de ser cierto.
+
+**Decisión.** Renombrar `confirmado_en` a `creado_en` (conserva la fecha
+original) y agregar un `confirmado_en` nuevo, vacío. Una migración de datos
+marca las operaciones que ya existían como `CONFIRMADA`, con
+`confirmado_en = creado_en`, para no reescribir su historial.
+
+### 3.5. «Si nadie vuelve a confirmar, ¿la operación pendiente queda ahí para siempre?»
+
+**Lo que aprendimos.** El chequeo de "¿cambió la tasa?" solo corre cuando
+alguien hace clic en Confirmar. Si el cliente nunca vuelve a esa pantalla, la
+operación queda PENDIENTE indefinidamente con una cotización cada vez más
+vieja, sin que nadie la revise.
+
+**Decisión.** Agregar un plazo de 15 minutos desde que se inicia la
+operación. Se chequea (y se cancela sola si corresponde, con
+`motivo_cancelacion = EXPIRADA`) en tres momentos: al confirmar, al cancelar
+manualmente, y al simplemente abrir la pantalla de la operación — así una
+pendiente vencida nunca se ve como si todavía se pudiera pagar.
+
+### 3.6. «¿Cómo sabe el cliente cuánto tiempo le queda para confirmar?»
+
+**Lo que aprendimos.** El aviso de "tenés 15 minutos" es un texto fijo: no le
+dice al cliente si le quedan 14 minutos o 30 segundos. Y si se cancela por
+cambio de cotización, hoy tiene que volver a completar todo el formulario de
+cero para reintentar.
+
+**Decisión.** Dos mejoras chicas sobre lo mismo, sin agregar dependencias:
+
+- Un contador en JavaScript puro en la pantalla de revisión (mismo estilo que
+  el reloj de RF016) que se actualiza cada segundo a partir de
+  `creado_en + 15 minutos`, y recarga la página sola al llegar a cero para
+  que el servidor aplique la cancelación real.
+- Un botón "Repetir esta operación" en el comprobante (confirmada o
+  cancelada) que arma la URL del formulario con los mismos datos por query
+  string; la vista los usa como `initial` del formulario.
+
+**Bug encontrado al probarlo.** El link de "Repetir" armaba mal la URL
+(`monto_pagado=100,00` con coma) porque `{{ compra.monto_pagado }}` se
+formatea con el idioma activo. Mismo bug que ya habíamos visto en RF016 —
+se resolvió igual, con `stringformat:".2f"`.
+
+## 3.7. Verificaciones realizadas
+
+- Migración `0003_estado_pendiente_cancelacion` generada a mano (el
+  autodetector de Django no sabe expresar un `RenameField` + migración de
+  datos) y aplicada sin errores; `0004_alter_..._motivo_cancelacion` agregada
+  después para el motivo `EXPIRADA`.
+- Suite completa del proyecto ejecutada tras el cambio: **111 pruebas
+  aprobadas**, sin romper ninguna prueba existente de Compra/Venta.
+- Casos nuevos cubiertos: confirmación exitosa sin cambio de tasa,
+  cancelación automática por cambio de cotización, cancelación manual,
+  cancelación automática por vencimiento del plazo, pre-llenado del
+  formulario desde el botón "Repetir", rechazo de confirmar/cancelar una
+  operación que ya no está pendiente, y rechazo de confirmar la operación de
+  otro cliente.
+- Documentación registrada en `docs/evidencia_pruebas_unitarias_sprint3.md`.
+
+---
