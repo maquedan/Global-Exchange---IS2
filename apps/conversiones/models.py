@@ -11,12 +11,25 @@ from apps.tasa_cambios.models import TasaCambio
 
 
 class CompraDivisa(models.Model):
-    """Compra de divisas confirmada para RF018 (GEG9-31).
+    """Compra de divisas para RF018 (GEG9-31), con cancelación por cambio de
+    cotización para RF051 (GEG9-51).
 
     Los importes, la tasa y la comisión se almacenan como una fotografía de la
-    operación. Así, un cambio posterior de cotización o de categoría no altera
-    las compras que ya fueron confirmadas.
+    operación, tomada al iniciarla. Queda en estado PENDIENTE hasta que el
+    cliente confirma el pago; si la tasa vigente para el par ya cambió en ese
+    momento, la operación se cancela sola en vez de cobrar una tasa distinta a
+    la que el cliente vio.
     """
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente de confirmación"
+        CONFIRMADA = "CONFIRMADA", "Confirmada"
+        CANCELADA = "CANCELADA", "Cancelada"
+
+    class MotivoCancelacion(models.TextChoices):
+        CAMBIO_COTIZACION = "CAMBIO_COTIZACION", "La cotización cambió antes de confirmar"
+        CLIENTE = "CLIENTE", "Cancelada por el cliente"
+        EXPIRADA = "EXPIRADA", "Se venció el tiempo para confirmar"
 
     cliente = models.ForeignKey(
         Cliente,
@@ -49,10 +62,18 @@ class CompraDivisa(models.Model):
     total_a_pagar = models.DecimalField(max_digits=16, decimal_places=2)
     tasa_aplicada = models.DecimalField(max_digits=12, decimal_places=2)
     monto_recibido = models.DecimalField(max_digits=18, decimal_places=2)
-    confirmado_en = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(
+        max_length=12, choices=Estado.choices, default=Estado.PENDIENTE
+    )
+    motivo_cancelacion = models.CharField(
+        max_length=20, choices=MotivoCancelacion.choices, blank=True
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    confirmado_en = models.DateTimeField(null=True, blank=True)
+    cancelado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-confirmado_en"]
+        ordering = ["-creado_en"]
         verbose_name = "compra de divisa"
         verbose_name_plural = "compras de divisas"
         constraints = [
@@ -77,7 +98,21 @@ class CompraDivisa(models.Model):
 
 
 class VentaDivisa(models.Model):
-    """Venta confirmada con el importe neto y cuenta destino como histórico."""
+    """Venta de divisas con el importe neto y cuenta destino como histórico.
+
+    Igual que `CompraDivisa`, queda PENDIENTE hasta que el cliente confirma el
+    pago; si la cotización cambió para entonces, se cancela sola (RF051).
+    """
+
+    class Estado(models.TextChoices):
+        PENDIENTE = "PENDIENTE", "Pendiente de confirmación"
+        CONFIRMADA = "CONFIRMADA", "Confirmada"
+        CANCELADA = "CANCELADA", "Cancelada"
+
+    class MotivoCancelacion(models.TextChoices):
+        CAMBIO_COTIZACION = "CAMBIO_COTIZACION", "La cotización cambió antes de confirmar"
+        CLIENTE = "CLIENTE", "Cancelada por el cliente"
+        EXPIRADA = "EXPIRADA", "Se venció el tiempo para confirmar"
 
     cliente = models.ForeignKey(
         Cliente,
@@ -114,10 +149,18 @@ class VentaDivisa(models.Model):
     monto_convertido = models.DecimalField(max_digits=18, decimal_places=2)
     monto_acreditado = models.DecimalField(max_digits=18, decimal_places=2)
     tasa_aplicada = models.DecimalField(max_digits=12, decimal_places=2)
-    confirmado_en = models.DateTimeField(auto_now_add=True)
+    estado = models.CharField(
+        max_length=12, choices=Estado.choices, default=Estado.PENDIENTE
+    )
+    motivo_cancelacion = models.CharField(
+        max_length=20, choices=MotivoCancelacion.choices, blank=True
+    )
+    creado_en = models.DateTimeField(auto_now_add=True)
+    confirmado_en = models.DateTimeField(null=True, blank=True)
+    cancelado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
-        ordering = ["-confirmado_en"]
+        ordering = ["-creado_en"]
         verbose_name = "venta de divisa"
         verbose_name_plural = "ventas de divisas"
         constraints = [
