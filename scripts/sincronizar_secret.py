@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Copia el client secret de Keycloak al archivo .env.
+"""Sincroniza secretos y callback de OIDC con Keycloak y el archivo env.
 
 ¿Por qué hace falta? El realm que está en el repo
 (keycloak/realm-global-exchange.json) NO trae el client secret: no se guardan
@@ -7,6 +7,10 @@ secretos en Git. Entonces, cuando Keycloak importa el realm por primera vez,
 genera un secret nuevo y al azar. Este script lo lee y lo escribe en tu .env.
 
 Uso:   python3 scripts/sincronizar_secret.py
+    ENV_FILE=.env.prod python3 scripts/sincronizar_secret.py
+
+Si APP_PUBLIC_URL está definida, actualiza en Keycloak el callback y el origen
+permitidos para esa URL pública.
 
 Solo usa la biblioteca estándar de Python: no hace falta instalar nada ni
 entrar al contenedor.
@@ -26,9 +30,10 @@ CLIENT_ID = os.environ.get("OIDC_RP_CLIENT_ID", "global-exchange-web")
 ADMIN_CLIENT_ID = os.environ.get("KEYCLOAK_ADMIN_CLIENT_ID", "global-exchange-admin")
 ADMIN_USER = os.environ.get("KC_ADMIN_USER", "admin")
 ADMIN_PASS = os.environ.get("KC_ADMIN_PASSWORD", "admin")
+APP_PUBLIC_URL = os.environ.get("APP_PUBLIC_URL", "").rstrip("/")
 
 RAIZ = Path(__file__).resolve().parent.parent
-ARCHIVO_ENV = RAIZ / ".env"
+ARCHIVO_ENV = Path(os.environ.get("ENV_FILE", str(RAIZ / ".env")))
 
 
 def token_de_admin():
@@ -104,6 +109,51 @@ def asegurar_cliente_administracion(token):
     return cliente
 
 
+def configurar_callback_web(token):
+    if not APP_PUBLIC_URL:
+        return
+
+    url = urllib.parse.urlsplit(APP_PUBLIC_URL)
+    if (url.scheme not in {"http", "https"} or not url.netloc
+            or url.path not in {"", "/"} or url.query or url.fragment
+            or url.username or url.password):
+        sys.exit("APP_PUBLIC_URL debe ser un origen http(s), sin ruta ni credenciales.")
+
+    clientes = consultar(f"{REALM}/clients?clientId={CLIENT_ID}", token)
+    if not clientes:
+        sys.exit(f"No existe el client '{CLIENT_ID}' en el realm '{REALM}'.")
+
+    cliente = consultar(f"{REALM}/clients/{clientes[0]['id']}", token)
+    redirect_uri = f"{APP_PUBLIC_URL}/oidc/callback/"
+    redirect_uris = cliente.get("redirectUris", [])
+    if redirect_uri not in redirect_uris:
+        redirect_uris.append(redirect_uri)
+    cliente["redirectUris"] = redirect_uris
+
+    web_origins = cliente.get("webOrigins", [])
+    if APP_PUBLIC_URL not in web_origins:
+        web_origins.append(APP_PUBLIC_URL)
+    cliente["webOrigins"] = web_origins
+
+    attributes = cliente.setdefault("attributes", {})
+    logout_uris = [
+        uri.strip()
+        for uri in re.split(r"\s*##\s*|\s+", attributes.get("post.logout.redirect.uris", ""))
+        if uri.strip()
+    ]
+    logout_uri = f"{APP_PUBLIC_URL}/"
+    if logout_uri not in logout_uris:
+        logout_uris.append(logout_uri)
+    attributes["post.logout.redirect.uris"] = "##".join(logout_uris)
+    solicitar(
+        f"{REALM}/clients/{cliente['id']}",
+        token,
+        "PUT",
+        json.dumps(cliente).encode(),
+    )
+    print(f"Callback OIDC configurado para {APP_PUBLIC_URL}.")
+
+
 def main():
     try:
         token = token_de_admin()
@@ -120,6 +170,7 @@ def main():
     secret = secret_de(CLIENT_ID)
     asegurar_cliente_administracion(token)
     secret_admin = secret_de(ADMIN_CLIENT_ID)
+    configurar_callback_web(token)
 
     if not ARCHIVO_ENV.exists():
         sys.exit(f"No encuentro {ARCHIVO_ENV}. Copiá .env.example a .env primero.")

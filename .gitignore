@@ -29,3 +29,6 @@ node_modules/
 
 # Documentación generada por Sphinx (se regenera con un comando)
 docs/sphinx/_build/
+
+# env producción
+.env.prod

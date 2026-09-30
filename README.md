@@ -55,9 +55,19 @@ El archivo ya compilado se incluye en el repositorio y Django lo recoge desde
 
 ## Producción
 ```bash
-docker compose -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 (Requiere un archivo `.env.prod` con las variables de producción.)
+Sincronizá el callback OIDC y los secretos del realm, y recargá Django:
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps \
+   -v "$PWD/.env.prod:/app/.env.prod" \
+   -e ENV_FILE=/app/.env.prod \
+   -e KEYCLOAK_URL=http://keycloak:8080 \
+   web python scripts/sincronizar_secret.py
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate web nginx
+```
+La aplicación queda disponible en la URL de `APP_PUBLIC_URL` a través de Nginx.
 
 ## Estructura
 ```
