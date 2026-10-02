@@ -248,3 +248,83 @@ def cancelar_venta_view(request, pk):
 
     messages.success(request, "Cancelaste la operación.")
     return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+@login_required
+@requiere_cliente
+def historial(request):
+    """Muestra en modo consulta las transacciones confirmadas del usuario."""
+
+    compras = (
+        CompraDivisa.objects.filter(
+            cliente__asociaciones_usuarios__usuario=request.user,
+            estado=CompraDivisa.Estado.CONFIRMADA,
+        )
+        .select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        )
+        .distinct()
+    )
+
+    ventas = (
+        VentaDivisa.objects.filter(
+            cliente__asociaciones_usuarios__usuario=request.user,
+            estado=VentaDivisa.Estado.CONFIRMADA,
+        )
+        .select_related(
+            "cliente",
+            "moneda_entregada",
+            "moneda_acreditada",
+            "cuenta_destino",
+        )
+        .distinct()
+    )
+
+    transacciones = []
+
+    for compra in compras:
+        transacciones.append(
+            {
+                "id": compra.pk,
+                "tipo": "Compra",
+                "fecha": compra.confirmado_en,
+                "cliente": compra.cliente,
+                "origen": compra.moneda_pagada,
+                "destino": compra.moneda_adquirida,
+                "monto_origen": compra.total_a_pagar,
+                "monto_final": compra.monto_recibido,
+                "comision": compra.monto_comision,
+                "moneda_comision": compra.moneda_pagada,
+                "porcentaje_comision": compra.porcentaje_comision,
+                "tasa": compra.tasa_aplicada,
+                "estado": compra.get_estado_display(),
+            }
+        )
+
+    for venta in ventas:
+        transacciones.append(
+            {
+                "id": venta.pk,
+                "tipo": "Venta",
+                "fecha": venta.confirmado_en,
+                "cliente": venta.cliente,
+                "origen": venta.moneda_entregada,
+                "destino": venta.moneda_acreditada,
+                "monto_origen": venta.monto_entregado,
+                "monto_final": venta.monto_acreditado,
+                "comision": venta.monto_comision,
+                "moneda_comision": venta.moneda_acreditada,
+                "porcentaje_comision": venta.porcentaje_comision,
+                "tasa": venta.tasa_aplicada,
+                "estado": venta.get_estado_display(),
+            }
+        )
+
+    transacciones.sort(key=lambda transaccion: transaccion["fecha"], reverse=True)
+
+    return render(
+        request,
+        "conversiones/historial.html",
+        {"transacciones": transacciones},
+    )

@@ -14,4 +14,5 @@ urlpatterns = [
     path("ventas/<int:pk>/", views.comprobante_venta, name="comprobante_venta"),
     path("ventas/<int:pk>/confirmar/", views.confirmar_venta_view, name="confirmar_venta"),
     path("ventas/<int:pk>/cancelar/", views.cancelar_venta_view, name="cancelar_venta"),
+    path("historial/", views.historial, name="historial"),
 ]

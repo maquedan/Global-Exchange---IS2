@@ -623,3 +623,168 @@ def test_comprobante_de_compra_cancelada_ofrece_repetir_la_operacion(
     contenido = respuesta.content.decode()
     assert "Repetir esta operación" in contenido
     assert f"monto_pagado={compra.monto_pagado}" in contenido.replace("&amp;", "&")
+
+# --------------------------------------------------------------------------
+# RF030 (GEG9-34) — Consulta de historial de transacciones
+# --------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_historial_muestra_solo_transacciones_confirmadas(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+    cuenta_destino,
+):
+    client.force_login(usuario_cliente)
+
+    # Compra confirmada.
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra_confirmada = CompraDivisa.objects.get(
+        estado=CompraDivisa.Estado.PENDIENTE
+    )
+    client.post(
+        reverse("conversiones:confirmar_compra", args=[compra_confirmada.pk])
+    )
+
+    # Venta confirmada.
+    client.post(reverse("conversiones:vender"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_entregada": monedas[0].pk,
+        "moneda_acreditada": monedas[1].pk,
+        "cuenta_destino": cuenta_destino.pk,
+        "monto_entregado": "100.00",
+    })
+    venta_confirmada = VentaDivisa.objects.get(
+        estado=VentaDivisa.Estado.PENDIENTE
+    )
+    client.post(
+        reverse("conversiones:confirmar_venta", args=[venta_confirmada.pk])
+    )
+
+    # Una operación pendiente no debe aparecer.
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "50.00",
+    })
+    compra_pendiente = CompraDivisa.objects.get(
+        estado=CompraDivisa.Estado.PENDIENTE
+    )
+
+    # Una operación cancelada tampoco debe aparecer.
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "25.00",
+    })
+    compra_cancelada = (
+        CompraDivisa.objects.filter(
+            estado=CompraDivisa.Estado.PENDIENTE
+        )
+    .order_by("-pk")
+    .first()
+    )
+    client.post(
+        reverse("conversiones:cancelar_compra", args=[compra_cancelada.pk])
+    )
+
+    respuesta = client.get(reverse("conversiones:historial"))
+
+    assert respuesta.status_code == 200
+
+    transacciones = respuesta.context["transacciones"]
+    identificadores = {
+        (transaccion["tipo"], transaccion["id"])
+        for transaccion in transacciones
+    }
+
+    assert identificadores == {
+        ("Compra", compra_confirmada.pk),
+        ("Venta", venta_confirmada.pk),
+    }
+    assert compra_pendiente.pk not in {
+        transaccion["id"] for transaccion in transacciones
+    }
+    assert compra_cancelada.pk not in {
+        transaccion["id"] for transaccion in transacciones
+    }
+
+
+@pytest.mark.django_db
+def test_historial_no_muestra_transacciones_de_otro_cliente(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+    django_user_model,
+):
+    otro_usuario = django_user_model.objects.create_user(
+        username="otro-cliente-historial"
+    )
+    grupo, _ = Group.objects.get_or_create(name="usuario_cliente")
+    otro_usuario.groups.add(grupo)
+
+    otro_cliente = Cliente.objects.create(
+        tipo=Cliente.Tipo.FISICA,
+        categoria=Cliente.Categoria.MINORISTA,
+        nombres="Luis",
+        apellidos="Lopez",
+        documento="9876543",
+        email="luis@example.com",
+        telefono="0981222222",
+        direccion="Asuncion",
+    )
+    AsociacionUsuarioCliente.objects.create(
+        usuario=otro_usuario,
+        cliente=otro_cliente,
+    )
+
+    compra_ajena = CompraDivisa.objects.create(
+        cliente=otro_cliente,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        tasa_cambio=tasa,
+        monto_pagado=Decimal("100.00"),
+        porcentaje_comision=Decimal("2.50"),
+        monto_comision=Decimal("2.50"),
+        total_a_pagar=Decimal("102.50"),
+        tasa_aplicada=Decimal("7.10"),
+        monto_recibido=Decimal("710.00"),
+        estado=CompraDivisa.Estado.CONFIRMADA,
+        confirmado_en=timezone.now(),
+    )
+
+    client.force_login(usuario_cliente)
+    respuesta = client.get(reverse("conversiones:historial"))
+
+    assert respuesta.status_code == 200
+    assert compra_ajena.pk not in {
+        transaccion["id"]
+        for transaccion in respuesta.context["transacciones"]
+    }
+
+
+@pytest.mark.django_db
+def test_usuario_sin_rol_cliente_no_puede_consultar_historial(
+    client, django_user_model
+):
+    usuario = django_user_model.objects.create_user(
+        username="sin-rol-historial"
+    )
+    client.force_login(usuario)
+
+    respuesta = client.get(reverse("conversiones:historial"))
+
+    assert respuesta.status_code == 403

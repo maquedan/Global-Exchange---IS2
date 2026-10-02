@@ -55,6 +55,11 @@ MENU_PRINCIPAL = [
         "url": "comisiones:lista",
         "roles": ["administrador"],
     },
+    {
+    "texto": "Historial de transacciones",
+    "url": "conversiones:historial",
+    "roles": ["usuario_cliente"],
+    },
 ]
 
 
