@@ -217,3 +217,60 @@ se resolvió igual, con `stringformat:".2f"`.
 - Documentación registrada en `docs/evidencia_pruebas_unitarias_sprint3.md`.
 
 ---
+
+## 4. Daniela Gonzalez — RF030, Consulta de Historial de Transacciones (GEG9-34)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 4.1. «¿Qué operaciones deben aparecer en el historial?»
+
+**Lo que aprendimos.** Una operación pendiente todavía no fue realizada y una
+operación cancelada no llegó a concretarse. Incluirlas como historial de
+operaciones realizadas podría confundir al usuario.
+
+**Decisión.** Mostrar exclusivamente compras y ventas con estado
+`CONFIRMADA`. Las operaciones pendientes y canceladas permanecen disponibles
+en sus comprobantes respectivos, pero no integran el historial de RF030.
+
+### 4.2. «¿Cómo unificar compras y ventas en una sola consulta?»
+
+**Lo que aprendimos.** Compra y Venta se almacenan en modelos distintos y cada
+uno usa nombres de campos propios, aunque ambas representan transacciones con
+fecha, cliente, monedas, tasa, comisión e importe final.
+
+**Decisión.** Consultar ambos modelos por separado, transformar cada resultado
+en una estructura común dentro de la vista y ordenarlos de forma descendente
+por `confirmado_en`. La plantilla recibe una única lista de transacciones.
+
+### 4.3. «¿Cómo se protege la privacidad de las transacciones?»
+
+**Lo que aprendimos.** Un usuario con rol de cliente puede estar asociado a uno
+o más clientes, pero no debe consultar operaciones de clientes ajenos.
+
+**Decisión.** Restringir la vista al rol `usuario_cliente` y filtrar compras y
+ventas mediante `cliente__asociaciones_usuarios__usuario=request.user`. De esa
+forma, cada usuario solo consulta las operaciones de sus clientes asociados.
+
+### 4.4. «¿Por qué la comisión no siempre se expresa en la misma moneda?»
+
+**Lo que aprendimos.** En una compra la comisión forma parte del importe pagado,
+mientras que en una venta se descuenta del importe convertido antes de
+acreditarlo en la moneda destino.
+
+**Decisión.** Conservar y mostrar la moneda de comisión correspondiente a cada
+tipo de transacción: moneda pagada para compras y moneda acreditada para
+ventas.
+
+## 4.5. Verificaciones realizadas
+
+- Vista de solo lectura incorporada en `/conversiones/historial/`.
+- Enlace agregado al menú para usuarios con rol `usuario_cliente`.
+- Flujo manual validado: compra confirmada visible en el historial.
+- Pruebas automatizadas ejecutadas: **30 pruebas aprobadas** en
+  `apps/conversiones/tests/test_conversiones.py`.
+- Casos cubiertos: transacciones confirmadas, exclusión de pendientes y
+  canceladas, aislamiento de datos entre clientes y control de acceso por rol.
+- No fue necesaria una migración: RF030 consulta los datos históricos ya
+  persistidos por Compra y Venta.
+
+---

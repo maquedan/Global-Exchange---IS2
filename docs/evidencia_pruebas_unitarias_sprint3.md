@@ -139,6 +139,46 @@ divisas.
 
 ---
 
+## Daniela González — RF030, Consulta de Historial (GEG9-34)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 1 de octubre de 2026, 23:37:19 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_conversiones.py` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/ -v` |
+| **Resultado** | **30 passed** en 5.00s |
+
+```text
+$ date
+Thu Oct  1 23:37:19 -03 2026
+
+$ docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v
+===================================== test session starts ======================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 30
+items
+
+apps/conversiones/tests/test_conversiones.py ..............................              [100%]
+
+======================================= warnings summary =======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ 30 passed, 1 warning in 5.00s =================================
+```
+Las pruebas verifican que el historial muestre únicamente compras y
+ventas confirmadas del cliente asociado al usuario autenticado; excluya
+operaciones pendientes y canceladas; no exponga transacciones de otros
+clientes; y rechace el acceso de usuarios sin el rol usuario_cliente.
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
