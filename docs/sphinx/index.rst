@@ -23,6 +23,8 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    monedas
    tasa_cambios
    tasas
+   conversiones
+   comisiones
 
 .. toctree::
    :maxdepth: 1
