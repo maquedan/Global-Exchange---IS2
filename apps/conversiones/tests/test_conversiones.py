@@ -13,7 +13,9 @@ from apps.cuentas.models import CuentaPago
 from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
 
-from apps.conversiones.models import CompraDivisa, VentaDivisa
+from django.db import IntegrityError
+
+from apps.conversiones.models import CambioEstado, CompraDivisa, VentaDivisa
 from apps.conversiones.services import (
     CompraNoConfirmable,
     VentaNoConfirmable,
@@ -788,3 +790,223 @@ def test_usuario_sin_rol_cliente_no_puede_consultar_historial(
     respuesta = client.get(reverse("conversiones:historial"))
 
     assert respuesta.status_code == 403
+
+
+# --------------------------------------------------------------------------
+# RF023 (GEG9-37) — Trazabilidad de estados
+# --------------------------------------------------------------------------
+
+@pytest.mark.django_db
+def test_iniciar_compra_registra_la_transicion_nada_a_pendiente(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+
+    cambios = list(CambioEstado.objects.filter(compra=compra))
+    assert len(cambios) == 1
+    assert cambios[0].estado_anterior == ""
+    assert cambios[0].estado_nuevo == CompraDivisa.Estado.PENDIENTE
+    assert cambios[0].venta is None
+
+
+@pytest.mark.django_db
+def test_iniciar_venta_registra_la_transicion_nada_a_pendiente(
+    client, usuario_cliente, cliente_asociado, monedas, cuenta_destino, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:vender"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_entregada": monedas[0].pk,
+        "moneda_acreditada": monedas[1].pk,
+        "cuenta_destino": cuenta_destino.pk,
+        "monto_entregado": "100.00",
+    })
+    venta = VentaDivisa.objects.get()
+
+    cambios = list(CambioEstado.objects.filter(venta=venta))
+    assert len(cambios) == 1
+    assert cambios[0].estado_anterior == ""
+    assert cambios[0].estado_nuevo == VentaDivisa.Estado.PENDIENTE
+    assert cambios[0].compra is None
+
+
+@pytest.mark.django_db
+def test_confirmar_pago_registra_la_transicion_pendiente_a_confirmada(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+
+    confirmar_pago_compra(pk=compra.pk, usuario=usuario_cliente)
+
+    cambio = CambioEstado.objects.filter(compra=compra).latest("fecha")
+    assert cambio.estado_anterior == CompraDivisa.Estado.PENDIENTE
+    assert cambio.estado_nuevo == CompraDivisa.Estado.CONFIRMADA
+    assert cambio.usuario == usuario_cliente
+
+
+@pytest.mark.django_db
+def test_cancelar_por_cliente_registra_el_motivo(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+
+    cancelar_compra(pk=compra.pk, usuario=usuario_cliente)
+
+    cambio = CambioEstado.objects.filter(compra=compra).latest("fecha")
+    assert cambio.estado_anterior == CompraDivisa.Estado.PENDIENTE
+    assert cambio.estado_nuevo == CompraDivisa.Estado.CANCELADA
+    assert cambio.motivo == "Cancelada por el cliente."
+    assert cambio.usuario == usuario_cliente
+
+
+@pytest.mark.django_db
+def test_cancelar_por_cambio_de_cotizacion_registra_el_motivo(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+    _cambiar_cotizacion(tasa, Decimal("7.50"), Decimal("7.60"))
+
+    confirmar_pago_compra(pk=compra.pk, usuario=usuario_cliente)
+
+    cambio = CambioEstado.objects.filter(compra=compra).latest("fecha")
+    assert cambio.estado_anterior == CompraDivisa.Estado.PENDIENTE
+    assert cambio.estado_nuevo == CompraDivisa.Estado.CANCELADA
+    assert cambio.motivo == "La cotización cambió antes de confirmar."
+
+
+@pytest.mark.django_db
+def test_cancelar_por_expiracion_registra_el_motivo(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+    compra.creado_en = timezone.now() - timedelta(minutes=16)
+    compra.save(update_fields=["creado_en"])
+
+    confirmar_pago_compra(pk=compra.pk, usuario=usuario_cliente)
+
+    cambio = CambioEstado.objects.filter(compra=compra).latest("fecha")
+    assert cambio.estado_anterior == CompraDivisa.Estado.PENDIENTE
+    assert cambio.estado_nuevo == CompraDivisa.Estado.CANCELADA
+    assert cambio.motivo == "Se venció el tiempo para confirmar."
+    assert cambio.usuario is None  # lo cancela el sistema, no una persona
+
+
+@pytest.mark.django_db
+def test_cambio_estado_rechaza_un_registro_sin_operacion():
+    with pytest.raises(IntegrityError):
+        CambioEstado.objects.create(estado_anterior="", estado_nuevo="PENDIENTE")
+
+
+@pytest.mark.django_db
+def test_cambio_estado_rechaza_un_registro_con_las_dos_operaciones(
+    cliente_asociado, monedas, tasa, comision_minorista, cuenta_destino
+):
+    compra = CompraDivisa.objects.create(
+        cliente=cliente_asociado,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        tasa_cambio=tasa,
+        monto_pagado=Decimal("100.00"),
+        porcentaje_comision=Decimal("2.50"),
+        monto_comision=Decimal("2.50"),
+        total_a_pagar=Decimal("102.50"),
+        tasa_aplicada=Decimal("7.10"),
+        monto_recibido=Decimal("710.00"),
+    )
+    venta = VentaDivisa.objects.create(
+        cliente=cliente_asociado,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        tasa_cambio=tasa,
+        cuenta_destino=cuenta_destino,
+        monto_entregado=Decimal("100.00"),
+        porcentaje_comision=Decimal("2.50"),
+        monto_comision=Decimal("2.50"),
+        monto_convertido=Decimal("710.00"),
+        monto_acreditado=Decimal("707.50"),
+        tasa_aplicada=Decimal("7.10"),
+    )
+
+    with pytest.raises(IntegrityError):
+        CambioEstado.objects.create(
+            compra=compra, venta=venta, estado_anterior="", estado_nuevo="PENDIENTE"
+        )
+
+
+@pytest.mark.django_db
+def test_comprobante_de_compra_muestra_la_linea_de_tiempo(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+    confirmar_pago_compra(pk=compra.pk, usuario=usuario_cliente)
+
+    respuesta = client.get(reverse("conversiones:comprobante_compra", args=[compra.pk]))
+
+    assert "Línea de tiempo" in respuesta.content.decode()
+    assert "Pagada" in respuesta.content.decode()
+
+
+@pytest.mark.django_db
+def test_comprobante_no_lo_puede_ver_un_usuario_que_no_es_dueno_de_la_operacion(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista,
+    django_user_model,
+):
+    client.force_login(usuario_cliente)
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": cliente_asociado.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+    compra = CompraDivisa.objects.get()
+
+    otro_usuario = django_user_model.objects.create_user(username="otro-cliente-rf023")
+    grupo, _ = Group.objects.get_or_create(name="usuario_cliente")
+    otro_usuario.groups.add(grupo)
+    client.force_login(otro_usuario)
+
+    respuesta = client.get(reverse("conversiones:comprobante_compra", args=[compra.pk]))
+
+    assert respuesta.status_code == 404
