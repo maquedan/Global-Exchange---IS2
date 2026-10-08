@@ -29,7 +29,6 @@ INSTALLED_APPS = [
     "apps.tasas",
     "apps.conversiones",
     "apps.comisiones",
-    "apps.notificaciones",
 ]
 
 MIDDLEWARE = [
