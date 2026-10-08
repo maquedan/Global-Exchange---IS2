@@ -9,7 +9,7 @@ from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.tasa_cambios.models import TasaCambio
 
-from .models import CompraDivisa, VentaDivisa
+from .models import CambioEstado, CompraDivisa, VentaDivisa
 
 
 DOS_DECIMALES = Decimal("0.01")
@@ -23,6 +23,23 @@ MINUTOS_EXPIRACION_PENDIENTE = 15
 def _vencio_el_plazo(operacion):
     limite = operacion.creado_en + timedelta(minutes=MINUTOS_EXPIRACION_PENDIENTE)
     return timezone.now() > limite
+
+
+def registrar_cambio_estado(operacion, estado_anterior, estado_nuevo, *, motivo="", usuario=None):
+    """Deja constancia de una transición de estado (RF023 — GEG9-37).
+
+    `estado_anterior` vacío significa que la operación recién se crea (todavía
+    no tenía ningún estado previo). Todo cambio de `.estado` en este archivo
+    debe pasar por acá, para que el historial quede completo.
+    """
+    campo_operacion = "compra" if isinstance(operacion, CompraDivisa) else "venta"
+    return CambioEstado.objects.create(
+        estado_anterior=estado_anterior,
+        estado_nuevo=estado_nuevo,
+        motivo=motivo,
+        usuario=usuario,
+        **{campo_operacion: operacion},
+    )
 
 
 def calcular_conversion(monto, tasa, tipo_operacion):
@@ -97,7 +114,7 @@ def iniciar_compra(*, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado)
     total_a_pagar = monto_pagado + monto_comision
     monto_recibido = calcular_conversion(monto_pagado, tasa.tasa_compra, "compra")
 
-    return CompraDivisa.objects.create(
+    compra = CompraDivisa.objects.create(
         cliente=cliente,
         moneda_pagada=moneda_pagada,
         moneda_adquirida=moneda_adquirida,
@@ -109,6 +126,8 @@ def iniciar_compra(*, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado)
         tasa_aplicada=tasa.tasa_compra,
         monto_recibido=monto_recibido,
     )
+    registrar_cambio_estado(compra, "", compra.estado)
+    return compra
 
 
 @transaction.atomic
@@ -119,10 +138,15 @@ def expirar_compra_si_corresponde(compra):
     que una cotización vieja nunca quede disponible para pagar (RF051).
     """
     if compra.estado == CompraDivisa.Estado.PENDIENTE and _vencio_el_plazo(compra):
+        estado_anterior = compra.estado
         compra.estado = CompraDivisa.Estado.CANCELADA
         compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.EXPIRADA
         compra.cancelado_en = timezone.now()
         compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            compra, estado_anterior, compra.estado,
+            motivo="Se venció el tiempo para confirmar.",
+        )
     return compra
 
 
@@ -160,15 +184,22 @@ def confirmar_pago_compra(*, pk, usuario):
     )
 
     if tasa_vigente is None or tasa_vigente.pk != compra.tasa_cambio_id:
+        estado_anterior = compra.estado
         compra.estado = CompraDivisa.Estado.CANCELADA
         compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.CAMBIO_COTIZACION
         compra.cancelado_en = timezone.now()
         compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            compra, estado_anterior, compra.estado,
+            motivo="La cotización cambió antes de confirmar.", usuario=usuario,
+        )
         return compra
 
+    estado_anterior = compra.estado
     compra.estado = CompraDivisa.Estado.CONFIRMADA
     compra.confirmado_en = timezone.now()
     compra.save(update_fields=["estado", "confirmado_en"])
+    registrar_cambio_estado(compra, estado_anterior, compra.estado, usuario=usuario)
     return compra
 
 
@@ -189,10 +220,15 @@ def cancelar_compra(*, pk, usuario):
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         return compra
 
+    estado_anterior = compra.estado
     compra.estado = CompraDivisa.Estado.CANCELADA
     compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.CLIENTE
     compra.cancelado_en = timezone.now()
     compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+    registrar_cambio_estado(
+        compra, estado_anterior, compra.estado,
+        motivo="Cancelada por el cliente.", usuario=usuario,
+    )
     return compra
 
 
@@ -253,7 +289,7 @@ def iniciar_venta(
     monto_convertido = calcular_conversion(monto_entregado, tasa.tasa_compra, "compra")
     monto_comision = calcular_comision(monto_convertido, comision.porcentaje)
 
-    return VentaDivisa.objects.create(
+    venta = VentaDivisa.objects.create(
         cliente=cliente,
         moneda_entregada=moneda_entregada,
         moneda_acreditada=moneda_acreditada,
@@ -266,16 +302,23 @@ def iniciar_venta(
         monto_acreditado=monto_convertido - monto_comision,
         tasa_aplicada=tasa.tasa_compra,
     )
+    registrar_cambio_estado(venta, "", venta.estado)
+    return venta
 
 
 @transaction.atomic
 def expirar_venta_si_corresponde(venta):
     """Cancela una venta pendiente si superó el tiempo límite para confirmar."""
     if venta.estado == VentaDivisa.Estado.PENDIENTE and _vencio_el_plazo(venta):
+        estado_anterior = venta.estado
         venta.estado = VentaDivisa.Estado.CANCELADA
         venta.motivo_cancelacion = VentaDivisa.MotivoCancelacion.EXPIRADA
         venta.cancelado_en = timezone.now()
         venta.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            venta, estado_anterior, venta.estado,
+            motivo="Se venció el tiempo para confirmar.",
+        )
     return venta
 
 
@@ -313,15 +356,22 @@ def confirmar_pago_venta(*, pk, usuario):
     )
 
     if tasa_vigente is None or tasa_vigente.pk != venta.tasa_cambio_id:
+        estado_anterior = venta.estado
         venta.estado = VentaDivisa.Estado.CANCELADA
         venta.motivo_cancelacion = VentaDivisa.MotivoCancelacion.CAMBIO_COTIZACION
         venta.cancelado_en = timezone.now()
         venta.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            venta, estado_anterior, venta.estado,
+            motivo="La cotización cambió antes de confirmar.", usuario=usuario,
+        )
         return venta
 
+    estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CONFIRMADA
     venta.confirmado_en = timezone.now()
     venta.save(update_fields=["estado", "confirmado_en"])
+    registrar_cambio_estado(venta, estado_anterior, venta.estado, usuario=usuario)
     return venta
 
 
@@ -342,8 +392,13 @@ def cancelar_venta(*, pk, usuario):
     if venta.estado == VentaDivisa.Estado.CANCELADA:
         return venta
 
+    estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CANCELADA
     venta.motivo_cancelacion = VentaDivisa.MotivoCancelacion.CLIENTE
     venta.cancelado_en = timezone.now()
     venta.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+    registrar_cambio_estado(
+        venta, estado_anterior, venta.estado,
+        motivo="Cancelada por el cliente.", usuario=usuario,
+    )
     return venta
