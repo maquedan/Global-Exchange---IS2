@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block titulo %}Notificaciones | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Notificaciones</h1>
+  <p>Te avisamos acá cuando cambia una tasa de cambio.</p>
+
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  {% if notificaciones %}
+    <ul class="lista-notificaciones">
+      {% for notificacion in notificaciones %}
+        <li class="notificacion-item{% if not notificacion.leida %} no-leida{% endif %}">
+          <span class="notificacion-fecha">{{ notificacion.creada_en|date:"d/m/Y H:i" }}</span>
+          <p class="notificacion-mensaje">{{ notificacion.mensaje }}</p>
+          {% if not notificacion.leida %}
+            <form method="post" action="{% url 'notificaciones:marcar_leida' notificacion.pk %}">
+              {% csrf_token %}
+              <button class="boton boton-secundario" type="submit">Marcar como leída</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>Todavía no tenés notificaciones.</p>
+  {% endif %}
+</div>
+
+<style>
+  .lista-notificaciones {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+  }
+
+  .notificacion-item {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .notificacion-item:last-child {
+    border-bottom: 0;
+  }
+
+  .notificacion-item.no-leida {
+    background: #f0f9ff;
+    border-left: 3px solid #0ea5e9;
+    border-radius: 0.5rem;
+  }
+
+  .notificacion-fecha {
+    display: block;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .notificacion-mensaje {
+    margin: 0.2rem 0 0.6rem;
+    color: #0f172a;
+  }
+</style>
+{% endblock %}

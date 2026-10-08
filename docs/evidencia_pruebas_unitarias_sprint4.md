@@ -58,6 +58,53 @@ divisas.
 
 ---
 
+## Leyda Fleitas — RF033, Alertas de Tasas (GEG9-38)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 8 de octubre de 2026, 15:13:00 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/notificaciones/tests/test_notificaciones.py` |
+| **Comando** | `docker compose exec web pytest apps/notificaciones/ -v` |
+| **Resultado** | **9 passed** en 1.38s |
+
+```text
+$ date
+Thu Oct  8 15:13:00 -03 2026
+
+$ docker compose exec web pytest apps/notificaciones/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 9 items
+
+apps/notificaciones/tests/test_notificaciones.py .........               [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 9 passed, 1 warning in 1.38s =========================
+```
+
+Cubre: que cambiar `tasa_compra` notifique solo a clientes asociados y
+activos (nada para administradores, analistas, clientes sin asociación o con
+cliente inactivo); que editar sin cambiar los valores de tasa no notifique;
+que activar/desactivar tampoco notifiquen; que un usuario sin email reciba
+igual la notificación interna sin romper nada; que un error simulado del
+backend de correo (mockeado con `unittest.mock.patch`) no impida guardar la
+tasa ni crear la notificación; que un usuario solo vea y marque como leídas
+sus propias notificaciones; que el contador del menú cuente solo las no
+leídas; y que cargar el fixture `tasas_demo` con `loaddata` no genere ninguna
+notificación. También se corrió la suite completa del proyecto: **133
+passed**, sin regresiones.
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.

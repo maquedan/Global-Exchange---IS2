@@ -104,3 +104,79 @@ con una prueba automática. Quedó registrado en la sección de verificaciones.
   `docs/evidencia_pruebas_unitarias_sprint4.md`.
 
 ---
+
+## 2. Leyda Fleitas — RF033, Alertas de Tasas (GEG9-38)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+### 2.1. «¿Señal `post_save` o llamar al servicio desde la vista?»
+
+**Lo que aprendimos.** Una señal `post_save` en `TasaCambio` dispararía al
+cargar el fixture `tasas_demo.json` con `loaddata` — cada integrante que
+levanta el entorno terminaría generando decenas de notificaciones y correos
+de prueba sin haber hecho nada.
+
+**Decisión.** Llamar a `notificar_cambio_de_tasa()` explícitamente desde las
+vistas `crear` y `editar` de `tasa_cambios`, no desde una señal. Es menos
+"mágico", se puede probar con un `client.post()` normal, y `loaddata` queda
+inmune porque nunca pasa por esas vistas. El costo conocido (documentado):
+un cambio hecho a mano contra la base de datos no notificaría a nadie — no
+es un caso que ocurra en el flujo normal de la aplicación.
+
+### 2.2. «¿Cómo evito notificar un cambio que después falla y no llega a guardarse?»
+
+**Lo que aprendimos.** Si se crea la `Notificacion` (y se manda el correo)
+inmediatamente después de `formulario.save()`, pero más adelante en la misma
+vista algo falla y la transacción se revierte, igual quedaría un correo
+mandado avisando un cambio que nunca se guardó.
+
+**Decisión.** Envolver el cuerpo de `notificar_cambio_de_tasa()` en
+`transaction.on_commit()`. Así se ejecuta recién cuando la transacción que lo
+rodea termina de confirmarse — nunca antes.
+
+### 2.3. «Con `on_commit`, ¿cómo pruebo que la notificación se creó, si pytest-django envuelve cada prueba en una transacción que se revierte?»
+
+**Lo que aprendimos.** `@pytest.mark.django_db` normal envuelve toda la
+prueba en una transacción para después deshacerla, y `transaction.on_commit`
+nunca llega a "confirmarse" en ese contexto — los callbacks registrados
+simplemente no se ejecutan, y la prueba fallaría buscando una notificación
+que nunca se creó.
+
+**Decisión.** Usar el fixture `django_capture_on_commit_callbacks` de
+pytest-django, con `execute=True`, envolviendo la llamada a la vista. Permite
+probar el comportamiento real de producción sin tener que usar transacciones
+reales de verdad (`transaction=True`), que son más lentas.
+
+### 2.4. «¿Cómo calculo "clientes asociados y activos" sin duplicar lógica?»
+
+**Lo que aprendimos.** Un usuario puede estar asociado a varios clientes, y
+el requisito es "con AL MENOS un cliente activo", no "con todos sus clientes
+activos".
+
+**Decisión.** Un solo filtro:
+`User.objects.filter(is_active=True, groups__name="usuario_cliente",
+asociaciones_clientes__cliente__activo=True).distinct()` — el `distinct()`
+evita contar dos veces a quien tiene más de un cliente activo asociado.
+
+## 2.5. Verificaciones realizadas
+
+- Migración inicial de `apps.notificaciones` generada y aplicada.
+- Suite completa del proyecto ejecutada tras el cambio: **133 pruebas
+  aprobadas** (eran 124 antes de esta historia).
+- Casos nuevos cubiertos: notifica solo a clientes asociados y activos (no a
+  administradores, analistas ni clientes sin asociación ni con cliente
+  inactivo); editar sin cambiar `tasa_compra`/`tasa_venta` no notifica;
+  activar/desactivar no notifican; un usuario sin email recibe igual la
+  notificación interna sin que falle nada; un error simulado del backend de
+  correo no impide guardar la tasa ni crear la notificación; un usuario solo
+  ve y marca como leídas sus propias notificaciones (404 si intenta la ajena);
+  el contador del menú cuenta solo las no leídas; cargar `tasas_demo` con
+  `loaddata` no genera ninguna notificación.
+- `python manage.py check` sin errores.
+- Documentación técnica incorporada a Sphinx en
+  `docs/sphinx/notificaciones.rst`.
+- **Corrección sobre la marcha:** igual que con RF023, el ticket pedía un
+  admin de solo lectura para `Notificacion`. No se registró — el equipo tiene
+  prohibido usar el admin de Django en este proyecto.
+
+---
