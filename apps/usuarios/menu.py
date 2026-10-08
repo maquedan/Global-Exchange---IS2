@@ -60,6 +60,11 @@ MENU_PRINCIPAL = [
     "url": "conversiones:historial",
     "roles": ["usuario_cliente"],
     },
+    {
+        "texto": "Notificaciones",
+        "url": "notificaciones:lista",
+        "roles": ["usuario_cliente"],
+    },
 ]
 
 
