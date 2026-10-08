@@ -1,6 +1,5 @@
 from decimal import Decimal
 
-from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -24,14 +23,8 @@ class CompraDivisa(models.Model):
 
     class Estado(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente de confirmación"
-        # El ERS de RF023 (GEG9-37) llama a este estado "pagada". No se
-        # renombra la constante (rompería RF030 y las pruebas existentes):
-        # solo cambia la etiqueta visible.
-        CONFIRMADA = "CONFIRMADA", "Pagada"
+        CONFIRMADA = "CONFIRMADA", "Confirmada"
         CANCELADA = "CANCELADA", "Cancelada"
-        # Agregado para RF023. La lógica para anular una operación es RF024 y
-        # todavía no existe: por ahora el valor solo está disponible.
-        ANULADA = "ANULADA", "Anulada"
 
     class MotivoCancelacion(models.TextChoices):
         CAMBIO_COTIZACION = "CAMBIO_COTIZACION", "La cotización cambió antes de confirmar"
@@ -113,9 +106,8 @@ class VentaDivisa(models.Model):
 
     class Estado(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente de confirmación"
-        CONFIRMADA = "CONFIRMADA", "Pagada"
+        CONFIRMADA = "CONFIRMADA", "Confirmada"
         CANCELADA = "CANCELADA", "Cancelada"
-        ANULADA = "ANULADA", "Anulada"
 
     class MotivoCancelacion(models.TextChoices):
         CAMBIO_COTIZACION = "CAMBIO_COTIZACION", "La cotización cambió antes de confirmar"
@@ -197,60 +189,3 @@ class VentaDivisa(models.Model):
 
     def __str__(self):
         return f"Venta #{self.pk} — {self.cliente}"
-
-
-class CambioEstado(models.Model):
-    """Registro histórico de una transición de estado (RF023 — GEG9-37).
-
-    Se crea un registro por cada cambio, nunca se edita ni se borra. Siempre
-    pertenece a una compra o a una venta, nunca a las dos ni a ninguna — lo
-    exige el `CheckConstraint` de abajo. `estado_anterior` queda vacío en la
-    primera transición de cada operación (todavía no existía ningún estado).
-    """
-
-    compra = models.ForeignKey(
-        CompraDivisa,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="cambios_estado",
-    )
-    venta = models.ForeignKey(
-        VentaDivisa,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="cambios_estado",
-    )
-    estado_anterior = models.CharField(
-        max_length=12, choices=CompraDivisa.Estado.choices, blank=True
-    )
-    estado_nuevo = models.CharField(max_length=12, choices=CompraDivisa.Estado.choices)
-    motivo = models.CharField(max_length=255, blank=True)
-    usuario = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        related_name="cambios_estado_conversiones",
-        help_text="Vacío si el cambio lo hizo el sistema (por ejemplo, al vencerse el plazo).",
-    )
-    fecha = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["fecha"]
-        verbose_name = "cambio de estado"
-        verbose_name_plural = "cambios de estado"
-        constraints = [
-            models.CheckConstraint(
-                condition=(
-                    models.Q(compra__isnull=False, venta__isnull=True)
-                    | models.Q(compra__isnull=True, venta__isnull=False)
-                ),
-                name="cambio_estado_pertenece_a_una_sola_operacion",
-            ),
-        ]
-
-    def __str__(self):
-        operacion = self.compra or self.venta
-        return f"{operacion}: {self.estado_anterior or '—'} → {self.estado_nuevo}"

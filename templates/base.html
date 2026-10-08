@@ -6,23 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Global Exchange{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
-  <style>
-    .contador-notificaciones {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 1.25rem;
-      height: 1.25rem;
-      margin-left: 0.35rem;
-      padding: 0 0.35rem;
-      border-radius: 9999px;
-      background: #f43f5e;
-      color: #fff;
-      font-size: 0.7rem;
-      font-weight: 700;
-      vertical-align: middle;
-    }
-  </style>
 </head>
 <body class="min-h-screen bg-[#f2f6fb] text-slate-800 antialiased">
   <header class="relative overflow-hidden bg-[#071f36] text-white shadow-2xl">
@@ -53,13 +36,10 @@
       </div>
 
       {# MENÚ PRINCIPAL (GEG9-25): lo arma apps/usuarios/menu.py según el rol #}
-      {% url 'notificaciones:lista' as url_notificaciones %}
       <nav class="mt-6 flex items-center gap-1 border-t border-white/10 py-3" aria-label="Navegación principal">
         <span class="mr-3 text-[10px] font-bold uppercase tracking-[0.18em] text-cyan-200/75">Navegar</span>
         {% for opcion in menu_principal %}
-          <a class="rounded-lg px-4 py-2 text-sm font-semibold text-blue-100 no-underline transition hover:bg-white/10 hover:text-white" href="{{ opcion.url }}">
-            {{ opcion.texto }}{% if opcion.url == url_notificaciones and notificaciones_no_leidas %}<span class="contador-notificaciones">{{ notificaciones_no_leidas }}</span>{% endif %}
-          </a>
+          <a class="rounded-lg px-4 py-2 text-sm font-semibold text-blue-100 no-underline transition hover:bg-white/10 hover:text-white" href="{{ opcion.url }}">{{ opcion.texto }}</a>
         {% empty %}
           <span class="text-sm text-blue-200">Iniciá sesión para acceder a tus herramientas.</span>
         {% endfor %}
