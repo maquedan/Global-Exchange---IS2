@@ -180,3 +180,32 @@ evita contar dos veces a quien tiene más de un cliente activo asociado.
   prohibido usar el admin de Django en este proyecto.
 
 ---
+
+## 3. Ryuto Maehara - RF041 — Cajas, fondos y rol cajero
+
+**Herramienta:** Copilot SDK en VS Code.
+
+**Consulta.** Se revisó si RF041 estaba implementado y cómo administrar las
+cajas de sucursales y el efectivo asignado a cajeros.
+
+**Resumen.** La aplicación permite crear sucursales con su caja, registrar
+ingresos y retiros, asignar fondos a cajeros y registrar devoluciones. Los
+saldos por moneda y el historial de movimientos se consultan desde el detalle
+de cada caja. El rol `cajero` se administra en Keycloak; el rol identifica al
+usuario y no requiere una app separada. En esta implementación, los movimientos
+los registra el administrador.
+
+**Cambios realizados.** Se agregó `cajero` a la configuración inicial del
+realm y a la configuración de roles de la aplicación, junto con el usuario de
+prueba `cajero.demo`. También se ajustó el formulario de movimientos para
+mostrar el campo cajero únicamente en asignaciones y devoluciones.
+
+**Incidente de autenticación.** Tras reiniciar Docker, Keycloak rechazaba el
+secreto OIDC del cliente web. Se ejecutó `scripts/sincronizar_secret.py` para
+actualizar los secretos locales y se reinició Django; la aplicación volvió a
+responder correctamente.
+
+**Verificaciones.** El archivo del realm pasó la validación JSON y las 11
+pruebas del módulo de cajas pasaron tras el cambio del formulario dinámico.
+
+---

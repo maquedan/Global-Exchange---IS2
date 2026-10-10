@@ -7,6 +7,12 @@
   <p><a href="{% url 'cajas:lista' %}">Volver a sucursales</a></p>
   <h1>Caja — {{ sucursal.nombre }}</h1>
   <p>{{ sucursal.direccion }} · {% if sucursal.activa %}Activa{% else %}Inactiva{% endif %}</p>
+  <p>
+    <a class="boton" href="{% url 'cajas:registrar_movimiento' sucursal.pk %}">Registrar movimiento</a>
+    <a class="boton" href="{% url 'cajas:registrar_denominacion' sucursal.pk %}">Agregar denominación de billete</a>
+    <a class="boton" href="{% url 'cajas:registrar_conteo' sucursal.pk %}">Reconciliar inventario</a>
+    <a class="boton boton-secundario" href="{% url 'cajas:editar_sucursal' sucursal.pk %}">Modificar sucursal</a>
+  </p>
 
   {% if messages %}
     {% for message in messages %}<p>{{ message }}</p>{% endfor %}
@@ -26,6 +32,28 @@
     </div>
   {% else %}
     <p>No hay fondos registrados en esta caja.</p>
+  {% endif %}
+
+  <h2>Inventario detallado en caja</h2>
+  {% if inventario_caja %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th></tr></thead>
+        <tbody>
+          {% for existencia in inventario_caja %}
+            {% if existencia.cantidad %}
+              <tr>
+                <td>{{ existencia.denominacion.moneda.codigo }}</td>
+                <td>{{ existencia.denominacion.valor }}</td>
+                <td>{{ existencia.cantidad }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay billetes registrados en esta caja.</p>
   {% endif %}
 
   <h2>Fondos asignados a cajeros</h2>
@@ -48,27 +76,51 @@
     <p>No hay fondos asignados actualmente. Los cajeros deben tener el rol <strong>cajero</strong>.</p>
   {% endif %}
 
-  <h2>Registrar movimiento</h2>
-  <p>Ingresos y retiros ajustan el efectivo de la caja. Asignaciones y devoluciones trasladan fondos entre la caja y un cajero.</p>
-  <form method="post" action="{% url 'cajas:registrar_movimiento' sucursal.pk %}">
-    {% csrf_token %}
-    {{ formulario.non_field_errors }}
-    {% for campo in formulario %}
-      <p{% if campo.name == "cajero" %} data-campo-movimiento="cajero"{% endif %}>
-        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
-        {{ campo }}
-        {{ campo.errors }}
-      </p>
-    {% endfor %}
-    <button class="boton" type="submit" {% if not sucursal.activa %}disabled{% endif %}>Guardar movimiento</button>
-  </form>
+  <h2>Inventario detallado asignado a cajeros</h2>
+  {% if inventario_cajeros %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Cajero</th><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th></tr></thead>
+        <tbody>
+          {% for existencia in inventario_cajeros %}
+            {% if existencia.cantidad %}
+              <tr>
+                <td>{{ existencia.cajero.get_full_name|default:existencia.cajero.username }}</td>
+                <td>{{ existencia.denominacion.moneda.codigo }}</td>
+                <td>{{ existencia.denominacion.valor }}</td>
+                <td>{{ existencia.cantidad }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay billetes asignados a cajeros.</p>
+  {% endif %}
+
+  <h2>Denominaciones habilitadas</h2>
+  {% if denominaciones %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Divisa</th><th>Denominación de billete</th></tr></thead>
+        <tbody>
+          {% for denominacion in denominaciones %}
+            <tr><td>{{ denominacion.moneda.codigo }}</td><td>{{ denominacion.valor }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay denominaciones configuradas.</p>
+  {% endif %}
 
   <h2>Historial de movimientos</h2>
   {% if movimientos %}
     <div class="overflow-x-auto">
       <table class="datos">
         <thead>
-          <tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
+          <tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Billetes</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
         </thead>
         <tbody>
           {% for movimiento in movimientos %}
@@ -77,6 +129,11 @@
               <td>{{ movimiento.get_tipo_display }}</td>
               <td>{{ movimiento.moneda.codigo }}</td>
               <td>{{ movimiento.importe }}</td>
+              <td>
+                {% for detalle in movimiento.detalle_billetes.all %}
+                  {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+              </td>
               <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
               <td>{{ movimiento.saldo_caja_resultante }}</td>
               <td>{{ movimiento.saldo_cajero_resultante|default:"—" }}</td>
@@ -89,6 +146,34 @@
     </div>
   {% else %}
     <p>No hay movimientos registrados.</p>
+  {% endif %}
+  <h2>Historial de conteos y conciliaciones</h2>
+  {% if conteos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Fecha</th><th>Divisa</th><th>Inventario</th><th>Importe total</th><th>Cajero</th><th>Registrado por</th></tr></thead>
+        <tbody>
+          {% for conteo in conteos %}
+            <tr>
+              <td>{{ conteo.creado_en }}</td>
+              <td>{{ conteo.moneda.codigo }}</td>
+              <td>
+                {% for detalle in conteo.detalle_billetes.all %}
+                  {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
+                {% empty %}
+                  Sin billetes
+                {% endfor %}
+              </td>
+              <td>{{ conteo.importe_total }}</td>
+              <td>{% if conteo.cajero %}{{ conteo.cajero.get_full_name|default:conteo.cajero.username }}{% else %}Caja{% endif %}</td>
+              <td>{{ conteo.realizado_por.get_full_name|default:conteo.realizado_por.username }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay conteos registrados.</p>
   {% endif %}
   {% if page_obj.paginator.num_pages > 1 %}
     <nav class="mt-4 flex items-center gap-4" aria-label="Páginas del historial">
@@ -103,23 +188,4 @@
   {% endif %}
 </div>
 
-<script>
-  const selectorTipoMovimiento = document.getElementById("id_tipo");
-  const grupoCajero = document.querySelector('[data-campo-movimiento="cajero"]');
-  const selectorCajero = document.getElementById("id_cajero");
-  const tiposConCajero = ["ASIGNACION", "DEVOLUCION"];
-
-  function actualizarCamposMovimiento() {
-    const requiereCajero = tiposConCajero.includes(selectorTipoMovimiento.value);
-    grupoCajero.hidden = !requiereCajero;
-    selectorCajero.disabled = !requiereCajero;
-    selectorCajero.required = requiereCajero;
-    if (!requiereCajero) {
-      selectorCajero.value = "";
-    }
-  }
-
-  selectorTipoMovimiento.addEventListener("change", actualizarCamposMovimiento);
-  actualizarCamposMovimiento();
-</script>
 {% endblock %}

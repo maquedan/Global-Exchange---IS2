@@ -105,6 +105,79 @@ class FondoCajero(models.Model):
         return f"{self.cajero} — {self.moneda.codigo}: {self.saldo}"
 
 
+class DenominacionBillete(models.Model):
+    """Denominación de billete habilitada para una moneda."""
+
+    moneda = models.ForeignKey(
+        Moneda, on_delete=models.PROTECT, related_name="denominaciones_billetes"
+    )
+    valor = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+
+    class Meta:
+        ordering = ["moneda__codigo", "-valor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["moneda", "valor"], name="denominacion_billete_moneda_valor"
+            ),
+            models.CheckConstraint(condition=models.Q(valor__gt=0), name="denominacion_billete_valor_positivo"),
+        ]
+        verbose_name = "denominación de billete"
+        verbose_name_plural = "denominaciones de billetes"
+
+    def __str__(self):
+        return f"{self.moneda.codigo} {self.valor}"
+
+
+class InventarioBilleteCaja(models.Model):
+    """Cantidad disponible por denominación en la caja de una sucursal."""
+
+    caja = models.ForeignKey(
+        Caja, on_delete=models.PROTECT, related_name="inventario_billetes"
+    )
+    denominacion = models.ForeignKey(DenominacionBillete, on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["denominacion__moneda__codigo", "-denominacion__valor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["caja", "denominacion"], name="inventario_billete_caja_unico"
+            )
+        ]
+        verbose_name = "existencia de billetes en caja"
+        verbose_name_plural = "existencias de billetes en caja"
+
+
+class InventarioBilleteCajero(models.Model):
+    """Cantidad por denominación asignada a un cajero en una caja."""
+
+    caja = models.ForeignKey(
+        Caja, on_delete=models.PROTECT, related_name="inventario_billetes_cajeros"
+    )
+    cajero = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="inventario_billetes_cajero",
+    )
+    denominacion = models.ForeignKey(DenominacionBillete, on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["cajero__username", "denominacion__moneda__codigo", "-denominacion__valor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["caja", "cajero", "denominacion"],
+                name="inventario_billete_cajero_unico",
+            )
+        ]
+        verbose_name = "existencia de billetes de cajero"
+        verbose_name_plural = "existencias de billetes de cajeros"
+
+
 class MovimientoCaja(models.Model):
     """Registro inmutable de ingresos, retiros, asignaciones y devoluciones."""
 
@@ -156,3 +229,75 @@ class MovimientoCaja(models.Model):
 
     def __str__(self):
         return f"{self.get_tipo_display()} — {self.importe} {self.moneda.codigo}"
+
+
+class DetalleMovimientoBillete(models.Model):
+    """Desglose inmutable de billetes que componen un movimiento de caja."""
+
+    movimiento = models.ForeignKey(
+        MovimientoCaja, on_delete=models.PROTECT, related_name="detalle_billetes"
+    )
+    denominacion = models.ForeignKey(DenominacionBillete, on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["-denominacion__valor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["movimiento", "denominacion"],
+                name="detalle_movimiento_billete_unico",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name="detalle_movimiento_billete_cantidad_positiva",
+            ),
+        ]
+        verbose_name = "detalle de billetes del movimiento"
+        verbose_name_plural = "detalles de billetes del movimiento"
+
+
+class ConteoInventarioBilletes(models.Model):
+    """Auditoría del conteo que inicializa o reconcilia existencias de billetes."""
+
+    caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="conteos_billetes")
+    moneda = models.ForeignKey(Moneda, on_delete=models.PROTECT)
+    cajero = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="conteos_inventario_billetes",
+        null=True,
+        blank=True,
+    )
+    importe_total = models.DecimalField(max_digits=18, decimal_places=2)
+    realizado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="conteos_billetes_realizados",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-pk"]
+        verbose_name = "conteo de inventario de billetes"
+        verbose_name_plural = "conteos de inventario de billetes"
+
+
+class DetalleConteoInventarioBilletes(models.Model):
+    conteo = models.ForeignKey(
+        ConteoInventarioBilletes, on_delete=models.PROTECT, related_name="detalle_billetes"
+    )
+    denominacion = models.ForeignKey(DenominacionBillete, on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["-denominacion__valor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["conteo", "denominacion"],
+                name="detalle_conteo_billete_unico",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name="detalle_conteo_billete_cantidad_positiva",
+            ),
+        ]

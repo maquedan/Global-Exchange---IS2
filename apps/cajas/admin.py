@@ -1,6 +1,18 @@
 from django.contrib import admin
 
-from .models import Caja, FondoCajero, MovimientoCaja, SaldoCaja, Sucursal
+from .models import (
+    Caja,
+    ConteoInventarioBilletes,
+    DenominacionBillete,
+    DetalleConteoInventarioBilletes,
+    DetalleMovimientoBillete,
+    FondoCajero,
+    InventarioBilleteCaja,
+    InventarioBilleteCajero,
+    MovimientoCaja,
+    SaldoCaja,
+    Sucursal,
+)
 
 
 class SoloLecturaAdmin(admin.ModelAdmin):
@@ -44,6 +56,27 @@ class FondoCajeroAdmin(SoloLecturaAdmin):
     readonly_fields = ("caja", "cajero", "moneda", "saldo")
 
 
+@admin.register(DenominacionBillete)
+class DenominacionBilleteAdmin(admin.ModelAdmin):
+    list_display = ("moneda", "valor")
+    list_filter = ("moneda",)
+    ordering = ("moneda__codigo", "-valor")
+
+
+@admin.register(InventarioBilleteCaja)
+class InventarioBilleteCajaAdmin(SoloLecturaAdmin):
+    list_display = ("caja", "denominacion", "cantidad")
+    list_filter = ("denominacion__moneda", "caja__sucursal")
+    readonly_fields = ("caja", "denominacion", "cantidad")
+
+
+@admin.register(InventarioBilleteCajero)
+class InventarioBilleteCajeroAdmin(SoloLecturaAdmin):
+    list_display = ("caja", "cajero", "denominacion", "cantidad")
+    list_filter = ("denominacion__moneda", "caja__sucursal")
+    readonly_fields = ("caja", "cajero", "denominacion", "cantidad")
+
+
 @admin.register(MovimientoCaja)
 class MovimientoCajaAdmin(SoloLecturaAdmin):
     list_display = (
@@ -58,3 +91,24 @@ class MovimientoCajaAdmin(SoloLecturaAdmin):
     list_filter = ("tipo", "moneda", "caja__sucursal")
     search_fields = ("caja__sucursal__nombre", "cajero__username", "nota")
     readonly_fields = tuple(field.name for field in MovimientoCaja._meta.fields)
+
+
+@admin.register(DetalleMovimientoBillete)
+class DetalleMovimientoBilleteAdmin(SoloLecturaAdmin):
+    list_display = ("movimiento", "denominacion", "cantidad")
+    list_filter = ("denominacion__moneda",)
+    readonly_fields = ("movimiento", "denominacion", "cantidad")
+
+
+@admin.register(ConteoInventarioBilletes)
+class ConteoInventarioBilletesAdmin(SoloLecturaAdmin):
+    list_display = ("creado_en", "caja", "moneda", "cajero", "importe_total", "realizado_por")
+    list_filter = ("moneda", "caja__sucursal")
+    readonly_fields = tuple(field.name for field in ConteoInventarioBilletes._meta.fields)
+
+
+@admin.register(DetalleConteoInventarioBilletes)
+class DetalleConteoInventarioBilletesAdmin(SoloLecturaAdmin):
+    list_display = ("conteo", "denominacion", "cantidad")
+    list_filter = ("denominacion__moneda",)
+    readonly_fields = ("conteo", "denominacion", "cantidad")
