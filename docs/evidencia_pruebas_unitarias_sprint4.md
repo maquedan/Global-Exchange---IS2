@@ -105,6 +105,91 @@ passed**, sin regresiones.
 
 ---
 
+## Ryuto Maehara — Cajas
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 9 de octubre de 2026, 23:17:05 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/cajas/tests/test_cajas.py`, `apps/usuarios/tests/test_menu.py` y suite completa (`apps/`) |
+| **Comandos** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v`; `docker compose exec web pytest -v` |
+| **Resultado** | **22 passed** en las pruebas enfocadas y **145 passed** en la suite completa; ambas ejecuciones reportaron 1 warning |
+
+```text
+$ date
+Fri Oct  9 23:17:05 -03 2026
+
+$ docker compose exec web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 22 items
+
+apps/cajas/tests/test_cajas.py ...........                               [ 50%]
+apps/usuarios/tests/test_menu.py ...........                             [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 22 passed, 1 warning in 5.76s =========================
+```
+
+La suite enfocada cubre la gestión de sucursales y cajas, permisos por rol,
+registro y validación de ingresos/asignaciones/devoluciones, saldos e historial
+de movimientos, y visibilidad del menú según el rol. A continuación se conserva
+la salida completa de la suite de regresión:
+
+```text
+$ date
+Fri Oct  9 23:16:31 -03 2026
+
+$ docker compose exec web pytest -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+testpaths: apps
+plugins: django-4.14.0
+collected 145 items
+
+apps/cajas/tests/test_cajas.py ...........                               [  7%]
+apps/clientes/tests/test_clientes.py ...............                     [ 17%]
+apps/comisiones/tests/test_comisiones.py ......                          [ 22%]
+apps/conversiones/tests/test_conversiones.py ........................... [ 40%]
+..........                                                               [ 47%]
+apps/cuentas/tests/test_cuentas.py ..........                            [ 54%]
+apps/monedas/tests/test_monedas.py .......                               [ 59%]
+apps/notificaciones/tests/test_notificaciones.py .........               [ 65%]
+apps/tasa_cambios/tests.py ........                                      [ 71%]
+apps/tasas/tests/test_tasas.py ...........                               [ 78%]
+apps/usuarios/tests/test_auth.py .....                                   [ 82%]
+apps/usuarios/tests/test_menu.py ..........                              [ 88%]
+apps/usuarios/tests/test_roles_permisos.py ....                          [ 91%]
+apps/conversiones/tests/test_conversiones.py ...                         [ 93%]
+apps/usuarios/tests/test_auth.py ........                                [ 99%]
+apps/usuarios/tests/test_menu.py .                                       [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 145 passed, 1 warning in 20.81s ========================
+```
+
+La suite completa pasó sin fallos. En ambas ejecuciones se informó el mismo
+aviso deprecado de `EMAIL_BACKEND` en pytest-django. Las pruebas cubren las
+operaciones de backend y los permisos relacionados con Cajas; no verifican
+directamente el comportamiento JavaScript que muestra u oculta el campo de
+cajero en el formulario de GEG9-39.
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
