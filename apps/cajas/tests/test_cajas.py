@@ -2,12 +2,28 @@ from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.cajas.models import Caja, FondoCajero, MovimientoCaja, SaldoCaja, Sucursal
+from apps.cajas.forms import MovimientoCajaForm
+from apps.cajas.models import (
+    Caja,
+    DenominacionBillete,
+    DetalleMovimientoBillete,
+    FondoCajero,
+    InventarioBilleteCaja,
+    InventarioBilleteCajero,
+    MovimientoCaja,
+    SaldoCaja,
+    Sucursal,
+)
 from apps.monedas.models import Moneda
-from apps.cajas.services import MovimientoNoPermitido, registrar_movimiento
+from apps.cajas.services import (
+    MovimientoNoPermitido,
+    registrar_conteo_inventario,
+    registrar_movimiento,
+)
 
 
 class GestionCajasTests(TestCase):
@@ -20,18 +36,31 @@ class GestionCajasTests(TestCase):
         Group.objects.get_or_create(name="analista_cambiario")[0].user_set.add(self.analista)
         Group.objects.get_or_create(name="cajero")[0].user_set.add(self.cajero)
         self.moneda = Moneda.objects.create(codigo="USD", nombre="Dólar", simbolo="$")
+        self.centavo = DenominacionBillete.objects.create(
+            moneda=self.moneda, valor=Decimal("0.01")
+        )
+        self.billete_10 = DenominacionBillete.objects.create(
+            moneda=self.moneda, valor=Decimal("10.00")
+        )
         self.sucursal = Sucursal.objects.create(
             nombre="Casa Central", direccion="Av. Principal 123"
         )
         self.caja = Caja.objects.create(sucursal=self.sucursal)
 
-    def ingresar_efectivo(self, importe="100.00"):
+    def billetes(self, importe, denominacion=None):
+        importe = Decimal(importe)
+        denominacion = denominacion or self.centavo
+        cantidad = int(importe / denominacion.valor)
+        assert denominacion.valor * cantidad == importe
+        return {denominacion.pk: cantidad}
+
+    def ingresar_efectivo(self, importe="100.00", denominacion=None):
         return registrar_movimiento(
             caja_id=self.caja.pk,
             tipo=MovimientoCaja.Tipo.INGRESO,
             moneda_id=self.moneda.pk,
-            importe=Decimal(importe),
             realizado_por=self.admin,
+            billetes=self.billetes(importe, denominacion),
         )
 
     def test_admin_crea_sucursal_y_caja(self):
@@ -64,10 +93,11 @@ class GestionCajasTests(TestCase):
         respuesta = self.client.post(
             reverse("cajas:registrar_movimiento", args=[self.sucursal.pk]),
             {
-                "tipo": MovimientoCaja.Tipo.INGRESO,
-                "moneda": self.moneda.pk,
-                "importe": "125.50",
-                "nota": "Fondo inicial",
+                "mov-tipo": MovimientoCaja.Tipo.INGRESO,
+                "mov-moneda": self.moneda.pk,
+                "mov-importe": "999.99",
+                "mov-nota": "Fondo inicial",
+                f"mov-billete_{self.centavo.pk}": "12550",
             },
         )
 
@@ -77,7 +107,48 @@ class GestionCajasTests(TestCase):
         movimiento = MovimientoCaja.objects.get()
         self.assertEqual(movimiento.realizado_por, self.admin)
         self.assertEqual(movimiento.nota, "Fondo inicial")
+        self.assertEqual(movimiento.importe, Decimal("125.50"))
         self.assertEqual(movimiento.saldo_caja_resultante, Decimal("125.50"))
+        detalle = self.client.get(reverse("cajas:detalle", args=[self.sucursal.pk]))
+        self.assertNotIn("importe", detalle.context["formulario"].fields)
+        self.assertContains(detalle, "Importe calculado")
+        self.assertNotContains(detalle, 'name="mov-importe"')
+        self.assertContains(detalle, 'data-valor-centavos="1"')
+
+    def test_formulario_calcula_importe_desde_las_cantidades(self):
+        formulario = MovimientoCajaForm(
+            {
+                "mov-tipo": MovimientoCaja.Tipo.INGRESO,
+                "mov-moneda": self.moneda.pk,
+                f"mov-billete_{self.centavo.pk}": "250",
+                f"mov-billete_{self.billete_10.pk}": "3",
+            },
+            caja=self.caja,
+            prefix="mov",
+        )
+
+        self.assertTrue(formulario.is_valid(), formulario.errors)
+        self.assertEqual(formulario.cleaned_data["importe_calculado"], Decimal("32.50"))
+
+    def test_admin_configura_denominacion_de_billete(self):
+        self.client.force_login(self.admin)
+
+        respuesta = self.client.post(
+            reverse("cajas:registrar_denominacion", args=[self.sucursal.pk]),
+            {
+                "denominacion-moneda": self.moneda.pk,
+                "denominacion-valor": "50.00",
+            },
+        )
+
+        self.assertRedirects(
+            respuesta, reverse("cajas:detalle", args=[self.sucursal.pk])
+        )
+        self.assertTrue(
+            DenominacionBillete.objects.filter(
+                moneda=self.moneda, valor=Decimal("50.00")
+            ).exists()
+        )
 
     def test_solo_usuarios_con_rol_cajero_pueden_recibir_fondos(self):
         self.ingresar_efectivo()
@@ -87,9 +158,9 @@ class GestionCajasTests(TestCase):
                 caja_id=self.caja.pk,
                 tipo=MovimientoCaja.Tipo.ASIGNACION,
                 moneda_id=self.moneda.pk,
-                importe=Decimal("10.00"),
                 cajero_id=self.analista.pk,
                 realizado_por=self.admin,
+                billetes=self.billetes("10.00"),
             )
 
     def test_se_pueden_devolver_fondos_a_un_usuario_que_dejo_el_rol_cajero(self):
@@ -98,9 +169,9 @@ class GestionCajasTests(TestCase):
             caja_id=self.caja.pk,
             tipo=MovimientoCaja.Tipo.ASIGNACION,
             moneda_id=self.moneda.pk,
-            importe=Decimal("20.00"),
             cajero_id=self.cajero.pk,
             realizado_por=self.admin,
+            billetes=self.billetes("20.00"),
         )
         self.cajero.groups.remove(Group.objects.get(name="cajero"))
         self.client.force_login(self.admin)
@@ -116,10 +187,10 @@ class GestionCajasTests(TestCase):
         respuesta = self.client.post(
             reverse("cajas:registrar_movimiento", args=[self.sucursal.pk]),
             {
-                "tipo": MovimientoCaja.Tipo.DEVOLUCION,
-                "moneda": self.moneda.pk,
-                "cajero": self.cajero.pk,
-                "importe": "20.00",
+                "mov-tipo": MovimientoCaja.Tipo.DEVOLUCION,
+                "mov-moneda": self.moneda.pk,
+                "mov-cajero": self.cajero.pk,
+                f"mov-billete_{self.centavo.pk}": "2000",
             },
         )
         self.assertRedirects(
@@ -153,17 +224,17 @@ class GestionCajasTests(TestCase):
             caja_id=self.caja.pk,
             tipo=MovimientoCaja.Tipo.ASIGNACION,
             moneda_id=self.moneda.pk,
-            importe=Decimal("40.00"),
             cajero_id=self.cajero.pk,
             realizado_por=self.admin,
+            billetes=self.billetes("40.00"),
         )
         registrar_movimiento(
             caja_id=self.caja.pk,
             tipo=MovimientoCaja.Tipo.DEVOLUCION,
             moneda_id=self.moneda.pk,
-            importe=Decimal("10.00"),
             cajero_id=self.cajero.pk,
             realizado_por=self.admin,
+            billetes=self.billetes("10.00"),
         )
 
         self.assertEqual(SaldoCaja.objects.get(caja=self.caja, moneda=self.moneda).saldo, Decimal("70.00"))
@@ -181,6 +252,19 @@ class GestionCajasTests(TestCase):
         )
         self.assertEqual(movimientos[1].saldo_cajero_resultante, Decimal("40.00"))
         self.assertEqual(movimientos[2].saldo_cajero_resultante, Decimal("30.00"))
+        self.assertEqual(
+            InventarioBilleteCaja.objects.get(
+                caja=self.caja, denominacion=self.centavo
+            ).cantidad,
+            7000,
+        )
+        self.assertEqual(
+            InventarioBilleteCajero.objects.get(
+                caja=self.caja, cajero=self.cajero, denominacion=self.centavo
+            ).cantidad,
+            3000,
+        )
+        self.assertEqual(DetalleMovimientoBillete.objects.count(), 3)
 
     def test_no_permite_asignar_mas_efectivo_que_el_disponible(self):
         with self.assertRaises(MovimientoNoPermitido):
@@ -188,9 +272,9 @@ class GestionCajasTests(TestCase):
                 caja_id=self.caja.pk,
                 tipo=MovimientoCaja.Tipo.ASIGNACION,
                 moneda_id=self.moneda.pk,
-                importe=Decimal("1.00"),
                 cajero_id=self.cajero.pk,
                 realizado_por=self.admin,
+                billetes=self.billetes("1.00"),
             )
 
         self.assertFalse(SaldoCaja.objects.exists())
@@ -205,9 +289,9 @@ class GestionCajasTests(TestCase):
                 caja_id=self.caja.pk,
                 tipo=MovimientoCaja.Tipo.DEVOLUCION,
                 moneda_id=self.moneda.pk,
-                importe=Decimal("1.00"),
                 cajero_id=self.cajero.pk,
                 realizado_por=self.admin,
+                billetes=self.billetes("1.00"),
             )
 
         self.assertEqual(MovimientoCaja.objects.count(), 1)
@@ -219,9 +303,9 @@ class GestionCajasTests(TestCase):
             caja_id=self.caja.pk,
             tipo=MovimientoCaja.Tipo.ASIGNACION,
             moneda_id=self.moneda.pk,
-            importe=Decimal("70.00"),
             cajero_id=self.cajero.pk,
             realizado_por=self.admin,
+            billetes=self.billetes("70.00"),
         )
 
         with self.assertRaises(MovimientoNoPermitido):
@@ -229,8 +313,8 @@ class GestionCajasTests(TestCase):
                 caja_id=self.caja.pk,
                 tipo=MovimientoCaja.Tipo.RETIRO,
                 moneda_id=self.moneda.pk,
-                importe=Decimal("31.00"),
                 realizado_por=self.admin,
+                billetes=self.billetes("31.00"),
             )
 
     def test_no_se_puede_desactivar_sucursal_con_fondos_pendientes(self):
@@ -250,3 +334,51 @@ class GestionCajasTests(TestCase):
         self.assertIn("activa", respuesta.context["formulario"].errors)
         self.sucursal.refresh_from_db()
         self.assertTrue(self.sucursal.activa)
+
+    def test_movimiento_requiere_billetes_para_calcular_importe(self):
+        with self.assertRaises(ValidationError):
+            registrar_movimiento(
+                caja_id=self.caja.pk,
+                tipo=MovimientoCaja.Tipo.INGRESO,
+                moneda_id=self.moneda.pk,
+                realizado_por=self.admin,
+                billetes={},
+            )
+
+        self.assertFalse(MovimientoCaja.objects.exists())
+        self.assertFalse(InventarioBilleteCaja.objects.exists())
+
+    def test_movimiento_no_permite_retirar_denominaciones_inexistentes(self):
+        self.ingresar_efectivo("20.00", self.billete_10)
+        with self.assertRaises(MovimientoNoPermitido):
+            registrar_movimiento(
+                caja_id=self.caja.pk,
+                tipo=MovimientoCaja.Tipo.RETIRO,
+                moneda_id=self.moneda.pk,
+                realizado_por=self.admin,
+                billetes=self.billetes("10.00", self.centavo),
+            )
+
+        self.assertEqual(
+            SaldoCaja.objects.get(caja=self.caja, moneda=self.moneda).saldo,
+            Decimal("20.00"),
+        )
+
+    def test_conteo_inicial_reconcilia_saldo_existente_y_guarda_auditoria(self):
+        SaldoCaja.objects.create(caja=self.caja, moneda=self.moneda, saldo="20.00")
+
+        conteo = registrar_conteo_inventario(
+            caja_id=self.caja.pk,
+            moneda_id=self.moneda.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+
+        self.assertEqual(conteo.importe_total, Decimal("20.00"))
+        self.assertEqual(conteo.detalle_billetes.get().cantidad, 2)
+        self.assertEqual(
+            InventarioBilleteCaja.objects.get(
+                caja=self.caja, denominacion=self.billete_10
+            ).cantidad,
+            2,
+        )

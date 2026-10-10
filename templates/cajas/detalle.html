@@ -28,6 +28,28 @@
     <p>No hay fondos registrados en esta caja.</p>
   {% endif %}
 
+  <h2>Inventario detallado en caja</h2>
+  {% if inventario_caja %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th></tr></thead>
+        <tbody>
+          {% for existencia in inventario_caja %}
+            {% if existencia.cantidad %}
+              <tr>
+                <td>{{ existencia.denominacion.moneda.codigo }}</td>
+                <td>{{ existencia.denominacion.valor }}</td>
+                <td>{{ existencia.cantidad }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay billetes registrados en esta caja.</p>
+  {% endif %}
+
   <h2>Fondos asignados a cajeros</h2>
   {% if fondos %}
     <div class="overflow-x-auto">
@@ -48,19 +70,115 @@
     <p>No hay fondos asignados actualmente. Los cajeros deben tener el rol <strong>cajero</strong>.</p>
   {% endif %}
 
+  <h2>Inventario detallado asignado a cajeros</h2>
+  {% if inventario_cajeros %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Cajero</th><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th></tr></thead>
+        <tbody>
+          {% for existencia in inventario_cajeros %}
+            {% if existencia.cantidad %}
+              <tr>
+                <td>{{ existencia.cajero.get_full_name|default:existencia.cajero.username }}</td>
+                <td>{{ existencia.denominacion.moneda.codigo }}</td>
+                <td>{{ existencia.denominacion.valor }}</td>
+                <td>{{ existencia.cantidad }}</td>
+              </tr>
+            {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay billetes asignados a cajeros.</p>
+  {% endif %}
+
+  <h2>Denominaciones habilitadas</h2>
+  <p>Configurá las denominaciones de billetes disponibles para cada divisa antes de registrar movimientos.</p>
+  {% if denominaciones %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Divisa</th><th>Denominación de billete</th></tr></thead>
+        <tbody>
+          {% for denominacion in denominaciones %}
+            <tr><td>{{ denominacion.moneda.codigo }}</td><td>{{ denominacion.valor }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay denominaciones configuradas.</p>
+  {% endif %}
+  <form method="post" action="{% url 'cajas:registrar_denominacion' sucursal.pk %}">
+    {% csrf_token %}
+    {{ formulario_denominacion.non_field_errors }}
+    {% for campo in formulario_denominacion %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <button class="boton" type="submit">Agregar denominación</button>
+  </form>
+
   <h2>Registrar movimiento</h2>
-  <p>Ingresos y retiros ajustan el efectivo de la caja. Asignaciones y devoluciones trasladan fondos entre la caja y un cajero.</p>
-  <form method="post" action="{% url 'cajas:registrar_movimiento' sucursal.pk %}">
+  <p>Ingresos, retiros, asignaciones y devoluciones actualizan el saldo y el inventario por denominación de forma conjunta.</p>
+  <form method="post" action="{% url 'cajas:registrar_movimiento' sucursal.pk %}" id="form-movimiento">
     {% csrf_token %}
     {{ formulario.non_field_errors }}
-    {% for campo in formulario %}
+    {% for campo in formulario.campos_generales %}
       <p{% if campo.name == "cajero" %} data-campo-movimiento="cajero"{% endif %}>
         <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
         {{ campo }}
         {{ campo.errors }}
       </p>
     {% endfor %}
+    <fieldset>
+      <legend>Billetes del movimiento</legend>
+      {% for item in formulario.campos_billetes %}
+        <p data-billete-movimiento data-moneda="{{ item.denominacion.moneda_id }}" data-valor-centavos="{{ item.valor_centavos }}">
+          <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
+          {{ item.campo }}
+          {{ item.campo.errors }}
+        </p>
+      {% empty %}
+        <p>Primero agregá denominaciones para las divisas que necesitás.</p>
+      {% endfor %}
+    </fieldset>
+    <p>
+      <label for="importe-calculado">Importe calculado</label><br>
+      <output id="importe-calculado" aria-live="polite">Seleccioná una divisa y cargá billetes</output>
+      <span id="importe-calculado-moneda"></span>
+    </p>
     <button class="boton" type="submit" {% if not sucursal.activa %}disabled{% endif %}>Guardar movimiento</button>
+  </form>
+
+  <h2>Reconciliar inventario</h2>
+  <p>Usá el conteo para inicializar o corregir el desglose de saldos existentes. La suma de los billetes debe coincidir exactamente con el saldo registrado.</p>
+  <form method="post" action="{% url 'cajas:registrar_conteo' sucursal.pk %}" id="form-conteo">
+    {% csrf_token %}
+    {{ formulario_conteo.non_field_errors }}
+    {% for campo in formulario_conteo.campos_generales %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <fieldset>
+      <legend>Billetes contados</legend>
+      {% for item in formulario_conteo.campos_billetes %}
+        <p data-billete-conteo data-moneda="{{ item.denominacion.moneda_id }}">
+          <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
+          {{ item.campo }}
+          {{ item.campo.errors }}
+        </p>
+      {% empty %}
+        <p>Primero agregá denominaciones para las divisas que necesitás.</p>
+      {% endfor %}
+    </fieldset>
+    <button class="boton" type="submit">Guardar conteo</button>
   </form>
 
   <h2>Historial de movimientos</h2>
@@ -68,7 +186,7 @@
     <div class="overflow-x-auto">
       <table class="datos">
         <thead>
-          <tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
+          <tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Billetes</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
         </thead>
         <tbody>
           {% for movimiento in movimientos %}
@@ -77,6 +195,11 @@
               <td>{{ movimiento.get_tipo_display }}</td>
               <td>{{ movimiento.moneda.codigo }}</td>
               <td>{{ movimiento.importe }}</td>
+              <td>
+                {% for detalle in movimiento.detalle_billetes.all %}
+                  {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
+                {% endfor %}
+              </td>
               <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
               <td>{{ movimiento.saldo_caja_resultante }}</td>
               <td>{{ movimiento.saldo_cajero_resultante|default:"—" }}</td>
@@ -89,6 +212,34 @@
     </div>
   {% else %}
     <p>No hay movimientos registrados.</p>
+  {% endif %}
+  <h2>Historial de conteos y conciliaciones</h2>
+  {% if conteos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Fecha</th><th>Divisa</th><th>Inventario</th><th>Importe total</th><th>Cajero</th><th>Registrado por</th></tr></thead>
+        <tbody>
+          {% for conteo in conteos %}
+            <tr>
+              <td>{{ conteo.creado_en }}</td>
+              <td>{{ conteo.moneda.codigo }}</td>
+              <td>
+                {% for detalle in conteo.detalle_billetes.all %}
+                  {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
+                {% empty %}
+                  Sin billetes
+                {% endfor %}
+              </td>
+              <td>{{ conteo.importe_total }}</td>
+              <td>{% if conteo.cajero %}{{ conteo.cajero.get_full_name|default:conteo.cajero.username }}{% else %}Caja{% endif %}</td>
+              <td>{{ conteo.realizado_por.get_full_name|default:conteo.realizado_por.username }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay conteos registrados.</p>
   {% endif %}
   {% if page_obj.paginator.num_pages > 1 %}
     <nav class="mt-4 flex items-center gap-4" aria-label="Páginas del historial">
@@ -104,22 +255,81 @@
 </div>
 
 <script>
-  const selectorTipoMovimiento = document.getElementById("id_tipo");
-  const grupoCajero = document.querySelector('[data-campo-movimiento="cajero"]');
-  const selectorCajero = document.getElementById("id_cajero");
-  const tiposConCajero = ["ASIGNACION", "DEVOLUCION"];
-
-  function actualizarCamposMovimiento() {
-    const requiereCajero = tiposConCajero.includes(selectorTipoMovimiento.value);
-    grupoCajero.hidden = !requiereCajero;
-    selectorCajero.disabled = !requiereCajero;
-    selectorCajero.required = requiereCajero;
-    if (!requiereCajero) {
-      selectorCajero.value = "";
+  function actualizarBilletes(formularioId, selectorMoneda, selectorTipo) {
+    const formulario = document.getElementById(formularioId);
+    const moneda = formulario.querySelector(selectorMoneda);
+    if (!moneda) return;
+    const actualizarImporte = () => {
+      if (formularioId !== "form-movimiento") return;
+      const importe = document.getElementById("importe-calculado");
+      const codigoMoneda = document.getElementById("importe-calculado-moneda");
+      if (!moneda.value) {
+        importe.textContent = "Seleccioná una divisa y cargá billetes";
+        codigoMoneda.textContent = "";
+        return;
+      }
+      let totalCentavos = 0;
+      let cantidadesValidas = true;
+      formulario.querySelectorAll("[data-billete-movimiento]").forEach((grupo) => {
+        if (grupo.hidden) return;
+        const campo = grupo.querySelector("input");
+        const cantidad = Number(campo.value || "0");
+        if (!Number.isSafeInteger(cantidad) || cantidad < 0) {
+          cantidadesValidas = false;
+          return;
+        }
+        const valorCentavos = Number(grupo.dataset.valorCentavos);
+        totalCentavos += cantidad * valorCentavos;
+        if (!Number.isSafeInteger(totalCentavos)) cantidadesValidas = false;
+      });
+      if (!cantidadesValidas) {
+        importe.textContent = "—";
+        return;
+      }
+      importe.textContent =
+        `${Math.floor(totalCentavos / 100)}.${String(totalCentavos % 100).padStart(2, "0")}`;
+      codigoMoneda.textContent =
+        moneda.selectedOptions[0]?.textContent.split(" — ")[0] || "";
+    };
+    const actualizar = () => {
+      formulario.querySelectorAll("[data-billete-movimiento], [data-billete-conteo]")
+        .forEach((grupo) => {
+          const visible = grupo.dataset.moneda === moneda.value;
+          grupo.hidden = !visible;
+          const cantidad = grupo.querySelector("input");
+          cantidad.disabled = !visible;
+          if (!visible) cantidad.value = "0";
+        });
+      actualizarImporte();
+    };
+    moneda.addEventListener("change", actualizar);
+    actualizar();
+    formulario.addEventListener("input", (evento) => {
+      if (evento.target.closest("[data-billete-movimiento]")) {
+        actualizarImporte();
+      }
+    });
+    formulario.addEventListener("change", (evento) => {
+      if (evento.target.closest("[data-billete-movimiento]")) {
+        actualizarImporte();
+      }
+    });
+    if (selectorTipo) {
+      const tipo = formulario.querySelector(selectorTipo);
+      const grupoCajero = formulario.querySelector('[data-campo-movimiento="cajero"]');
+      const cajero = formulario.querySelector("#id_mov-cajero");
+      const actualizarCajero = () => {
+        const requiere = ["ASIGNACION", "DEVOLUCION"].includes(tipo.value);
+        grupoCajero.hidden = !requiere;
+        cajero.disabled = !requiere;
+        cajero.required = requiere;
+        if (!requiere) cajero.value = "";
+      };
+      tipo.addEventListener("change", actualizarCajero);
+      actualizarCajero();
     }
   }
-
-  selectorTipoMovimiento.addEventListener("change", actualizarCamposMovimiento);
-  actualizarCamposMovimiento();
+  actualizarBilletes("form-movimiento", "#id_mov-moneda", "#id_mov-tipo");
+  actualizarBilletes("form-conteo", "#id_conteo-moneda");
 </script>
 {% endblock %}

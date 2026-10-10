@@ -14,4 +14,14 @@ urlpatterns = [
         views.registrar_movimiento_view,
         name="registrar_movimiento",
     ),
+    path(
+        "sucursales/<int:pk>/denominaciones/",
+        views.registrar_denominacion_view,
+        name="registrar_denominacion",
+    ),
+    path(
+        "sucursales/<int:pk>/conteos/",
+        views.registrar_conteo_view,
+        name="registrar_conteo",
+    ),
 ]
