@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+
+{% block titulo %}Cajas y sucursales | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <div class="flex flex-wrap gap-3">
+    <a class="boton" href="{% url 'cajas:crear_sucursal' %}">Registrar sucursal</a>
+  </div>
+
+  <h1 class="mt-4">Cajas por sucursal</h1>
+
+  {% if messages %}
+    {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+  {% endif %}
+
+  {% if sucursales %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr><th>Sucursal</th><th>Dirección</th><th>Estado</th><th>Acciones</th></tr>
+        </thead>
+        <tbody>
+          {% for sucursal in sucursales %}
+            <tr>
+              <td>{{ sucursal.nombre }}</td>
+              <td>{{ sucursal.direccion }}</td>
+              <td>{% if sucursal.activa %}Activa{% else %}Inactiva{% endif %}</td>
+              <td class="whitespace-nowrap">
+                <a class="boton" href="{% url 'cajas:detalle' sucursal.pk %}">Ver caja y fondos</a>
+                <a class="boton boton-secundario" href="{% url 'cajas:editar_sucursal' sucursal.pk %}">Modificar</a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>Todavía no hay sucursales registradas.</p>
+  {% endif %}
+</div>
+{% endblock %}
