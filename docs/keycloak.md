@@ -37,13 +37,19 @@ docker compose down -v && docker compose up -d
 python3 scripts/sincronizar_secret.py && docker compose restart web
 ```
 
-## Usuarios de prueba (uno por rol)
+## Usuarios de prueba
 
 | Usuario | Clave | Rol | Qué ve en el menú |
 |---|---|---|---|
 | `admin.demo` | `Demo1234!` | `administrador` | Panel, Administración |
 | `analista.demo` | `Demo1234!` | `analista_cambiario` | Panel |
 | `cliente.demo` | `Demo1234!` | `usuario_cliente` | Panel |
+| `cajero.demo` | `Demo1234!` | `cajero` | Panel |
+
+El usuario `cajero.demo` se crea al importar el realm por primera vez. En un
+Keycloak ya existente, crea el usuario desde la consola de Keycloak con estas
+credenciales y asígnale el rol `cajero`; después de iniciar sesión, podrá
+seleccionarse al asignarle fondos desde el detalle de una caja.
 
 > La opción **Clientes** aparece sola en el menú de `administrador` y
 > `analista_cambiario` cuando se implemente el CRUD (GEG9-11): el menú
@@ -75,7 +81,8 @@ Keycloak, así que vuelve a pedir contraseña.
 
 En http://localhost:8080 (`admin`/`admin`), realm **global-exchange**:
 
-- **Realm roles** → los tres roles del sistema.
+- **Realm roles** → los cuatro roles del sistema (`administrador`,
+  `analista_cambiario`, `usuario_cliente` y `cajero`).
 - **Users → Add user** → completar, *Credentials* → poner contraseña
   (*Temporary: Off*), *Role mapping → Assign role* → elegir el rol.
 - Entrar a http://localhost:8000 con ese usuario: Django lo crea solo y le
@@ -157,6 +164,11 @@ legítimos con 401.
 **Roles** — Keycloak no los manda en `/userinfo`, van dentro del `access_token`
 en `realm_access.roles`. `apps/usuarios/auth.py` los lee de ahí y los copia a
 Grupos de Django en cada login, reemplazando los anteriores.
+
+El archivo de importación inicial define los cuatro roles. Keycloak solo importa
+ese archivo al crear el realm; en un ambiente que ya tenga datos persistidos,
+agrega `cajero` desde **Roles y permisos** en Global Exchange o desde
+**Realm roles** en la consola de Keycloak. No es necesario recrear el realm.
 
 **Dos URLs para Keycloak** — `KEYCLOAK_SERVER_URL` es la que abre el navegador
 (siempre `localhost`); `KEYCLOAK_INTERNAL_URL` es la que usa Django por dentro
