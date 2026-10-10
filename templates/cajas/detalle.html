@@ -54,7 +54,7 @@
     {% csrf_token %}
     {{ formulario.non_field_errors }}
     {% for campo in formulario %}
-      <p>
+      <p{% if campo.name == "cajero" %} data-campo-movimiento="cajero"{% endif %}>
         <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
         {{ campo }}
         {{ campo.errors }}
@@ -102,4 +102,24 @@
     </nav>
   {% endif %}
 </div>
+
+<script>
+  const selectorTipoMovimiento = document.getElementById("id_tipo");
+  const grupoCajero = document.querySelector('[data-campo-movimiento="cajero"]');
+  const selectorCajero = document.getElementById("id_cajero");
+  const tiposConCajero = ["ASIGNACION", "DEVOLUCION"];
+
+  function actualizarCamposMovimiento() {
+    const requiereCajero = tiposConCajero.includes(selectorTipoMovimiento.value);
+    grupoCajero.hidden = !requiereCajero;
+    selectorCajero.disabled = !requiereCajero;
+    selectorCajero.required = requiereCajero;
+    if (!requiereCajero) {
+      selectorCajero.value = "";
+    }
+  }
+
+  selectorTipoMovimiento.addEventListener("change", actualizarCamposMovimiento);
+  actualizarCamposMovimiento();
+</script>
 {% endblock %}
