@@ -64,6 +64,15 @@ class VisualizacionTasasTests(TestCase):
         self.assertContains(respuesta, "USD")
         self.assertContains(respuesta, "PYG")
 
+    def test_panel_muestra_la_precision_de_seis_decimales(self):
+        self.crear_tasa("7.123456", "7.654321", timezone.now())
+        self.client.force_login(self.usuario)
+
+        respuesta = self.client.get(reverse("tasas:panel"))
+
+        self.assertContains(respuesta, "7.123456")
+        self.assertContains(respuesta, "7.654321")
+
     def test_selecciona_un_par_por_query_params(self):
         self.crear_tasa("7.10", "7.20", timezone.now())
         self.crear_tasa("1.05", "1.10", timezone.now(), origen=self.eur, destino=self.pyg)

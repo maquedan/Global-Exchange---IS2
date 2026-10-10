@@ -129,7 +129,7 @@
         <div style="font-size:.9rem; color:#334155;">
           1 {{ codigo_origen }} =
           <strong id="valor-venta-cabecera" class="valor-venta">
-            {% if activa %}{{ activa.tasa_venta|stringformat:".2f" }}{% else %}—{% endif %}
+            {% if activa %}{{ tasa_venta_actual }}{% else %}—{% endif %}
           </strong>
           {{ codigo_destino }}
         </div>
@@ -230,6 +230,10 @@
 <script>
 (function () {
   var svg = document.getElementById("grafico-principal");
+  function formatearTasa(valor) {
+    return valor.toFixed(6).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, ".00");
+  }
+
   // OJO: antes esto era "if (!svg) return;", y ese return cortaba TODO el
   // script de acá para abajo — incluido el botón de intercambiar y el
   // auto-refresco — cada vez que la página no tenía gráfico (una sola tasa,
@@ -271,9 +275,9 @@
     var fila = document.querySelector("#tabla-estadisticas tbody tr:nth-child(" + (campo === "compra" ? 1 : 2) + ")");
     fila.querySelector(".celda-variacion").textContent = (variacion >= 0 ? "+" : "") + variacion.toFixed(2) + "%";
     fila.querySelector(".celda-variacion").className = "celda-variacion " + (variacion > 0 ? "variacion-sube" : variacion < 0 ? "variacion-baja" : "");
-    fila.querySelector(".celda-maximo").textContent = maximo.toFixed(2);
-    fila.querySelector(".celda-minimo").textContent = minimo.toFixed(2);
-    fila.querySelector(".celda-promedio").textContent = promedio.toFixed(2);
+    fila.querySelector(".celda-maximo").textContent = formatearTasa(maximo);
+    fila.querySelector(".celda-minimo").textContent = formatearTasa(minimo);
+    fila.querySelector(".celda-promedio").textContent = formatearTasa(promedio);
 
     if (campo === "venta") {
       var badge = document.getElementById("badge-variacion");
@@ -306,7 +310,7 @@
       var y = coordenadaY(valor, minimo, maximo);
       svgHtml +=
         '<line x1="' + MARGEN_IZQ + '" y1="' + y + '" x2="' + (ANCHO - MARGEN_DER) + '" y2="' + y + '" stroke="#e2e8f0" stroke-width="1"></line>' +
-        '<text x="' + (MARGEN_IZQ - 8) + '" y="' + (y + 3) + '" font-size="10" fill="#94a3b8" text-anchor="end">' + valor.toFixed(2) + '</text>';
+        '<text x="' + (MARGEN_IZQ - 8) + '" y="' + (y + 3) + '" font-size="10" fill="#94a3b8" text-anchor="end">' + formatearTasa(valor) + '</text>';
     }
 
     // Eje X: hasta 5 fechas, repartidas parejo entre los puntos mostrados.
@@ -354,7 +358,7 @@
     tooltip.style.left = ((coordenadaX(indice) / ANCHO) * caja.width) + "px";
     tooltip.style.top = "20px";
     tooltip.innerHTML =
-      "Compra " + punto.compra.toFixed(2) + " · Venta " + punto.venta.toFixed(2) + "<br>" +
+      "Compra " + formatearTasa(punto.compra) + " · Venta " + formatearTasa(punto.venta) + "<br>" +
       formatearFecha(punto.fechaObj) + " " + punto.fechaObj.getFullYear();
   });
   svg.addEventListener("mouseleave", function () { tooltip.style.display = "none"; });
@@ -384,7 +388,7 @@
 
         [".valor-compra", ".valor-venta"].forEach(function (selector) {
           document.querySelectorAll(selector).forEach(function (elemento) {
-            var valorNuevo = (selector === ".valor-compra" ? tasa.compra : tasa.venta).toFixed(2);
+            var valorNuevo = formatearTasa(selector === ".valor-compra" ? tasa.compra : tasa.venta);
             if (elemento.textContent.trim() === valorNuevo) return;
             elemento.textContent = valorNuevo;
             elemento.classList.remove("valor-actualizado");
