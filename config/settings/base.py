@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.conversiones",
     "apps.comisiones",
     "apps.notificaciones",
+    "apps.cajas",
 ]
 
 MIDDLEWARE = [

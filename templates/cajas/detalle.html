@@ -1,0 +1,105 @@
+{% extends "base.html" %}
+
+{% block titulo %}Caja de {{ sucursal.nombre }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'cajas:lista' %}">Volver a sucursales</a></p>
+  <h1>Caja — {{ sucursal.nombre }}</h1>
+  <p>{{ sucursal.direccion }} · {% if sucursal.activa %}Activa{% else %}Inactiva{% endif %}</p>
+
+  {% if messages %}
+    {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+  {% endif %}
+
+  <h2>Fondos disponibles en caja</h2>
+  {% if saldos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Moneda</th><th>Saldo</th></tr></thead>
+        <tbody>
+          {% for saldo in saldos %}
+            <tr><td>{{ saldo.moneda.codigo }} — {{ saldo.moneda.nombre }}</td><td>{{ saldo.saldo }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay fondos registrados en esta caja.</p>
+  {% endif %}
+
+  <h2>Fondos asignados a cajeros</h2>
+  {% if fondos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Cajero</th><th>Moneda</th><th>Saldo asignado</th></tr></thead>
+        <tbody>
+          {% for fondo in fondos %}
+            <tr>
+              <td>{{ fondo.cajero.get_full_name|default:fondo.cajero.username }}</td>
+              <td>{{ fondo.moneda.codigo }}</td>
+              <td>{{ fondo.saldo }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay fondos asignados actualmente. Los cajeros deben tener el rol <strong>cajero</strong>.</p>
+  {% endif %}
+
+  <h2>Registrar movimiento</h2>
+  <p>Ingresos y retiros ajustan el efectivo de la caja. Asignaciones y devoluciones trasladan fondos entre la caja y un cajero.</p>
+  <form method="post" action="{% url 'cajas:registrar_movimiento' sucursal.pk %}">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    {% for campo in formulario %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <button class="boton" type="submit" {% if not sucursal.activa %}disabled{% endif %}>Guardar movimiento</button>
+  </form>
+
+  <h2>Historial de movimientos</h2>
+  {% if movimientos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
+        </thead>
+        <tbody>
+          {% for movimiento in movimientos %}
+            <tr>
+              <td>{{ movimiento.creado_en }}</td>
+              <td>{{ movimiento.get_tipo_display }}</td>
+              <td>{{ movimiento.moneda.codigo }}</td>
+              <td>{{ movimiento.importe }}</td>
+              <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
+              <td>{{ movimiento.saldo_caja_resultante }}</td>
+              <td>{{ movimiento.saldo_cajero_resultante|default:"—" }}</td>
+              <td>{{ movimiento.realizado_por.get_full_name|default:movimiento.realizado_por.username }}</td>
+              <td>{{ movimiento.nota|default:"—" }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay movimientos registrados.</p>
+  {% endif %}
+  {% if page_obj.paginator.num_pages > 1 %}
+    <nav class="mt-4 flex items-center gap-4" aria-label="Páginas del historial">
+      {% if page_obj.has_previous %}
+        <a href="?page={{ page_obj.previous_page_number }}">Anterior</a>
+      {% endif %}
+      <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}
+        <a href="?page={{ page_obj.next_page_number }}">Siguiente</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+</div>
+{% endblock %}

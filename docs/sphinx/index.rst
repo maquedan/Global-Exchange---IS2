@@ -26,6 +26,7 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    conversiones
    comisiones
    notificaciones
+   cajas
 
 .. toctree::
    :maxdepth: 1
