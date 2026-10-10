@@ -1,42 +1,99 @@
-# Ambiente de PRODUCCIÓN: gunicorn + PostgreSQL + Keycloak
+# Ambiente de PRODUCCIÓN: Nginx + Gunicorn + PostgreSQL + Keycloak
 # Uso: docker compose -f docker-compose.prod.yml up -d --build
+
 services:
+  # Base de datos principal para Django
   db:
     image: postgres:16
+    restart: always
     environment:
-      POSTGRES_DB: globalexchange
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-globalexchange}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-holadjango}
     volumes:
       - pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d globalexchange"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
+  # Base de datos independiente para Keycloak
+  keycloak-db:
+    image: postgres:16
+    restart: always
+    environment:
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:-keycloak}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:-keycloak}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-holakeycloak}
+    volumes:
+      - keycloak_pgdata_prod:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+# Servidor de autenticación Keycloak
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
-    command: start --http-enabled=true --hostname-strict=false
+    restart: always
+    # 1. Se agrega --import-realm en el comando:
+    command: start --import-realm --http-enabled=true --proxy-headers=xforwarded
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER}
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD}
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:-admin_prod}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:-holaadmin}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://db:5432/globalexchange
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB_NAME:-keycloak}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER:-keycloak}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:-holakeycloak}
+      # Define el dominio público real donde escuchará Keycloak
+      KC_HOSTNAME: ${KEYCLOAK_PUBLIC_URL:-http://localhost:8080}
+    # 2. Se agrega la sección de volúmenes para montar tu realm.json:
+    volumes:
+      - ./keycloak/realm-global-exchange.json:/opt/keycloak/data/import/realm.json:ro
     ports:
       - "8080:8080"
     depends_on:
-      - db
+      keycloak-db:
+        condition: service_healthy
 
+  # Aplicación Web Django
   web:
-    build: .
-    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    command: sh -c "python manage.py collectstatic --noinput && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 3"
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
     env_file:
       - .env.prod
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-    ports:
-      - "8000:8000"
+      KEYCLOAK_SERVER_URL: ${KEYCLOAK_SERVER_URL:-http://localhost:8080}
+      KEYCLOAK_INTERNAL_URL: ${KEYCLOAK_INTERNAL_URL:-http://keycloak:8080}
     depends_on:
-      - db
-      - keycloak
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/app/staticfiles:ro
+    depends_on:
+      web:
+        condition: service_started
 
 volumes:
   pgdata_prod:
+  keycloak_pgdata_prod:
+  static_volume:
+  media_volume:

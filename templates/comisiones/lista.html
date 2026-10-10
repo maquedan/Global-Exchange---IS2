@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block titulo %}Comisiones | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;">
+    <a class="boton" href="{% url 'comisiones:crear' %}">
+      Configurar comisión
+    </a>
+  </div>
+
+  <h1 style="margin-top:1rem;">Comisiones por categoría</h1>
+  <p>Definí el porcentaje que se aplicará a las futuras operaciones de cada segmento.</p>
+
+  {% if messages %}
+    {% for message in messages %}
+      <p class="mensaje">{{ message }}</p>
+    {% endfor %}
+  {% endif %}
+
+  {% if comisiones %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Categoría</th>
+          <th>Comisión</th>
+          <th>Última actualización</th>
+          <th>Acción</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for comision in comisiones %}
+          <tr>
+            <td>{{ comision.get_categoria_display }}</td>
+            <td>
+              <span class="etiqueta">
+                {{ comision.porcentaje|floatformat:2 }} %
+              </span>
+            </td>
+            <td>{{ comision.actualizado_en|date:"d/m/Y H:i" }}</td>
+            <td>
+              <a class="boton boton-secundario" href="{% url 'comisiones:editar' comision.pk %}">
+                Modificar
+              </a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Todavía no hay comisiones configuradas.</p>
+  {% endif %}
+</div>
+{% endblock %}

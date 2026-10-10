@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block titulo %}Historial de transacciones | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Historial de transacciones</h1>
+  <p>Consultá las operaciones confirmadas de tus clientes asociados.</p>
+
+  {% if transacciones %}
+    <div style="overflow-x:auto;">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Tipo</th>
+            <th>Cliente</th>
+            <th>Conversión</th>
+            <th>Tasa aplicada</th>
+            <th>Comisión</th>
+            <th>Importe final</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for transaccion in transacciones %}
+            <tr>
+              <td>{{ transaccion.fecha|date:"d/m/Y H:i" }}</td>
+              <td>
+                <span class="etiqueta">{{ transaccion.tipo }}</span>
+              </td>
+              <td>{{ transaccion.cliente }}</td>
+              <td>
+                {{ transaccion.monto_origen|floatformat:2 }}
+                {{ transaccion.origen.codigo }}
+                →
+                {{ transaccion.destino.codigo }}
+              </td>
+              <td>
+                {{ transaccion.tasa|floatformat:2 }}
+              </td>
+              <td>
+                {{ transaccion.comision|floatformat:2 }}
+                {{ transaccion.moneda_comision.codigo }}
+                ({{ transaccion.porcentaje_comision|floatformat:2 }}%)
+              </td>
+              <td>
+                <strong>
+                  {{ transaccion.monto_final|floatformat:2 }}
+                  {{ transaccion.destino.codigo }}
+                </strong>
+              </td>
+              <td>{{ transaccion.estado }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>Todavía no tenés transacciones confirmadas.</p>
+  {% endif %}
+</div>
+{% endblock %}

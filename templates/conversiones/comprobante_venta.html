@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block titulo %}
+  {% if venta.estado == "PENDIENTE" %}Confirmá tu venta{% elif venta.estado == "CONFIRMADA" %}Venta confirmada{% else %}Venta cancelada{% endif %} | Global Exchange
+{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  {% if venta.estado == "PENDIENTE" %}
+    <h1>Revisá y confirmá tu venta</h1>
+    <p>Esta es la cotización vigente al iniciar la operación. Si la tasa cambia
+      antes de que confirmes el pago, la operación se cancela sola para que no
+      se te acredite con una tasa distinta a la que ves acá. Tenés 15 minutos
+      desde que iniciaste la venta para confirmar, o se cancela sola por
+      vencimiento.</p>
+  {% elif venta.estado == "CONFIRMADA" %}
+    <h1>Venta confirmada</h1>
+    <p>Operación #{{ venta.pk }} confirmada el {{ venta.confirmado_en|date:"d/m/Y H:i" }}.</p>
+  {% else %}
+    <h1>Venta cancelada</h1>
+    {% if venta.motivo_cancelacion == "CAMBIO_COTIZACION" %}
+      <p>La cotización cambió antes de que confirmaras el pago, así que la
+        operación #{{ venta.pk }} se canceló automáticamente. No se te acreditó
+        nada.</p>
+    {% elif venta.motivo_cancelacion == "EXPIRADA" %}
+      <p>Pasaron más de 15 minutos sin confirmar el pago, así que la operación
+        #{{ venta.pk }} se canceló sola. No se te acreditó nada.</p>
+    {% else %}
+      <p>Cancelaste la operación #{{ venta.pk }}. No se te acreditó nada.</p>
+    {% endif %}
+  {% endif %}
+
+  <h2>Detalle de la operación</h2>
+  <p>Cliente: {{ venta.cliente }}</p>
+  <p>Divisa entregada: {{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }}</p>
+  <p>Tasa aplicada: {{ venta.tasa_aplicada }}</p>
+  <p>Importe convertido: {{ venta.monto_convertido }} {{ venta.moneda_acreditada.codigo }}</p>
+  <p>Comisión aplicada: {{ venta.porcentaje_comision }}% ({{ venta.monto_comision }} {{ venta.moneda_acreditada.codigo }})</p>
+  <p>Destino: {{ venta.cuenta_destino.get_tipo_display }} — {{ venta.cuenta_destino.entidad }} ({{ venta.cuenta_destino.numero_cuenta }})</p>
+  <p><strong>Importe neto a acreditar: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+
+  {% if venta.estado == "PENDIENTE" %}
+    <p id="contador-vencimiento" class="mensaje"></p>
+    <form method="post" action="{% url 'conversiones:confirmar_venta' venta.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button class="boton" type="submit">Confirmar pago</button>
+    </form>
+    <form method="post" action="{% url 'conversiones:cancelar_venta' venta.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button class="boton boton-secundario" type="submit">Cancelar</button>
+    </form>
+    <script>
+      (function () {
+        var limiteMs = new Date("{{ venta.creado_en|date:'c' }}").getTime()
+          + {{ minutos_expiracion }} * 60 * 1000;
+        var elemento = document.getElementById("contador-vencimiento");
+
+        function actualizar() {
+          var restante = limiteMs - Date.now();
+          if (restante <= 0) {
+            elemento.textContent = "Se venció el tiempo para confirmar. Actualizando...";
+            window.location.reload();
+            return;
+          }
+          var minutos = Math.floor(restante / 60000);
+          var segundos = Math.floor((restante % 60000) / 1000);
+          elemento.textContent = "Tenés " + minutos + " min " +
+            (segundos < 10 ? "0" : "") + segundos + " s para confirmar el pago.";
+        }
+
+        actualizar();
+        setInterval(actualizar, 1000);
+      })();
+    </script>
+  {% else %}
+    <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}">Realizar otra venta</a>
+    <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}?cliente={{ venta.cliente_id }}&moneda_entregada={{ venta.moneda_entregada_id }}&moneda_acreditada={{ venta.moneda_acreditada_id }}&cuenta_destino={{ venta.cuenta_destino_id }}&monto_entregado={{ venta.monto_entregado|stringformat:'.2f' }}">Repetir esta operación</a>
+  {% endif %}
+</div>
+{% endblock %}

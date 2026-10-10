@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+
+{% block titulo %}
+  {% if compra.estado == "PENDIENTE" %}Confirmá tu compra{% elif compra.estado == "CONFIRMADA" %}Compra confirmada{% else %}Compra cancelada{% endif %} | Global Exchange
+{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  {% if compra.estado == "PENDIENTE" %}
+    <h1>Revisá y confirmá tu compra</h1>
+    <p>Esta es la cotización vigente al iniciar la operación. Si la tasa cambia
+      antes de que confirmes el pago, la operación se cancela sola para que no
+      pagues una tasa distinta a la que ves acá. Tenés 15 minutos desde que
+      iniciaste la compra para confirmar, o se cancela sola por vencimiento.</p>
+  {% elif compra.estado == "CONFIRMADA" %}
+    <h1>Compra confirmada</h1>
+    <p>Operación #{{ compra.pk }} confirmada el {{ compra.confirmado_en|date:"d/m/Y H:i" }}.</p>
+  {% else %}
+    <h1>Compra cancelada</h1>
+    {% if compra.motivo_cancelacion == "CAMBIO_COTIZACION" %}
+      <p>La cotización cambió antes de que confirmaras el pago, así que la
+        operación #{{ compra.pk }} se canceló automáticamente. No se te cobró
+        nada.</p>
+    {% elif compra.motivo_cancelacion == "EXPIRADA" %}
+      <p>Pasaron más de 15 minutos sin confirmar el pago, así que la operación
+        #{{ compra.pk }} se canceló sola. No se te cobró nada.</p>
+    {% else %}
+      <p>Cancelaste la operación #{{ compra.pk }}. No se te cobró nada.</p>
+    {% endif %}
+  {% endif %}
+
+  <h2>Detalle de la operación</h2>
+  <p>Cliente: {{ compra.cliente }}</p>
+  <p>Monto base: {{ compra.monto_pagado }} {{ compra.moneda_pagada.codigo }}</p>
+  <p>Comisión aplicada: {{ compra.porcentaje_comision }}% ({{ compra.monto_comision }} {{ compra.moneda_pagada.codigo }})</p>
+  <p>Total a pagar: {{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}</p>
+  <p>Tasa aplicada: {{ compra.tasa_aplicada }}</p>
+  <p><strong>Recibirás {{ compra.monto_recibido }} {{ compra.moneda_adquirida.codigo }}</strong></p>
+
+  {% if compra.estado == "PENDIENTE" %}
+    <p id="contador-vencimiento" class="mensaje"></p>
+    <form method="post" action="{% url 'conversiones:confirmar_compra' compra.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button class="boton" type="submit">Confirmar pago</button>
+    </form>
+    <form method="post" action="{% url 'conversiones:cancelar_compra' compra.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button class="boton boton-secundario" type="submit">Cancelar</button>
+    </form>
+    <script>
+      (function () {
+        var limiteMs = new Date("{{ compra.creado_en|date:'c' }}").getTime()
+          + {{ minutos_expiracion }} * 60 * 1000;
+        var elemento = document.getElementById("contador-vencimiento");
+
+        function actualizar() {
+          var restante = limiteMs - Date.now();
+          if (restante <= 0) {
+            elemento.textContent = "Se venció el tiempo para confirmar. Actualizando...";
+            window.location.reload();
+            return;
+          }
+          var minutos = Math.floor(restante / 60000);
+          var segundos = Math.floor((restante % 60000) / 1000);
+          elemento.textContent = "Tenés " + minutos + " min " +
+            (segundos < 10 ? "0" : "") + segundos + " s para confirmar el pago.";
+        }
+
+        actualizar();
+        setInterval(actualizar, 1000);
+      })();
+    </script>
+  {% else %}
+    <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
+    <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>
+  {% endif %}
+</div>
+{% endblock %}
