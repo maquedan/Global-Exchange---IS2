@@ -140,7 +140,7 @@ LOGOUT_REDIRECT_URL = "/"
 # Roles internos que nunca se copian a Grupos de Django. Los demás roles del
 # realm se sincronizan dinámicamente: así un rol creado desde RF011 queda
 # disponible en la aplicación en el siguiente inicio de sesión.
-ROLES_KEYCLOAK = ["administrador", "analista_cambiario", "usuario_cliente"]
+ROLES_KEYCLOAK = ["administrador", "analista_cambiario", "usuario_cliente", "cajero"]
 ROLES_KEYCLOAK_INTERNOS = ["offline_access", "uma_authorization"]
 ROL_ADMINISTRADOR = "administrador"
 
