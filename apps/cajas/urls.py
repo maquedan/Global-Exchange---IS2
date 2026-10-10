@@ -20,6 +20,16 @@ urlpatterns = [
         name="registrar_denominacion",
     ),
     path(
+        "sucursales/<int:pk>/denominaciones/<int:denominacion_pk>/editar/",
+        views.editar_denominacion_view,
+        name="editar_denominacion",
+    ),
+    path(
+        "sucursales/<int:pk>/denominaciones/<int:denominacion_pk>/eliminar/",
+        views.eliminar_denominacion_view,
+        name="eliminar_denominacion",
+    ),
+    path(
         "sucursales/<int:pk>/conteos/",
         views.registrar_conteo_view,
         name="registrar_conteo",

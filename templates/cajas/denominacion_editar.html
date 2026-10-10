@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+
+{% block titulo %}Modificar denominación | {{ sucursal.nombre }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'cajas:registrar_denominacion' sucursal.pk %}">Volver a denominaciones</a></p>
+  <h1>Modificar denominación de billete — {{ sucursal.nombre }}</h1>
+  <p>Denominación actual: {{ denominacion.moneda.codigo }} {{ denominacion.valor }}</p>
+
+  {% if en_uso %}
+    <p role="alert">Esta denominación ya tiene inventario, movimientos o conteos asociados y no se puede modificar.</p>
+  {% else %}
+    <form method="post">
+      {% csrf_token %}
+      {{ formulario.non_field_errors }}
+      {% for campo in formulario %}
+        <p>
+          <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+          {{ campo }}
+          {{ campo.errors }}
+        </p>
+      {% endfor %}
+      <button class="boton" type="submit">Guardar cambios</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

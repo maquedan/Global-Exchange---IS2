@@ -24,6 +24,19 @@ class MovimientoNoPermitido(Exception):
     """El movimiento solicitado no cumple las reglas de caja."""
 
 
+def denominacion_tiene_referencias(denominacion):
+    """Indica si una denominación forma parte de inventario o de un registro auditado."""
+    return any(
+        consulta.objects.filter(denominacion=denominacion).exists()
+        for consulta in (
+            DetalleMovimientoBillete,
+            DetalleConteoInventarioBilletes,
+            InventarioBilleteCaja,
+            InventarioBilleteCajero,
+        )
+    )
+
+
 def _normalizar_billetes(billetes, moneda, *, permitir_cero=False):
     if not isinstance(billetes, dict) or (not billetes and not permitir_cero):
         raise ValidationError("Ingresá la cantidad de billetes por denominación.")

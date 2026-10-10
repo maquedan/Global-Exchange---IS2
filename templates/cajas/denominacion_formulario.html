@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block titulo %}Denominaciones | {{ sucursal.nombre }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'cajas:detalle' sucursal.pk %}">Volver a información de la caja</a></p>
+  <h1>Denominaciones de billetes — {{ sucursal.nombre }}</h1>
+  <nav aria-label="Otras operaciones de caja">
+    <a href="{% url 'cajas:registrar_movimiento' sucursal.pk %}">Registrar movimiento</a> ·
+    <a href="{% url 'cajas:registrar_conteo' sucursal.pk %}">Reconciliar inventario</a>
+  </nav>
+  {% if messages %}
+    {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+  {% endif %}
+
+  <h2>Denominaciones configuradas</h2>
+  {% if denominaciones %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead><tr><th>Divisa</th><th>Denominación</th><th>Acciones</th></tr></thead>
+        <tbody>
+          {% for denominacion in denominaciones %}
+            <tr>
+              <td>{{ denominacion.moneda.codigo }}</td>
+              <td>{{ denominacion.valor }}</td>
+              <td>
+                {% if denominacion.en_uso %}
+                  <span>En uso; no se puede modificar ni eliminar</span>
+                {% else %}
+                  <div style="display:flex; gap:.5rem; flex-wrap:wrap; align-items:center;">
+                    <a class="boton boton-secundario" href="{% url 'cajas:editar_denominacion' sucursal.pk denominacion.pk %}">Modificar</a>
+                    <form method="post" action="{% url 'cajas:eliminar_denominacion' sucursal.pk denominacion.pk %}">
+                      {% csrf_token %}
+                      <button class="boton" type="submit" onclick="return confirm('¿Eliminar esta denominación?')">Eliminar</button>
+                    </form>
+                  </div>
+                {% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay denominaciones configuradas.</p>
+  {% endif %}
+
+  <h2>Nueva denominación</h2>
+  <form method="post" action="{% url 'cajas:registrar_denominacion' sucursal.pk %}">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    {% for campo in formulario %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <button class="boton" type="submit">Agregar denominación</button>
+  </form>
+</div>
+{% endblock %}
