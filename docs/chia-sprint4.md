@@ -209,3 +209,160 @@ responder correctamente.
 pruebas del módulo de cajas pasaron tras el cambio del formulario dinámico.
 
 ---
+
+## 4. Leyda Fleitas — RF022, Pago con pasarela real en modo prueba (GEG9-36)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+### 4.1. «Stripe o dLocal, y por qué»
+
+**Lo que aprendimos.** Stripe no permite registrarse desde Paraguay. dLocal
+sí, y además está pensado específicamente para Latinoamérica — tiene
+cobertura nativa de Paraguay con tarjetas y medios de pago locales.
+
+**Decisión.** dLocal en modo sandbox, con credenciales de prueba generadas
+por el propio equipo (no las da la cátedra).
+
+### 4.2. «¿Qué pasa si `moneda_pagada` no es ninguna que dLocal sepa cobrar en Paraguay?»
+
+**Lo que aprendimos**, leyendo la documentación real antes de programar
+(`docs.dlocal.com`, país Paraguay): dLocal ahí **solo** cobra en PYG (sin
+decimales) o en USD —y esto último solo con tarjeta, vía
+`currency_to_charge`—. El modelo de `CompraDivisa` ya permite EUR, BRL, ARS,
+GBP y JPY como `moneda_pagada`, ninguna de las cuales dLocal puede cobrar
+directamente ahí.
+
+**Decisión** (confirmada con la responsable del proyecto antes de programar,
+tal como pedía el ticket): si `moneda_pagada` no es PYG ni USD, convertir el
+`total_a_pagar` a su equivalente en PYG usando `tasa_aplicada` —ya congelada
+en la operación— y cobrar eso. Se implementó en una sola función,
+`monto_para_pasarela(compra)`, para no repetir esta regla en varios lugares.
+
+### 4.3. «¿La pasarela aplica también a Venta?»
+
+**Lo que aprendimos.** En una Venta el cliente **entrega** divisas y
+**recibe** PYG — no hay nada que cobrarle con tarjeta. Meter una pasarela de
+pago ahí habría significado inventar qué cobrarle, algo que el ticket no
+pedía.
+
+**Decisión** (confirmada antes de programar): la pasarela (RF022) solo se
+agrega al flujo de Compra. El "Confirmar pago" directo de Venta (RF051) no
+cambia.
+
+### 4.4. «Bug real encontrado probando contra el sandbox, no solo con mocks»
+
+**Lo que aprendimos.** La documentación de la firma da un solo ejemplo
+literal del encabezado `X-Date`: `2018-07-12T13:46:28.629Z` (como
+`new Date().toISOString()` en JavaScript — milisegundos y sufijo `Z`). Se
+implementó al principio con offset `+0000` en vez de `Z`, que es un formato
+también válido de ISO 8601 pero no el que dLocal espera exactamente — y el
+sandbox lo rechazó con `{"code": 5001, "message": "Invalid parameter",
+"param": "X-Date"}`.
+
+**Decisión.** Corregir el formato a sufijo `Z` y volver a probar contra el
+sandbox real (no solo con el mock de las pruebas automáticas). Con esa
+corrección, `crear_pago` y `consultar_pago` funcionaron de verdad contra
+`https://sandbox.dlocal.com`, devolviendo un `redirect_url` real y un
+`id` real de pago. Este bug nunca lo iban a encontrar las pruebas con mock
+(ahí el "servidor falso" nunca valida el formato real del header) — por
+eso el ticket pedía probar contra la documentación/sandbox antes de dar por
+terminada la integración.
+
+### 4.5. «¿Cómo confío en que el pago salió aprobado, si el cliente vuelve de la pasarela con la URL que quiera?»
+
+**Lo que aprendimos.** Un cliente (o cualquiera) podría volver a la URL de
+retorno con parámetros manipulados a mano, intentando simular un pago
+aprobado sin haber pagado.
+
+**Decisión.** La vista de retorno nunca mira los parámetros de la URL: vuelve
+a preguntarle a la pasarela (`consultar_pago`) cuál es el estado real del
+pago, y recién ahí decide. Es además idempotente — consultarlo dos veces no
+confirma la compra dos veces (se verificó con una prueba que cuenta cuántas
+veces se llamó al proveedor).
+
+### 4.6. «¿Qué pasa si el pago sale aprobado pero la compra ya venció o cambió de cotización mientras tanto?»
+
+**Lo que aprendimos.** Es un caso real de carrera: el cliente puede tardar en
+pagar en la pasarela más de lo que dura la cotización congelada (15 minutos,
+RF051), o el analista puede actualizar la tasa justo en el medio.
+
+**Decisión.** Si el pago llega aprobado pero `confirmar_pago_compra` no la
+deja CONFIRMADA (la cancela por cambio de cotización o por vencimiento), se
+intenta reembolsar automáticamente. Si el reembolso en sí también falla, el
+`Pago` queda en un estado nuevo, `REQUIERE_REVISION`, en vez de que el
+usuario vea un error críptico o el dinero quede cobrado sin nada a cambio.
+
+### 4.7. «¿Y si no hay credenciales de dLocal configuradas?»
+
+**Decisión.** `DLocalProveedor` chequea las tres credenciales **antes** de
+tocar cualquier otro dato, y si falta alguna tira un error claro y explicado
+(`DLocalNoConfigurado`), nunca un `AttributeError` críptico. Mientras tanto,
+`PAGO_PROVEEDOR=simulado` (el valor por defecto) permite hacer una demo
+completa sin red ni credenciales, con botones para aprobar/rechazar el pago
+a mano.
+
+**Corrección sobre la marcha:** igual que con RF023 y RF033, el ticket
+pedía un admin de solo lectura para `Pago`. No se registró — el equipo tiene
+prohibido usar el admin de Django en este proyecto.
+
+## 4.8. Verificaciones realizadas
+
+- Migración inicial de `apps.pagos` generada y aplicada.
+- Suite completa del proyecto ejecutada tras el cambio: **170 pruebas
+  aprobadas** (incluye las 2 agregadas en 4.9 para los bugs del
+  `callback_url` y el CSRF).
+- Casos nuevos cubiertos: pago aprobado confirma la compra, pago rechazado
+  no la confirma, idempotencia (consultar dos veces no confirma dos veces),
+  pago aprobado con cotización cambiada o con la operación vencida (no
+  confirma, intenta reembolso), la firma HMAC concatena login+fecha+cuerpo
+  exactamente como pide la documentación, el `CheckConstraint` de "una sola
+  operación" en `Pago`, y que faltar las credenciales de dLocal da un error
+  claro en vez de una excepción cruda.
+- **Verificación real contra el sandbox de dLocal** (no solo mocks): se creó
+  una compra real con `moneda_pagada=USD` y se llamó a `iniciar_pago` con
+  `PAGO_PROVEEDOR=dlocal` de verdad. La primera llamada falló por el formato
+  de `X-Date` (ver 4.4); corregido esto, `crear_pago` devolvió un
+  `redirect_url` y un `id` reales de `sandbox.dlocal.com`, y `consultar_pago`
+  contra ese mismo pago devolvió `PENDING` correctamente traducido a
+  `PENDIENTE`.
+- Documentación técnica incorporada a Sphinx en `docs/sphinx/pagos.rst`.
+
+### 4.9. Dos bugs más, encontrados recién al probar la demo completa en el navegador (no con pytest)
+
+**«El cliente queda varado en la pantalla de éxito de dLocal, sin volver a nuestra app»**
+
+**Lo que aprendimos.** `crear_pago` nunca mandaba `callback_url` en el
+pedido — sin eso, dLocal no tiene a dónde devolver al navegador después de
+pagar. La documentación completa de ese campo está en una página aparte
+("Configure callback URL"), no en la de "Integrate checkout" que se había
+revisado antes de programar.
+
+**Decisión.** Armar un `callback_url` absoluto (`SITE_BASE_URL` +
+`reverse("pagos:retorno", ...)`) con el `pk` del `Pago` ya creado, y
+mandarlo siempre en el pedido a dLocal. Se verificó contra el sandbox real
+que dLocal lo acepta sin error.
+
+**«Prohibido (403): La verificación CSRF ha fallado»**
+
+**Lo que aprendimos.** dLocal no redirige al cliente con un link común: le
+hace al navegador un **POST** al `callback_url`. Ese POST no trae (ni puede
+traer) el token CSRF de nuestro sitio, y por el mismo motivo —un POST entre
+sitios distintos— tampoco hay garantía de que el navegador mande la cookie
+de sesión.
+
+**Decisión.** Dos cambios en `retorno`: `@csrf_exempt` (no hace falta el
+token porque de todas formas nunca se confía en nada de ese POST — siempre
+se vuelve a consultar el estado real con `consultar_pago`), y dejar de
+exigir login/dueño en esa vista puntual. Como `confirmar_pago_compra`
+necesita un usuario asociado al cliente para encontrar la compra, si no hay
+sesión se usa cualquiera de los usuarios ya asociados a ese cliente —no
+hace falta que sea justo quien iba a pagar: la operación ya se validó como
+legítima contra la pasarela antes de llegar a ese paso.
+
+**Verificación.** Se agregaron dos pruebas que reproducen exactamente estos
+dos escenarios (un `Client(enforce_csrf_checks=True)` real, y
+`confirmar_pago(..., usuario=None)`), además de repetir la prueba manual
+completa contra el sandbox real hasta llegar de vuelta al comprobante ya
+confirmado.
+
+---

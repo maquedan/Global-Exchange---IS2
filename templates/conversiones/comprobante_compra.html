@@ -39,10 +39,7 @@
 
   {% if compra.estado == "PENDIENTE" %}
     <p id="contador-vencimiento" class="mensaje"></p>
-    <form method="post" action="{% url 'conversiones:confirmar_compra' compra.pk %}" style="display:inline">
-      {% csrf_token %}
-      <button class="boton" type="submit">Confirmar pago</button>
-    </form>
+    <a class="boton" href="{% url 'pagos:elegir_pago' compra.pk %}">Pagar</a>
     <form method="post" action="{% url 'conversiones:cancelar_compra' compra.pk %}" style="display:inline">
       {% csrf_token %}
       <button class="boton boton-secundario" type="submit">Cancelar</button>
@@ -74,6 +71,14 @@
     <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
     <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>
   {% endif %}
+
+  {% with pago=compra.pagos.first %}
+    {% if pago %}
+      <h2>Pago</h2>
+      <p>Proveedor: {{ pago.proveedor }} — Estado: {{ pago.get_estado_display }}</p>
+      <p>Referencia: {{ pago.order_id }}{% if pago.id_externo %} ({{ pago.id_externo }}){% endif %}</p>
+    {% endif %}
+  {% endwith %}
 
   <h2>Línea de tiempo</h2>
   <ul class="linea-tiempo">

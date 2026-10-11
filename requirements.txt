@@ -6,6 +6,9 @@ psycopg[binary]>=3.1
 # --- Autenticación con Keycloak (OIDC) ---
 mozilla-django-oidc>=4.0
 
+# --- Pasarela de pago dLocal (RF022) ---
+requests>=2.31
+
 # --- Servidor de producción ---
 gunicorn>=22.0
 
