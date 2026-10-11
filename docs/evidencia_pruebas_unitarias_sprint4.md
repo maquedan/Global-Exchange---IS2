@@ -190,6 +190,72 @@ operaciones de backend y los permisos relacionados con Cajas; no verifican
 directamente el comportamiento JavaScript que muestra u oculta el campo de
 cajero en el formulario de GEG9-39.
 
+## Leyda Fleitas — RF022, Pago con pasarela real en modo prueba (GEG9-36)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | sábado 10 de octubre de 2026, 21:13:55 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/pagos/tests/test_pagos.py` |
+| **Comando** | `docker compose exec web pytest apps/pagos/ -v` |
+| **Resultado** | **14 passed** en 1.91s |
+
+```text
+$ date
+Sat Oct 10 21:13:55 -03 2026
+
+$ docker compose exec web pytest apps/pagos/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 14 items
+
+apps/pagos/tests/test_pagos.py ..............                            [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 14 passed, 1 warning in 1.91s =========================
+```
+
+Cubre, con un proveedor falso que cumple la misma interfaz que dLocal (sin
+red): pago aprobado confirma la compra; pago rechazado no la confirma;
+consultar el pago dos veces no lo confirma dos veces (idempotencia); pago
+aprobado con la cotización ya cambiada o con la operación vencida no
+confirma y pide un reembolso; el redondeo de `monto_para_pasarela` para PYG
+(sin decimales) y la conversión a PYG cuando la moneda de pago no la cobra
+dLocal en Paraguay (EUR/BRL/ARS/GBP/JPY); el `CheckConstraint` de "una sola
+operación" en `Pago`; que falten las credenciales de dLocal da un error
+claro, no una excepción cruda; que la firma HMAC concatena exactamente
+login + fecha + cuerpo, sin separadores, tal como pide la documentación de
+dLocal; que confirmar el pago sin usuario autenticado en la sesión igual
+confirme la compra; y que la vista de retorno acepte un POST real sin token
+CSRF (con un `Client(enforce_csrf_checks=True)`, no el fixture normal que
+nunca lo exige).
+
+**Además**, por fuera de pytest (no se puede automatizar sin red ni
+credenciales reales en CI), se verificó el flujo real contra
+`https://sandbox.dlocal.com` con las credenciales de prueba del equipo, de
+punta a punta en el navegador: `crear_pago` devolvió un `redirect_url` y un
+`id` de pago reales; se completó el pago en la pantalla real de dLocal con
+la tarjeta de prueba; y el navegador volvió solo al comprobante, ya
+confirmado. En el camino se encontraron y corrigieron tres bugs reales que
+las pruebas con mock no podían detectar por sí solas: el formato del
+encabezado `X-Date`, la falta del `callback_url` en el pedido (el cliente
+quedaba varado en la pantalla de dLocal), y el bloqueo CSRF del POST de
+retorno de dLocal (detalle de los tres en `docs/chia-sprint4.md`, secciones
+4.4 y 4.9).
+
+También se corrió la suite completa del proyecto: **170 passed**, sin
+regresiones en Compra, Venta, Historial, Notificaciones ni Cajas.
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.

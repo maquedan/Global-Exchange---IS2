@@ -16,4 +16,5 @@ urlpatterns = [
     path("comisiones/", include("apps.comisiones.urls")), # Configuración de Comisiones - GEG9-35
     path("notificaciones/", include("apps.notificaciones.urls")),  # Alertas de Tasas - GEG9-38
     path("cajas/", include("apps.cajas.urls")),
+    path("pagos/", include("apps.pagos.urls")),  # Pago con pasarela (dLocal) - GEG9-36
 ]

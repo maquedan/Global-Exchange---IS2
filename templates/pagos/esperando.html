@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+
+{% block titulo %}Esperando confirmación del pago | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Esperando confirmación del pago</h1>
+  <p>Operación #{{ pago.compra_id }} — {{ pago.monto }} {{ pago.moneda }}. Referencia: {{ pago.order_id }}.</p>
+
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  {% if pago.proveedor == "simulado" and pago.estado == "PENDIENTE" %}
+    <p class="mensaje">Modo desarrollo: no hay una pasarela real detrás. Usá estos botones para simular el resultado del pago.</p>
+    <form method="post" action="{% url 'pagos:simulado_aprobar' pago.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button class="boton" type="submit">Simular pago aprobado</button>
+    </form>
+    <form method="post" action="{% url 'pagos:simulado_rechazar' pago.pk %}" style="display:inline">
+      {% csrf_token %}
+      <button class="boton boton-secundario" type="submit">Simular pago rechazado</button>
+    </form>
+  {% else %}
+    <a class="boton boton-secundario" href="{% url 'conversiones:comprobante_compra' pago.compra_id %}">Ver el estado de la operación</a>
+  {% endif %}
+</div>
+{% endblock %}

@@ -31,6 +31,7 @@ INSTALLED_APPS = [
     "apps.comisiones",
     "apps.notificaciones",
     "apps.cajas",
+    "apps.pagos",
 ]
 
 MIDDLEWARE = [
@@ -149,6 +150,21 @@ ROL_ADMINISTRADOR = "administrador"
 # scripts/sincronizar_secret.py lo carga en .env al preparar el ambiente.
 KEYCLOAK_ADMIN_CLIENT_ID = env("KEYCLOAK_ADMIN_CLIENT_ID", default="global-exchange-admin")
 KEYCLOAK_ADMIN_CLIENT_SECRET = env("KEYCLOAK_ADMIN_CLIENT_SECRET", default="")
+
+# ===== Pasarela de pago (RF022 — GEG9-36) =====
+# "dlocal" llama de verdad al sandbox de dLocal; "simulado" no toca la red
+# (demos y tests). Si falta alguna credencial con PAGO_PROVEEDOR=dlocal, el
+# proveedor lo avisa con un error claro al iniciar el pago, no con un
+# traceback — ver apps/pagos/proveedores/dlocal.py.
+PAGO_PROVEEDOR = env("PAGO_PROVEEDOR", default="simulado")
+DLOCAL_X_LOGIN = env("DLOCAL_X_LOGIN", default="")
+DLOCAL_X_TRANS_KEY = env("DLOCAL_X_TRANS_KEY", default="")
+DLOCAL_SECRET_KEY = env("DLOCAL_SECRET_KEY", default="")
+DLOCAL_BASE_URL = env("DLOCAL_BASE_URL", default="https://sandbox.dlocal.com")
+# Para armar el callback_url absoluto al que dLocal devuelve al cliente
+# después de pagar (apps/pagos/views.retorno). En Docker, el navegador
+# siempre entra por localhost, nunca por el nombre interno del servicio.
+SITE_BASE_URL = env("SITE_BASE_URL", default="http://localhost:8000")
 
 LANGUAGE_CODE = "es"
 TIME_ZONE = "America/Asuncion"
