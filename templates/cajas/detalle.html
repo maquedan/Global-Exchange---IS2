@@ -80,7 +80,7 @@
   {% if inventario_cajeros %}
     <div class="overflow-x-auto">
       <table class="datos">
-        <thead><tr><th>Cajero</th><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes</th></tr></thead>
+        <thead><tr><th>Cajero</th><th>Moneda</th><th>Denominación</th><th>Cantidad de billetes y monedas</th></tr></thead>
         <tbody>
           {% for existencia in inventario_cajeros %}
             {% if existencia.cantidad %}
@@ -120,7 +120,7 @@
     <div class="overflow-x-auto">
       <table class="datos">
         <thead>
-          <tr><th>Fecha</th><th>Tipo</th><th>Moneda</th><th>Importe</th><th>Billetes</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
+          <tr><th>Fecha y hora</th><th>Tipo</th><th>Moneda</th><th>Importe total</th><th>Billetes y monedas</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
         </thead>
         <tbody>
           {% for movimiento in movimientos %}

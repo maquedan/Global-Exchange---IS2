@@ -208,8 +208,6 @@ responder correctamente.
 **Verificaciones.** El archivo del realm pasó la validación JSON y las 11
 pruebas del módulo de cajas pasaron tras el cambio del formulario dinámico.
 
----
-
 ## 4. Leyda Fleitas — RF022, Pago con pasarela real en modo prueba (GEG9-36)
 
 **Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
@@ -364,5 +362,51 @@ dos escenarios (un `Client(enforce_csrf_checks=True)` real, y
 `confirmar_pago(..., usuario=None)`), además de repetir la prueba manual
 completa contra el sandbox real hasta llegar de vuelta al comprobante ya
 confirmado.
+
+---
+
+## 5. Ryuto Maehara — RF042, inventario de billetes por denominación
+
+**Herramienta:** Copilot SDK en VS Code.
+
+### 5.1. ¿Cómo registrar el efectivo por denominación?
+
+**Resumen.** Se incorporó el control de cantidades por denominación para el
+inventario de caja y los fondos asignados a cajeros. Los movimientos guardan
+su desglose de billetes, y los conteos permiten reconciliar el inventario con
+un registro auditable.
+
+### 5.2. ¿Cómo se calcula el importe de un movimiento?
+
+**Resumen.** El importe se calcula automáticamente a partir de las cantidades
+de billetes ingresadas. El total se actualiza en el formulario y se calcula
+nuevamente en el servidor al guardar el movimiento, sin pedir al administrador
+que lo ingrese manualmente.
+
+### 5.3. ¿Cómo se organizan las operaciones de caja?
+
+**Resumen.** Se separaron las tareas en páginas independientes para registrar
+movimientos, agregar denominaciones y reconciliar inventario. El detalle de la
+sucursal conserva la consulta de saldos, existencias e historiales.
+
+### 5.4. ¿Cómo modificar o eliminar una denominación?
+
+**Resumen.** La página de denominaciones permite modificar y eliminar las que
+aún no tienen referencias. Las denominaciones asociadas a inventarios,
+movimientos o conteos quedan protegidas para conservar la integridad del
+historial. Ambas acciones están restringidas a administradores y la eliminación
+se realiza mediante POST.
+
+### 5.5. ¿Cómo se presentan las acciones disponibles?
+
+**Resumen.** Las acciones «Modificar» y «Eliminar» se muestran como botones en
+cada denominación disponible. Para las denominaciones en uso, se informa que
+no se pueden modificar ni eliminar y no se muestran esos botones.
+
+### 5.6. Verificaciones realizadas
+
+- Las **22 pruebas** del módulo de cajas pasaron usando SQLite en memoria.
+- `python manage.py check` no reportó problemas.
+- `git diff --check` pasó sin errores.
 
 ---

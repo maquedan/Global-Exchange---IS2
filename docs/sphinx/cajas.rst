@@ -2,9 +2,10 @@ Cajas
 =====
 
 Administración de sucursales, saldos de caja y fondos en efectivo asignados a
-cajeros (RF041), con control del inventario de billetes por denominación (RF042).
-Los movimientos registran cantidades por denominación y los saldos resultantes;
-los conteos reconciliados quedan auditados con su detalle.
+cajeros (RF041 y RF043), con control del inventario de billetes por denominación
+(RF042). Las asignaciones a cajeros se registran como movimientos de caja con
+cantidades por denominación, importe total, sucursal, cajero, divisa y fecha y
+hora; los conteos reconciliados quedan auditados con su detalle.
 
 La pantalla de detalle de una sucursal se dedica a consultar saldos, existencias
 e historiales. Registrar movimientos, agregar denominaciones y reconciliar el

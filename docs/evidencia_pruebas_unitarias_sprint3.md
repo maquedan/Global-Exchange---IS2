@@ -179,6 +179,51 @@ clientes; y rechace el acceso de usuarios sin el rol usuario_cliente.
 
 ---
 
+## Ryuto Maehara — RF019, Venta de Divisas (GEG9-32)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | domingo 11 de octubre de 2026, 20:36:03 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_conversiones.py` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v` |
+| **Resultado** | **40 passed**, 1 warning en 0.94s |
+
+```text
+$ date
+Sun Sep 27 20:36:03 -03 2026
+
+$ docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 40 items
+
+apps/conversiones/tests/test_conversiones.py ........................... [ 67%]
+.............                                                            [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 40 passed, 1 warning in 0.94s =========================
+```
+
+Las pruebas de RF019 verifican el cálculo de la venta con la tasa vigente,
+la comisión y el importe neto a acreditar; el registro de la cuenta destino y
+el rechazo de una cuenta perteneciente a otro cliente. También cubren la
+confirmación si la cotización no cambió, la cancelación automática por cambio
+de cotización o vencimiento, la cancelación manual, el rechazo de transiciones
+inválidas y el prellenado del formulario para repetir la operación. Las
+pruebas del historial comprueban que las ventas confirmadas se muestren solo
+al usuario asociado y que las pendientes o canceladas no se incluyan.
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
