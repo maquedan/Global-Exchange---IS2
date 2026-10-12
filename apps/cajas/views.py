@@ -7,7 +7,7 @@ from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.shortcuts import get_object_or_404, redirect, render
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods
 
 from apps.usuarios.menu import tiene_rol
 
@@ -19,7 +19,16 @@ from .forms import (
     MovimientoCajaForm,
     SucursalForm,
 )
-from .models import ArqueoCaja, Caja, ConteoInventarioBilletes, DenominacionBillete, DiferenciaCaja, Sucursal
+from .models import (
+    ArqueoCaja,
+    Caja,
+    ConteoInventarioBilletes,
+    DenominacionBillete,
+    DiferenciaCaja,
+    FondoCajero,
+    InventarioBilleteCajero,
+    Sucursal,
+)
 from .services import (
     MovimientoNoPermitido,
     denominacion_tiene_referencias,
@@ -154,6 +163,38 @@ def lista(request):
         "caja__saldos__moneda", "caja__fondos_cajeros__moneda"
     )
     return render(request, "cajas/lista.html", {"sucursales": sucursales})
+
+@login_required
+@requiere_cajero
+@require_GET
+def mis_existencias(request):
+    """Consulta de solo lectura de efectivo asignado al cajero (RF044)."""
+    fondos = (
+        FondoCajero.objects.filter(cajero=request.user)
+        .select_related("caja__sucursal", "moneda")
+        .order_by("caja__sucursal__nombre", "moneda__codigo")
+    )
+    inventario = (
+        InventarioBilleteCajero.objects.filter(
+            cajero=request.user,
+            cantidad__gt=0,
+        )
+        .select_related("caja__sucursal", "denominacion__moneda")
+        .order_by(
+            "caja__sucursal__nombre",
+            "denominacion__moneda__codigo",
+            "-denominacion__valor",
+        )
+    )
+
+    return render(
+        request,
+        "cajas/mis_existencias.html",
+        {
+            "fondos": fondos,
+            "inventario": inventario,
+        },
+    )
 
 
 @login_required

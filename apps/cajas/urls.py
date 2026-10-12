@@ -36,4 +36,5 @@ urlpatterns = [
         views.registrar_conteo_view,
         name="registrar_conteo",
     ),
+    path("mis-existencias/", views.mis_existencias, name="mis_existencias"),
 ]

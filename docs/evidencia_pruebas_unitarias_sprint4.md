@@ -336,13 +336,6 @@ regresiones en Compra, Venta, Historial, Notificaciones ni Cajas.
 
 ---
 
-<!--
-Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
-completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
--->
-
----
-
 ## RF047 — Registro de Diferencias de Caja (GEG9-45)
 
 | Campo | Valor |
@@ -369,3 +362,43 @@ apps/cajas/tests/test_cajas.py ............................              [100%]
 Los casos nuevos verifican el registro administrativo de una diferencia con
 arqueo, monto, divisa, responsable y usuario registrador; el acceso restringido
 al rol administrador; y el rechazo de una divisa distinta a la del arqueo.
+
+---
+
+## Daniela Gonzalez — RF044, Consulta de Existencias por Caja (GEG9-42)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 03:01:56 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **32 passed** en 45.22s |
+
+```text
+$ date
+Mon Oct 12 03:01:56 -03 2026
+
+$ docker compose exec web pytest apps/cajas/tests/test_cajas.py -v
+===================================== test session starts =====================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 32 items
+
+apps/cajas/tests/test_cajas.py ................................                         [100%]
+
+====================================== warnings summary =======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== 32 passed, 1 warning in 45.22s ================================
+```
+
+Las pruebas verifican que un cajero consulte únicamente sus fondos y
+billetes asignados, que no pueda visualizar existencias de otro cajero, que un usuario sin rol cajero reciba acceso denegado y que la consulta sea de solo lectura al rechazar solicitudes POST con estado 405. La ejecución también mantiene aprobadas las pruebas existentes de Caja, Billetes, Arqueo y Registro de Diferencias.
+
+---

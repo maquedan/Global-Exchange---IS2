@@ -478,3 +478,36 @@ La migración correspondiente es
   deprecación de `EMAIL_BACKEND` proveniente de Django.
 - `git diff --check` y compilación sintáctica de los módulos Python pasaron sin
   errores.
+
+---
+
+## 8. Daniela Gonzalez — RF044, Consulta de Existencias por Caja (GEG9-42)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 8.1. «¿Hace falta crear un modelo nuevo para las existencias del cajero?»
+
+**Lo que aprendimos.** El módulo de Caja ya registra los fondos asignados por cajero y divisa en `FondoCajero`, y las cantidades de billetes por denominación en `InventarioBilleteCajero`. Crear otro modelo duplicaría información que ya se actualiza de forma atómica al registrar asignaciones y devoluciones.
+
+**Decisión.** Reutilizar los modelos existentes sin crear migraciones. La nueva vista consulta únicamente los registros cuyo cajero coincide con el usuario autenticado.
+
+### 8.2. «¿Por qué la consulta del cajero debe ser distinta del detalle de una sucursal?»
+
+**Lo que aprendimos.** El detalle de sucursal está destinado al administrador: muestra fondos e inventario de toda la caja y de todos los cajeros. RF044 pide que un cajero conozca solamente el efectivo que tiene asignado.
+
+**Decisión.** Incorporar la ruta `/cajas/mis-existencias/`, protegida con el rol `cajero`. La pantalla muestra sucursal, divisa, saldo asignado, denominación y cantidad de billetes, sin exponer información de otros cajeros.
+
+### 8.3. «¿Cómo se garantiza que la consulta sea solo lectura?»
+
+**Lo que aprendimos.** Una pantalla de existencias no debe permitir alterar saldos ni movimientos; esas operaciones corresponden a los flujos
+administrativos de Caja.
+
+**Decisión.** Limitar la vista a solicitudes `GET` mediante `@require_GET`, no incluir formularios ni acciones de modificación en la plantilla y rechazar solicitudes `POST` con respuesta `405`.
+
+### 8.4. Verificaciones realizadas
+
+- No se crearon modelos ni migraciones: RF044 reutiliza los fondos e inventario ya persistidos por el módulo de Caja.
+- El menú muestra **Mis existencias** únicamente para el rol `cajero`.
+- Flujo manual validado: tras una asignación de billetes, el cajero visualiza su saldo y el detalle por denominación.
+- Pruebas automatizadas cubren visibilidad de fondos propios, aislamiento de existencias de otro cajero, restricción por rol y rechazo de solicitudes `POST`.
+- La documentación técnica se actualizó en `docs/sphinx/cajas.rst`.

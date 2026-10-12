@@ -638,3 +638,76 @@ class GestionCajasTests(TestCase):
                 responsable_id=self.cajero.pk,
                 registrado_por=self.admin,
             )
+    def test_cajero_consulta_sus_existencias_por_denominacion(self):
+        self.ingresar_efectivo("100.00", self.billete_10)
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+
+        self.client.force_login(self.cajero)
+        respuesta = self.client.get(reverse("cajas:mis_existencias"))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertTemplateUsed(respuesta, "cajas/mis_existencias.html")
+        self.assertContains(respuesta, self.sucursal.nombre)
+        fondos = list(respuesta.context["fondos"])
+        inventario = list(respuesta.context["inventario"])
+
+        self.assertEqual(len(fondos), 1)
+        self.assertEqual(fondos[0].saldo, Decimal("20.00"))
+        self.assertEqual(fondos[0].caja, self.caja)
+
+        self.assertEqual(len(inventario), 1)
+        self.assertEqual(inventario[0].denominacion, self.billete_10)
+        self.assertEqual(inventario[0].cantidad, 2)
+
+    def test_cajero_no_ve_existencias_asignadas_a_otro_cajero(self):
+        otro_cajero = get_user_model().objects.create_user(
+            username="otro-cajero"
+        )
+        Group.objects.get(name="cajero").user_set.add(otro_cajero)
+
+        self.ingresar_efectivo("100.00", self.billete_10)
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+
+        self.client.force_login(otro_cajero)
+        respuesta = self.client.get(reverse("cajas:mis_existencias"))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(
+            respuesta,
+            "Todavía no tenés fondos asignados en ninguna caja.",
+        )
+        self.assertContains(
+            respuesta,
+            "No tenés billetes asignados actualmente.",
+        )
+        self.assertFalse(respuesta.context["fondos"].exists())
+        self.assertFalse(respuesta.context["inventario"].exists())
+
+    def test_usuario_sin_rol_cajero_no_puede_consultar_existencias(self):
+        self.client.force_login(self.analista)
+
+        respuesta = self.client.get(reverse("cajas:mis_existencias"))
+
+        self.assertEqual(respuesta.status_code, 403)
+
+    def test_consulta_de_existencias_no_acepta_post(self):
+        self.client.force_login(self.cajero)
+
+        respuesta = self.client.post(reverse("cajas:mis_existencias"))
+
+        self.assertEqual(respuesta.status_code, 405)
+        self.assertFalse(MovimientoCaja.objects.exists())
