@@ -29,6 +29,7 @@ from .models import (
     DiferenciaCaja,
     FondoCajero,
     InventarioBilleteCajero,
+    MovimientoCaja,
     Sucursal,
 )
 from .services import (
@@ -166,6 +167,32 @@ def lista(request):
         "caja__saldos__moneda", "caja__fondos_cajeros__moneda"
     )
     return render(request, "cajas/lista.html", {"sucursales": sucursales})
+
+
+@login_required
+@requiere_administrador
+@require_GET
+def historial_movimientos(request):
+    """Consulta auditable de operaciones de efectivo de las cajas (RF048)."""
+    caja = Caja.objects.select_related("sucursal").first()
+    movimientos = (
+        MovimientoCaja.objects.select_related(
+            "caja__sucursal", "moneda", "cajero", "realizado_por"
+        )
+        .prefetch_related("detalle_billetes__denominacion")
+        .filter(caja=caja)
+    )
+
+    pagina = Paginator(movimientos, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "cajas/historial_movimientos.html",
+        {
+            "movimientos": pagina,
+            "page_obj": pagina,
+            "caja": caja,
+        },
+    )
 
 @login_required
 @requiere_cajero

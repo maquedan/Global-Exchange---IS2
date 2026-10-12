@@ -6,6 +6,7 @@ app_name = "cajas"
 
 urlpatterns = [
     path("", views.lista, name="lista"),
+    path("historial/", views.historial_movimientos, name="historial_movimientos"),
     path("arqueo/", views.arqueo_view, name="arqueo"),
     path("diferencias/", views.registrar_diferencia_view, name="diferencias"),
     path("diferencias/<int:pk>/ajustar/", views.autorizar_ajuste_view, name="autorizar_ajuste"),

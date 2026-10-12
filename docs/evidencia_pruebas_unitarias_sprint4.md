@@ -190,7 +190,7 @@ operaciones de backend y los permisos relacionados con Cajas; no verifican
 directamente el comportamiento JavaScript que muestra u oculta el campo de
 cajero en el formulario de GEG9-39.
 
-## Fabrizio Cardozo RF046 — Arqueo de Caja (GEG9-44)
+## Fabrizio Cardozo — RF046, Arqueo de Caja (GEG9-44)
 
 | Campo | Valor |
 |---|---|
@@ -336,7 +336,7 @@ regresiones en Compra, Venta, Historial, Notificaciones ni Cajas.
 
 ---
 
-## RF047 — Registro de Diferencias de Caja (GEG9-45)
+## Fabrizio Cardozo — RF047, Registro de Diferencias de Caja (GEG9-45)
 
 | Campo | Valor |
 |---|---|
@@ -440,5 +440,44 @@ Las pruebas verifican la regularización de diferencias detectadas en
 arqueos mediante movimientos inmutables de ajuste. Se cubren ajustes de egreso para faltantes y de ingreso para sobrantes, actualización consistente del fondo e inventario del cajero por denominación, vínculo único entre diferencia y ajuste, prevención de ajustes duplicados, rechazo de ajustes directos sin una diferencia asociada, autorización desde la interfaz administrativa y restricción de acceso para usuarios sin rol `administrador`.
 
 La ejecución también conserva aprobadas las pruebas existentes de Gestión de Cajas, Control de Billetes, Entrega de Efectivo, Consulta de Existencias, Arqueo y Registro de Diferencias. No se registró validación manual adicional para este flujo.
+
+---
+## Fabrizio Cardozo — RF048, Trazabilidad de Operaciones de Caja (GEG9-46)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 07:45:46 UTC (03:45:46 en Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose run --rm web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **34 passed**, 1 advertencia de deprecación de `EMAIL_BACKEND` |
+
+```text
+$ date
+Mon Oct 12 07:45:46 UTC 2026
+
+$ docker compose run --rm web pytest apps/cajas/tests/test_cajas.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 34 items
+
+apps/cajas/tests/test_cajas.py ..................................        [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 34 passed, 1 warning in 19.47s ========================
+```
+
+Los casos nuevos verifican que el historial consulte automáticamente la única
+caja, la identificación del cajero y del usuario responsable, y el acceso
+restringido al rol administrador. La prueba existente de paginación del
+historial también continúa aprobada.
 
 ---

@@ -382,6 +382,48 @@ class GestionCajasTests(TestCase):
         self.assertEqual(respuesta.context["page_obj"].number, 2)
         self.assertEqual(len(respuesta.context["movimientos"]), 1)
 
+    def test_rf048_consulta_historial_identifica_caja_cajero_y_responsable(self):
+        self.ingresar_efectivo()
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("40.00"),
+        )
+
+        self.client.force_login(self.admin)
+        respuesta = self.client.get(reverse("cajas:historial_movimientos"))
+
+        self.assertEqual(respuesta.status_code, 200)
+        movimientos = list(respuesta.context["movimientos"])
+        self.assertEqual(len(movimientos), 2)
+        self.assertTrue(all(movimiento.caja_id == self.caja.pk for movimiento in movimientos))
+        self.assertEqual(respuesta.context["caja"], self.caja)
+        asignacion = next(
+            movimiento
+            for movimiento in movimientos
+            if movimiento.tipo == MovimientoCaja.Tipo.ASIGNACION
+        )
+        self.assertEqual(asignacion.cajero_id, self.cajero.pk)
+        self.assertEqual(asignacion.realizado_por_id, self.admin.pk)
+        self.assertContains(respuesta, "Casa Central")
+        self.assertContains(respuesta, "cajero-cajas")
+
+    def test_rf048_historial_solo_es_visible_para_administradores(self):
+        self.client.force_login(self.analista)
+        self.assertEqual(
+            self.client.get(reverse("cajas:historial_movimientos")).status_code,
+            403,
+        )
+
+        self.client.force_login(self.cajero)
+        self.assertEqual(
+            self.client.get(reverse("cajas:historial_movimientos")).status_code,
+            403,
+        )
+
     def test_ingreso_asignacion_y_devolucion_actualizan_saldos_e_historial(self):
         self.ingresar_efectivo()
 

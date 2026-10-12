@@ -61,6 +61,11 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        "texto": "Historial de cajas",
+        "url": "cajas:historial_movimientos",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Arqueo de caja",
         "url": "cajas:arqueo",
         "roles": ["cajero"],

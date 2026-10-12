@@ -410,7 +410,7 @@ no se pueden modificar ni eliminar y no se muestran esos botones.
 - `git diff --check` pasó sin errores.
 
 ---
-## 6. RF046 — Arqueo de Caja (GEG9-44)
+## 6. Fabrizio Cardozo — RF046, Arqueo de Caja (GEG9-44)
 
 **Consulta.** Se implementó el cierre de turno del cajero mediante la
 comparación del saldo esperado contra el efectivo físico contado por
@@ -434,7 +434,7 @@ opción se muestra en el menú del cajero. El administrador puede consultar los
 registros desde el admin de Django en modo de solo lectura.
 
 ---
-## 7. RF047 — Registro de Diferencias de Caja (GEG9-45)
+## 7. Fabrizio Cardozo — RF047, Registro de Diferencias de Caja (GEG9-45)
 
 **Consulta.** Después de un arqueo, ¿cómo se registra una diferencia para que
 el administrador pueda darle seguimiento?
@@ -513,7 +513,6 @@ administrativos de Caja.
 - La documentación técnica se actualizó en `docs/sphinx/cajas.rst`.
 
 ---
-
 ## 9. Daniela Gonzalez — RF045, Control de Movimientos de Caja (GEG9-43)
 
 **Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
@@ -552,3 +551,35 @@ relación uno a uno. Cada diferencia puede generar como máximo un movimiento de
 
 - Migración `0005_movimientocaja_diferencia_alter_movimientocaja_tipo.py` generada y aplicada en Docker.
 - Pruebas automatizadas cubren ajustes de faltante y sobrante, prevención de ajustes duplicados, rechazo de ajustes directos sin diferencia, autorización desde la interfaz y restricción de acceso al administrador.
+## 9. Fabrizio Cardozo — RF048, Trazabilidad de Operaciones de Caja (GEG9-46)
+
+**Consulta.** ¿Cómo puede el administrador auditar las operaciones de efectivo
+realizadas en cada caja, identificando sucursal, cajero, responsable y momento
+de la operación?
+
+**Decisión.** Reutilizar `MovimientoCaja`, que ya conserva el tipo de
+operación, caja, moneda, importe, cajero, usuario que la registró y fecha de
+creación. No se agregó un modelo nuevo ni una migración para evitar duplicar
+el historial existente.
+
+**Interfaz y permisos.** Se incorporó la consulta de solo lectura
+`/cajas/historial/`, protegida para el rol `administrador`. Permite consultar
+la única caja operativa, muestra la sucursal, caja, operación, moneda, importe,
+cajero, usuario responsable y fecha/hora, y pagina los resultados. No se
+incorporó un filtro porque el alcance actual contempla una sola caja. También
+se agregaron accesos desde el menú administrativo, el listado de cajas y el
+detalle de una sucursal.
+
+### 9.1. Pruebas unitarias
+
+Se agregaron casos en `apps/cajas/tests/test_cajas.py` para verificar que:
+
+- el historial consulte automáticamente la única caja y muestre sus operaciones;
+- cada registro identifique correctamente al cajero y al usuario responsable;
+- un analista o cajero no pueda acceder a la consulta administrativa.
+
+### 9.2. Verificaciones realizadas
+
+- Pruebas enfocadas de Cajas: **34 passed**.
+- `git diff --check` pasó sin errores.
+- La documentación técnica se actualizó en `docs/sphinx/cajas.rst`.
