@@ -9,6 +9,8 @@ from apps.monedas.models import Moneda
 from .models import (
     Caja,
     ConteoInventarioBilletes,
+    ArqueoCaja,
+    DetalleArqueoBillete,
     DenominacionBillete,
     DetalleConteoInventarioBilletes,
     DetalleMovimientoBillete,
@@ -334,3 +336,54 @@ def registrar_conteo_inventario(
         ]
     )
     return conteo
+
+
+@transaction.atomic
+def registrar_arqueo(*, caja_id, cajero_id, moneda_id, billetes, observaciones=""):
+    """Registra el cierre de efectivo del fondo de un cajero."""
+    caja = Caja.objects.select_for_update().select_related("sucursal").get(pk=caja_id)
+    cajero = get_user_model().objects.filter(
+        pk=cajero_id, is_active=True, groups__name="cajero"
+    ).first()
+    if cajero is None:
+        raise MovimientoNoPermitido("El usuario no es un cajero activo.")
+    moneda = Moneda.objects.filter(pk=moneda_id, activo=True).first()
+    if moneda is None:
+        raise MovimientoNoPermitido("La moneda no existe o está inactiva.")
+    fondo = FondoCajero.objects.select_for_update().filter(
+        caja=caja, cajero=cajero, moneda=moneda
+    ).first()
+    if fondo is None:
+        raise MovimientoNoPermitido("No tenés fondos asignados en esa caja y moneda.")
+
+    cantidades, denominaciones, total_contado = _normalizar_billetes(
+        billetes, moneda, permitir_cero=True
+    )
+    total_contado = total_contado.quantize(Decimal("0.01"))
+    diferencia = (total_contado - fondo.saldo).quantize(Decimal("0.01"))
+    if diferencia == 0:
+        estado = ArqueoCaja.Estado.CUADRADO
+    elif diferencia < 0:
+        estado = ArqueoCaja.Estado.FALTANTE
+    else:
+        estado = ArqueoCaja.Estado.SOBRANTE
+
+    arqueo = ArqueoCaja.objects.create(
+        caja=caja,
+        cajero=cajero,
+        moneda=moneda,
+        saldo_esperado=fondo.saldo,
+        total_contado=total_contado,
+        diferencia=diferencia,
+        estado=estado,
+        observaciones=observaciones.strip(),
+    )
+    DetalleArqueoBillete.objects.bulk_create(
+        [
+            DetalleArqueoBillete(
+                arqueo=arqueo, denominacion_id=denominacion_id, cantidad=cantidad
+            )
+            for denominacion_id, cantidad in cantidades.items()
+        ]
+    )
+    return arqueo

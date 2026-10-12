@@ -12,16 +12,18 @@ from django.views.decorators.http import require_http_methods
 from apps.usuarios.menu import tiene_rol
 
 from .forms import (
+    ArqueoCajaForm,
     ConteoInventarioBilletesForm,
     DenominacionBilleteForm,
     MovimientoCajaForm,
     SucursalForm,
 )
-from .models import Caja, ConteoInventarioBilletes, DenominacionBillete, Sucursal
+from .models import ArqueoCaja, Caja, ConteoInventarioBilletes, DenominacionBillete, Sucursal
 from .services import (
     MovimientoNoPermitido,
     denominacion_tiene_referencias,
     registrar_conteo_inventario,
+    registrar_arqueo,
     registrar_movimiento,
 )
 
@@ -30,6 +32,16 @@ def requiere_administrador(vista):
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if not tiene_rol(request.user, "administrador"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_cajero(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "cajero"):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
@@ -319,3 +331,33 @@ def registrar_conteo_view(request, pk):
         request, "Conteo de inventario registrado y reconciliado correctamente."
     )
     return redirect("cajas:detalle", pk=caja.sucursal_id)
+
+
+@login_required
+@requiere_cajero
+@require_http_methods(["GET", "POST"])
+def arqueo_view(request):
+    formulario = ArqueoCajaForm(request.POST or None, cajero=request.user)
+    if request.method == "POST" and formulario.is_valid():
+        datos = formulario.cleaned_data
+        try:
+            arqueo = registrar_arqueo(
+                caja_id=datos["caja"].pk,
+                cajero_id=request.user.pk,
+                moneda_id=datos["moneda"].pk,
+                billetes=datos["billetes"],
+                observaciones=datos["observaciones"],
+            )
+        except (MovimientoNoPermitido, ValidationError) as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(request, "Arqueo de caja registrado correctamente.")
+            return render(request, "cajas/arqueo_resultado.html", {"arqueo": arqueo})
+    arqueos = ArqueoCaja.objects.filter(cajero=request.user).select_related(
+        "caja__sucursal", "moneda"
+    )[:20]
+    return render(
+        request,
+        "cajas/arqueo_formulario.html",
+        {"formulario": formulario, "arqueos": arqueos},
+    )

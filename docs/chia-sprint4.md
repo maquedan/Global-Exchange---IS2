@@ -410,3 +410,25 @@ no se pueden modificar ni eliminar y no se muestran esos botones.
 - `git diff --check` pasó sin errores.
 
 ---
+## 6. RF046 — Arqueo de Caja (GEG9-44)
+
+**Consulta.** Se implementó el cierre de turno del cajero mediante la
+comparación del saldo esperado contra el efectivo físico contado por
+denominación.
+
+**Diseño.** Se agregaron los modelos `ArqueoCaja` y
+`DetalleArqueoBillete`. Cada arqueo conserva el cajero, caja, moneda, saldo
+esperado, total contado, diferencia, estado y observaciones. El desglose de
+billetes queda almacenado como detalle inmutable.
+
+**Reglas de negocio.** El saldo esperado se obtiene del `FondoCajero` del
+cajero autenticado. El total físico se calcula automáticamente con las
+denominaciones ingresadas. La diferencia se calcula como `total_contado -
+saldo_esperado` y determina los estados `CUADRADO`, `FALTANTE` o `SOBRANTE`.
+El servicio valida que el usuario sea un cajero activo y que tenga fondos
+asignados en la caja y moneda seleccionadas.
+
+**Interfaz y permisos.** Se agregó la ruta `/cajas/arqueo/`, accesible solo
+para el rol `cajero`, con formulario, resultado e historial de arqueos. La
+opción se muestra en el menú del cajero. El administrador puede consultar los
+registros desde el admin de Django en modo de solo lectura.

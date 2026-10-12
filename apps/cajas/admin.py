@@ -1,6 +1,7 @@
 from django.contrib import admin
 
 from .models import (
+    ArqueoCaja,
     Caja,
     ConteoInventarioBilletes,
     DenominacionBillete,
@@ -12,6 +13,7 @@ from .models import (
     MovimientoCaja,
     SaldoCaja,
     Sucursal,
+    DetalleArqueoBillete,
 )
 
 
@@ -112,3 +114,21 @@ class DetalleConteoInventarioBilletesAdmin(SoloLecturaAdmin):
     list_display = ("conteo", "denominacion", "cantidad")
     list_filter = ("denominacion__moneda",)
     readonly_fields = ("conteo", "denominacion", "cantidad")
+
+
+@admin.register(ArqueoCaja)
+class ArqueoCajaAdmin(SoloLecturaAdmin):
+    list_display = (
+        "creado_en", "caja", "cajero", "moneda", "saldo_esperado",
+        "total_contado", "diferencia", "estado",
+    )
+    list_filter = ("estado", "moneda", "caja__sucursal")
+    search_fields = ("cajero__username", "caja__sucursal__nombre")
+    readonly_fields = tuple(field.name for field in ArqueoCaja._meta.fields)
+
+
+@admin.register(DetalleArqueoBillete)
+class DetalleArqueoBilleteAdmin(SoloLecturaAdmin):
+    list_display = ("arqueo", "denominacion", "cantidad")
+    list_filter = ("denominacion__moneda",)
+    readonly_fields = ("arqueo", "denominacion", "cantidad")

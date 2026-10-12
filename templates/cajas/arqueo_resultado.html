@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block titulo %}Resultado del arqueo | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Resultado del arqueo</h1>
+  <p><strong>Caja:</strong> {{ arqueo.caja.sucursal.nombre }}</p>
+  <p><strong>Moneda:</strong> {{ arqueo.moneda.codigo }}</p>
+  <p><strong>Saldo esperado:</strong> {{ arqueo.saldo_esperado }}</p>
+  <p><strong>Total contado:</strong> {{ arqueo.total_contado }}</p>
+  <p><strong>Diferencia:</strong> {{ arqueo.diferencia }}</p>
+  <p><strong>Estado:</strong> {{ arqueo.get_estado_display }}</p>
+  {% if arqueo.observaciones %}<p><strong>Observaciones:</strong> {{ arqueo.observaciones }}</p>{% endif %}
+  <a class="boton" href="{% url 'cajas:arqueo' %}">Volver al arqueo</a>
+</div>
+{% endblock %}
