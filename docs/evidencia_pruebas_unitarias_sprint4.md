@@ -340,3 +340,32 @@ regresiones en Compra, Venta, Historial, Notificaciones ni Cajas.
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
 -->
+
+---
+
+## RF047 — Registro de Diferencias de Caja (GEG9-45)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 01:47:45 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose exec -T web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **28 passed** en 17.50s |
+
+```text
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 28 items
+
+apps/cajas/tests/test_cajas.py ............................              [100%]
+
+======================== 28 passed, 1 warning in 17.50s ========================
+```
+
+Los casos nuevos verifican el registro administrativo de una diferencia con
+arqueo, monto, divisa, responsable y usuario registrador; el acceso restringido
+al rol administrador; y el rechazo de una divisa distinta a la del arqueo.

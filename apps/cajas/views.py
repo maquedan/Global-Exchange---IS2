@@ -14,15 +14,17 @@ from apps.usuarios.menu import tiene_rol
 from .forms import (
     ArqueoCajaForm,
     ConteoInventarioBilletesForm,
+    DiferenciaCajaForm,
     DenominacionBilleteForm,
     MovimientoCajaForm,
     SucursalForm,
 )
-from .models import ArqueoCaja, Caja, ConteoInventarioBilletes, DenominacionBillete, Sucursal
+from .models import ArqueoCaja, Caja, ConteoInventarioBilletes, DenominacionBillete, DiferenciaCaja, Sucursal
 from .services import (
     MovimientoNoPermitido,
     denominacion_tiene_referencias,
     registrar_conteo_inventario,
+    registrar_diferencia_caja,
     registrar_arqueo,
     registrar_movimiento,
 )
@@ -360,4 +362,35 @@ def arqueo_view(request):
         request,
         "cajas/arqueo_formulario.html",
         {"formulario": formulario, "arqueos": arqueos},
+    )
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def registrar_diferencia_view(request):
+    formulario = DiferenciaCajaForm(request.POST or None)
+    if request.method == "POST" and formulario.is_valid():
+        datos = formulario.cleaned_data
+        try:
+            registrar_diferencia_caja(
+                arqueo_id=datos["arqueo"].pk,
+                monto=datos["monto"],
+                moneda_id=datos["moneda"].pk,
+                motivo=datos["motivo"],
+                responsable_id=datos["responsable"].pk,
+                registrado_por=request.user,
+            )
+        except (MovimientoNoPermitido, ValidationError) as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(request, "Diferencia de caja registrada correctamente.")
+            return redirect("cajas:diferencias")
+    diferencias = DiferenciaCaja.objects.select_related(
+        "arqueo__caja__sucursal", "arqueo__cajero", "moneda", "responsable", "registrado_por"
+    )[:50]
+    return render(
+        request,
+        "cajas/diferencias.html",
+        {"formulario": formulario, "diferencias": diferencias},
     )

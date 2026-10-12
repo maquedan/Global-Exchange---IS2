@@ -11,6 +11,7 @@ from apps.cajas.models import (
     ArqueoCaja,
     Caja,
     DenominacionBillete,
+    DiferenciaCaja,
     DetalleMovimientoBillete,
     FondoCajero,
     InventarioBilleteCaja,
@@ -25,6 +26,7 @@ from apps.cajas.services import (
     denominacion_tiene_referencias,
     registrar_conteo_inventario,
     registrar_arqueo,
+    registrar_diferencia_caja,
     registrar_movimiento,
 )
 
@@ -579,3 +581,60 @@ class GestionCajasTests(TestCase):
         self.assertEqual(self.client.get(reverse("cajas:arqueo")).status_code, 403)
         self.client.force_login(self.cajero)
         self.assertEqual(self.client.get(reverse("cajas:arqueo")).status_code, 200)
+
+    def test_administra_diferencia_de_caja_y_guarda_responsables(self):
+        FondoCajero.objects.create(
+            caja=self.caja, cajero=self.cajero, moneda=self.moneda, saldo="20.00"
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+        self.client.force_login(self.admin)
+
+        respuesta = self.client.post(
+            reverse("cajas:diferencias"),
+            {
+                "arqueo": arqueo.pk,
+                "monto": "10.00",
+                "moneda": self.moneda.pk,
+                "motivo": "Faltante al cierre",
+                "responsable": self.cajero.pk,
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse("cajas:diferencias"))
+        diferencia = DiferenciaCaja.objects.get()
+        self.assertEqual(diferencia.arqueo, arqueo)
+        self.assertEqual(diferencia.responsable, self.cajero)
+        self.assertEqual(diferencia.registrado_por, self.admin)
+
+    def test_solo_administrador_puede_registrar_diferencias(self):
+        self.client.force_login(self.cajero)
+        self.assertEqual(self.client.get(reverse("cajas:diferencias")).status_code, 403)
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("cajas:diferencias")).status_code, 200)
+
+    def test_servicio_rechaza_divisa_distinta_al_arqueo(self):
+        FondoCajero.objects.create(
+            caja=self.caja, cajero=self.cajero, moneda=self.moneda, saldo="20.00"
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+        otra_moneda = Moneda.objects.create(codigo="EUR", nombre="Euro", simbolo="€")
+
+        with self.assertRaises(MovimientoNoPermitido):
+            registrar_diferencia_caja(
+                arqueo_id=arqueo.pk,
+                monto="1.00",
+                moneda_id=otra_moneda.pk,
+                motivo="Divisa incorrecta",
+                responsable_id=self.cajero.pk,
+                registrado_por=self.admin,
+            )
