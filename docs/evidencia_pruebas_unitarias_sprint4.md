@@ -1,0 +1,483 @@
+# Constancia de ejecución de pruebas unitarias (PUN)
+
+Registro compartido de ejecuciones reales de las pruebas unitarias realizadas
+durante el **Sprint 4** del proyecto Global Exchange.
+
+Cada integrante agrega una sección por historia implementada, incluyendo la
+fecha y hora del sistema, el artefacto probado, el comando ejecutado, la salida
+real de la terminal y un resumen de los casos cubiertos.
+
+> La evidencia se conserva tal como fue obtenida en la terminal, sin editar ni recortar la salida de pytest.
+
+---
+
+## Leyda Fleitas — RF023, Trazabilidad de Estados (GEG9-37)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 8 de octubre de 2026, 14:32:09 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_conversiones.py` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/ -v` |
+| **Resultado** | **40 passed** en 3.53s |
+
+```text
+$ date
+Thu Oct  8 14:32:09 -03 2026
+
+$ docker compose exec web pytest apps/conversiones/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 40 items
+
+apps/conversiones/tests/test_conversiones.py ........................... [ 67%]
+.............                                                            [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 40 passed, 1 warning in 3.53s =========================
+```
+
+Suma 10 pruebas nuevas de RF023 a las 30 que ya existían de RF018/RF019/RF030/
+RF051: que iniciar una compra o venta registre la transición "nada → pendiente",
+que confirmar el pago registre "pendiente → pagada" con el usuario que confirmó,
+que cada uno de los tres motivos de cancelación (cliente, cambio de cotización,
+vencimiento del plazo) quede con su propio texto, que el `CheckConstraint`
+rechace un `CambioEstado` sin ninguna operación o con las dos a la vez, que la
+línea de tiempo aparezca en el comprobante, y que un usuario que no es dueño de
+la operación no pueda verla (404). También se corrió la suite completa del
+proyecto: **124 passed**, sin regresiones en Compra, Venta ni Historial de
+divisas.
+
+---
+
+## Leyda Fleitas — RF033, Alertas de Tasas (GEG9-38)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 8 de octubre de 2026, 15:13:00 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/notificaciones/tests/test_notificaciones.py` |
+| **Comando** | `docker compose exec web pytest apps/notificaciones/ -v` |
+| **Resultado** | **9 passed** en 1.38s |
+
+```text
+$ date
+Thu Oct  8 15:13:00 -03 2026
+
+$ docker compose exec web pytest apps/notificaciones/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 9 items
+
+apps/notificaciones/tests/test_notificaciones.py .........               [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 9 passed, 1 warning in 1.38s =========================
+```
+
+Cubre: que cambiar `tasa_compra` notifique solo a clientes asociados y
+activos (nada para administradores, analistas, clientes sin asociación o con
+cliente inactivo); que editar sin cambiar los valores de tasa no notifique;
+que activar/desactivar tampoco notifiquen; que un usuario sin email reciba
+igual la notificación interna sin romper nada; que un error simulado del
+backend de correo (mockeado con `unittest.mock.patch`) no impida guardar la
+tasa ni crear la notificación; que un usuario solo vea y marque como leídas
+sus propias notificaciones; que el contador del menú cuente solo las no
+leídas; y que cargar el fixture `tasas_demo` con `loaddata` no genere ninguna
+notificación. También se corrió la suite completa del proyecto: **133
+passed**, sin regresiones.
+
+---
+
+## Ryuto Maehara — Cajas
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 9 de octubre de 2026, 23:17:05 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/cajas/tests/test_cajas.py`, `apps/usuarios/tests/test_menu.py` y suite completa (`apps/`) |
+| **Comandos** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v`; `docker compose exec web pytest -v` |
+| **Resultado** | **22 passed** en las pruebas enfocadas y **145 passed** en la suite completa; ambas ejecuciones reportaron 1 warning |
+
+```text
+$ date
+Fri Oct  9 23:17:05 -03 2026
+
+$ docker compose exec web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 22 items
+
+apps/cajas/tests/test_cajas.py ...........                               [ 50%]
+apps/usuarios/tests/test_menu.py ...........                             [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 22 passed, 1 warning in 5.76s =========================
+```
+
+La suite enfocada cubre la gestión de sucursales y cajas, permisos por rol,
+registro y validación de ingresos/asignaciones/devoluciones, saldos e historial
+de movimientos, y visibilidad del menú según el rol. A continuación se conserva
+la salida completa de la suite de regresión:
+
+```text
+$ date
+Fri Oct  9 23:16:31 -03 2026
+
+$ docker compose exec web pytest -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+testpaths: apps
+plugins: django-4.14.0
+collected 145 items
+
+apps/cajas/tests/test_cajas.py ...........                               [  7%]
+apps/clientes/tests/test_clientes.py ...............                     [ 17%]
+apps/comisiones/tests/test_comisiones.py ......                          [ 22%]
+apps/conversiones/tests/test_conversiones.py ........................... [ 40%]
+..........                                                               [ 47%]
+apps/cuentas/tests/test_cuentas.py ..........                            [ 54%]
+apps/monedas/tests/test_monedas.py .......                               [ 59%]
+apps/notificaciones/tests/test_notificaciones.py .........               [ 65%]
+apps/tasa_cambios/tests.py ........                                      [ 71%]
+apps/tasas/tests/test_tasas.py ...........                               [ 78%]
+apps/usuarios/tests/test_auth.py .....                                   [ 82%]
+apps/usuarios/tests/test_menu.py ..........                              [ 88%]
+apps/usuarios/tests/test_roles_permisos.py ....                          [ 91%]
+apps/conversiones/tests/test_conversiones.py ...                         [ 93%]
+apps/usuarios/tests/test_auth.py ........                                [ 99%]
+apps/usuarios/tests/test_menu.py .                                       [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 145 passed, 1 warning in 20.81s ========================
+```
+
+La suite completa pasó sin fallos. En ambas ejecuciones se informó el mismo
+aviso deprecado de `EMAIL_BACKEND` en pytest-django. Las pruebas cubren las
+operaciones de backend y los permisos relacionados con Cajas; no verifican
+directamente el comportamiento JavaScript que muestra u oculta el campo de
+cajero en el formulario de GEG9-39.
+
+## Fabrizio Cardozo — RF046, Arqueo de Caja (GEG9-44)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | domingo 11 de octubre de 2026, 22:31:00 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/cajas/tests/test_cajas.py`, `apps/usuarios/tests/test_menu.py` y suite completa (`apps/`) |
+| **Comandos** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v`; `docker compose exec web pytest -v` |
+| **Resultado** | **36 passed** en las pruebas enfocadas y **173 passed** en la suite completa; ambas ejecuciones reportaron 1 warning |
+
+```text
+$ docker compose exec -T web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 36 items
+
+apps/cajas/tests/test_cajas.py .........................                 [ 69%]
+apps/usuarios/tests/test_menu.py ...........                             [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+
+======================== 36 passed, 1 warning in 15.52s =========================
+```
+
+La prueba enfocada cubre el registro de arqueos cuadrados, faltantes y
+sobrantes; el cálculo de la diferencia entre el saldo esperado y el efectivo
+contado; el almacenamiento del desglose de billetes; la validación del acceso
+exclusivo al rol `cajero`; y la visibilidad del menú según el rol. También
+verifica las operaciones existentes de cajas, fondos, inventario, movimientos,
+conteos y permisos administrativos.
+
+La suite completa se ejecutó con el siguiente resultado:
+
+```text
+$ docker compose exec -T web pytest -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+testpaths: apps
+plugins: django-4.14.0
+collected 173 items
+
+apps/cajas/tests/test_cajas.py ...                                        [ 14%]
+apps/clientes/tests/test_clientes.py ...............                     [ 23%]
+apps/comisiones/tests/test_comisiones.py ......                          [ 26%]
+apps/conversiones/tests/test_conversiones.py ........................... [ 47%]
+apps/cuentas/tests/test_cuentas.py ..........                            [ 53%]
+apps/monedas/tests/test_monedas.py .......                               [ 57%]
+apps/notificaciones/tests/test_notificaciones.py .........               [ 63%]
+apps/pagos/tests/test_pagos.py ............                              [ 69%]
+apps/tasa_cambios/tests.py ........                                      [ 74%]
+apps/tasas/tests/test_tasas.py ...........                               [ 80%]
+apps/usuarios/tests/test_auth.py .....                                   [ 83%]
+apps/usuarios/tests/test_menu.py ..........                              [ 89%]
+apps/usuarios/tests/test_roles_permisos.py ....                          [ 91%]
+apps/conversiones/tests/test_conversiones.py ...                         [ 93%]
+apps/pagos/tests/test_pagos.py ..                                        [ 94%]
+apps/usuarios/tests/test_auth.py ........                                [ 99%]
+apps/usuarios/tests/test_menu.py .                                       [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+
+======================= 173 passed, 1 warning in 33.66s ========================
+```
+
+La suite completa pasó sin fallos ni regresiones. El único warning corresponde
+a la configuración de `EMAIL_BACKEND` reportada por pytest-django y no afecta
+RF046.
+
+---
+
+## Leyda Fleitas — RF022, Pago con pasarela real en modo prueba (GEG9-36)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | sábado 10 de octubre de 2026, 21:13:55 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/pagos/tests/test_pagos.py` |
+| **Comando** | `docker compose exec web pytest apps/pagos/ -v` |
+| **Resultado** | **14 passed** en 1.91s |
+
+```text
+$ date
+Sat Oct 10 21:13:55 -03 2026
+
+$ docker compose exec web pytest apps/pagos/ -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 14 items
+
+apps/pagos/tests/test_pagos.py ..............                            [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 14 passed, 1 warning in 1.91s =========================
+```
+
+Cubre, con un proveedor falso que cumple la misma interfaz que dLocal (sin
+red): pago aprobado confirma la compra; pago rechazado no la confirma;
+consultar el pago dos veces no lo confirma dos veces (idempotencia); pago
+aprobado con la cotización ya cambiada o con la operación vencida no
+confirma y pide un reembolso; el redondeo de `monto_para_pasarela` para PYG
+(sin decimales) y la conversión a PYG cuando la moneda de pago no la cobra
+dLocal en Paraguay (EUR/BRL/ARS/GBP/JPY); el `CheckConstraint` de "una sola
+operación" en `Pago`; que falten las credenciales de dLocal da un error
+claro, no una excepción cruda; que la firma HMAC concatena exactamente
+login + fecha + cuerpo, sin separadores, tal como pide la documentación de
+dLocal; que confirmar el pago sin usuario autenticado en la sesión igual
+confirme la compra; y que la vista de retorno acepte un POST real sin token
+CSRF (con un `Client(enforce_csrf_checks=True)`, no el fixture normal que
+nunca lo exige).
+
+**Además**, por fuera de pytest (no se puede automatizar sin red ni
+credenciales reales en CI), se verificó el flujo real contra
+`https://sandbox.dlocal.com` con las credenciales de prueba del equipo, de
+punta a punta en el navegador: `crear_pago` devolvió un `redirect_url` y un
+`id` de pago reales; se completó el pago en la pantalla real de dLocal con
+la tarjeta de prueba; y el navegador volvió solo al comprobante, ya
+confirmado. En el camino se encontraron y corrigieron tres bugs reales que
+las pruebas con mock no podían detectar por sí solas: el formato del
+encabezado `X-Date`, la falta del `callback_url` en el pedido (el cliente
+quedaba varado en la pantalla de dLocal), y el bloqueo CSRF del POST de
+retorno de dLocal (detalle de los tres en `docs/chia-sprint4.md`, secciones
+4.4 y 4.9).
+
+También se corrió la suite completa del proyecto: **170 passed**, sin
+regresiones en Compra, Venta, Historial, Notificaciones ni Cajas.
+
+---
+
+## Fabrizio Cardozo — RF047, Registro de Diferencias de Caja (GEG9-45)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 01:47:45 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose exec -T web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **28 passed** en 17.50s |
+
+```text
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 28 items
+
+apps/cajas/tests/test_cajas.py ............................              [100%]
+
+======================== 28 passed, 1 warning in 17.50s ========================
+```
+
+Los casos nuevos verifican el registro administrativo de una diferencia con
+arqueo, monto, divisa, responsable y usuario registrador; el acceso restringido
+al rol administrador; y el rechazo de una divisa distinta a la del arqueo.
+
+---
+
+## Daniela Gonzalez — RF044, Consulta de Existencias por Caja (GEG9-42)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 03:01:56 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **32 passed** en 45.22s |
+
+```text
+$ date
+Mon Oct 12 03:01:56 -03 2026
+
+$ docker compose exec web pytest apps/cajas/tests/test_cajas.py -v
+===================================== test session starts =====================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 32 items
+
+apps/cajas/tests/test_cajas.py ................................                         [100%]
+
+====================================== warnings summary =======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== 32 passed, 1 warning in 45.22s ================================
+```
+
+Las pruebas verifican que un cajero consulte únicamente sus fondos y
+billetes asignados, que no pueda visualizar existencias de otro cajero, que un usuario sin rol cajero reciba acceso denegado y que la consulta sea de solo lectura al rechazar solicitudes POST con estado 405. La ejecución también mantiene aprobadas las pruebas existentes de Caja, Billetes, Arqueo y Registro de Diferencias.
+
+---
+
+## Daniela Gonzalez — RF045, Control de Movimientos de Caja (GEG9-43)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 05:22:06 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **38 passed** en 45.77s |
+
+```text
+$ date
+Mon Oct 12 05:22:06 -03 2026
+
+$ docker compose exec web pytest apps/cajas/tests/test_cajas.py -v
+===================================== test session starts =====================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 38 items
+
+apps/cajas/tests/test_cajas.py ......................................                   [100%]
+
+====================================== warnings summary =======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== 38 passed, 1 warning in 45.77s ================================
+```
+
+Las pruebas verifican la regularización de diferencias detectadas en
+arqueos mediante movimientos inmutables de ajuste. Se cubren ajustes de egreso para faltantes y de ingreso para sobrantes, actualización consistente del fondo e inventario del cajero por denominación, vínculo único entre diferencia y ajuste, prevención de ajustes duplicados, rechazo de ajustes directos sin una diferencia asociada, autorización desde la interfaz administrativa y restricción de acceso para usuarios sin rol `administrador`.
+
+La ejecución también conserva aprobadas las pruebas existentes de Gestión de Cajas, Control de Billetes, Entrega de Efectivo, Consulta de Existencias, Arqueo y Registro de Diferencias. No se registró validación manual adicional para este flujo.
+
+---
+## Fabrizio Cardozo — RF048, Trazabilidad de Operaciones de Caja (GEG9-46)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 07:45:46 UTC (03:45:46 en Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose run --rm web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **34 passed**, 1 advertencia de deprecación de `EMAIL_BACKEND` |
+
+```text
+$ date
+Mon Oct 12 07:45:46 UTC 2026
+
+$ docker compose run --rm web pytest apps/cajas/tests/test_cajas.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 34 items
+
+apps/cajas/tests/test_cajas.py ..................................        [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 34 passed, 1 warning in 19.47s ========================
+```
+
+Los casos nuevos verifican que el historial consulte automáticamente la única
+caja, la identificación del cajero y del usuario responsable, y el acceso
+restringido al rol administrador. La prueba existente de paginación del
+historial también continúa aprobada.
+
+---

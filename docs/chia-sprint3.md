@@ -274,3 +274,55 @@ ventas.
   persistidos por Compra y Venta.
 
 ---
+
+## 5. Ryuto Maehara - RF019 — Venta de Divisas (GEG9-32)
+
+**Herramienta:** GitHub Copilot, integrado en VS Code.
+
+### 5.1. «¿Qué tasa y comisión se aplican al vender una divisa?»
+
+**Lo que aprendimos.** Al vender, el cliente entrega una moneda y recibe el
+importe convertido en otra. La comisión depende de la categoría del cliente.
+
+**Decisión.** Aplicar la tasa de compra vigente para el par de monedas y
+consultar la comisión configurada para la categoría del cliente. Si falta una
+tasa o comisión, no confirmar la operación.
+
+### 5.2. «¿Cómo se calcula el importe que se acredita?»
+
+**Lo que aprendimos.** La comisión de una venta se descuenta del importe ya
+convertido, por lo que se expresa en la moneda que recibirá el cliente.
+
+**Decisión.** Guardar en la operación el monto entregado, la tasa aplicada, el
+porcentaje y monto de comisión, el importe convertido y el importe neto a
+acreditar. Así, cambios posteriores no alteran el comprobante.
+
+### 5.3. «¿Cómo se protege la cuenta de destino?»
+
+**Lo que aprendimos.** Un cliente solo debe poder recibir el dinero en una
+cuenta bancaria o billetera activa que le pertenezca.
+
+**Decisión.** Mostrar únicamente cuentas asociadas al cliente seleccionado y
+volver a validar su propiedad al confirmar. El comprobante solo está disponible
+para el usuario asociado a ese cliente.
+
+### 5.4. «¿El sistema transfiere el dinero automáticamente?»
+
+**Lo que aprendimos.** El proyecto no cuenta con una integración bancaria o de
+billeteras para ejecutar transferencias reales.
+
+**Decisión.** Registrar la cuenta destino y el importe neto a acreditar para su
+gestión, sin afirmar que el dinero ya fue transferido.
+
+## 5.5. Verificaciones realizadas
+
+- Flujo de venta disponible para el rol `usuario_cliente` en
+  `/conversiones/vender/`.
+- Migración de `VentaDivisa` generada y aplicada en PostgreSQL mediante Docker
+  Compose.
+- Suite completa ejecutada: **96 pruebas aprobadas**; incluye el cálculo de la
+  comisión y el rechazo de una cuenta perteneciente a otro cliente.
+- `makemigrations --check --dry-run` confirmó que no quedaban migraciones
+  pendientes.
+- La operación registra el importe a acreditar; no ejecuta una transferencia
+  bancaria real.

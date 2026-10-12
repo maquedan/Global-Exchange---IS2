@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+
+{% block titulo %}Registrar movimiento | {{ sucursal.nombre }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'cajas:detalle' sucursal.pk %}">Volver a información de la caja</a></p>
+  <h1>Registrar movimiento — {{ sucursal.nombre }}</h1>
+  <p>{{ sucursal.direccion }} · {% if sucursal.activa %}Activa{% else %}Inactiva{% endif %}</p>
+  <nav aria-label="Otras operaciones de caja">
+    <a href="{% url 'cajas:registrar_denominacion' sucursal.pk %}">Agregar denominación</a> ·
+    <a href="{% url 'cajas:registrar_conteo' sucursal.pk %}">Reconciliar inventario</a>
+  </nav>
+  {% if messages %}
+    {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+  {% endif %}
+  <p>Ingresos, retiros, asignaciones y devoluciones actualizan juntos el saldo y el inventario por denominación.</p>
+  <form method="post" action="{% url 'cajas:registrar_movimiento' sucursal.pk %}" id="form-movimiento">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    {% for campo in formulario.campos_generales %}
+      <p{% if campo.name == "cajero" %} data-campo-movimiento="cajero"{% endif %}>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <fieldset>
+      <legend>Billetes del movimiento</legend>
+      {% for item in formulario.campos_billetes %}
+        <p data-billete-movimiento data-moneda="{{ item.denominacion.moneda_id }}" data-valor-centavos="{{ item.valor_centavos }}">
+          <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
+          {{ item.campo }}
+          {{ item.campo.errors }}
+        </p>
+      {% empty %}
+        <p>Primero agregá denominaciones desde la página correspondiente.</p>
+      {% endfor %}
+    </fieldset>
+    <p>
+      <label for="importe-calculado">Importe calculado</label><br>
+      <output id="importe-calculado" aria-live="polite">Seleccioná una divisa y cargá billetes</output>
+      <span id="importe-calculado-moneda"></span>
+    </p>
+    <button class="boton" type="submit" {% if not sucursal.activa %}disabled{% endif %}>Guardar movimiento</button>
+  </form>
+</div>
+
+<script>
+  const formularioMovimiento = document.getElementById("form-movimiento");
+  const monedaMovimiento = formularioMovimiento.querySelector("#id_mov-moneda");
+  const importeCalculado = document.getElementById("importe-calculado");
+  const codigoMoneda = document.getElementById("importe-calculado-moneda");
+
+  function actualizarImporte() {
+    if (!monedaMovimiento.value) {
+      importeCalculado.textContent = "Seleccioná una divisa y cargá billetes";
+      codigoMoneda.textContent = "";
+      return;
+    }
+
+    let totalCentavos = 0;
+    let cantidadesValidas = true;
+    formularioMovimiento.querySelectorAll("[data-billete-movimiento]").forEach((grupo) => {
+      if (grupo.hidden) return;
+      const cantidad = Number(grupo.querySelector("input").value || "0");
+      const valorCentavos = Number(grupo.dataset.valorCentavos);
+      if (!Number.isSafeInteger(cantidad) || cantidad < 0 || !Number.isSafeInteger(valorCentavos)) {
+        cantidadesValidas = false;
+        return;
+      }
+      totalCentavos += cantidad * valorCentavos;
+      if (!Number.isSafeInteger(totalCentavos)) cantidadesValidas = false;
+    });
+
+    if (!cantidadesValidas) {
+      importeCalculado.textContent = "—";
+      return;
+    }
+    importeCalculado.textContent =
+      `${Math.floor(totalCentavos / 100)}.${String(totalCentavos % 100).padStart(2, "0")}`;
+    codigoMoneda.textContent =
+      monedaMovimiento.selectedOptions[0]?.textContent.split(" — ")[0] || "";
+  }
+
+  function actualizarDenominaciones() {
+    formularioMovimiento.querySelectorAll("[data-billete-movimiento]").forEach((grupo) => {
+      const visible = grupo.dataset.moneda === monedaMovimiento.value;
+      grupo.hidden = !visible;
+      const cantidad = grupo.querySelector("input");
+      cantidad.disabled = !visible;
+      if (!visible) cantidad.value = "0";
+    });
+    actualizarImporte();
+  }
+
+  monedaMovimiento.addEventListener("change", actualizarDenominaciones);
+  formularioMovimiento.addEventListener("input", (evento) => {
+    if (evento.target.closest("[data-billete-movimiento]")) actualizarImporte();
+  });
+  formularioMovimiento.addEventListener("change", (evento) => {
+    if (evento.target.closest("[data-billete-movimiento]")) actualizarImporte();
+  });
+  actualizarDenominaciones();
+
+  const tipoMovimiento = formularioMovimiento.querySelector("#id_mov-tipo");
+  const cajeroMovimiento = formularioMovimiento.querySelector("#id_mov-cajero");
+  const grupoCajero = formularioMovimiento.querySelector('[data-campo-movimiento="cajero"]');
+  function actualizarCampoCajero() {
+    const requiereCajero = ["ASIGNACION", "DEVOLUCION"].includes(tipoMovimiento.value);
+    grupoCajero.hidden = !requiereCajero;
+    cajeroMovimiento.disabled = !requiereCajero;
+    cajeroMovimiento.required = requiereCajero;
+    if (!requiereCajero) cajeroMovimiento.value = "";
+  }
+  tipoMovimiento.addEventListener("change", actualizarCampoCajero);
+  actualizarCampoCajero();
+</script>
+{% endblock %}

@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block titulo %}Reconciliar inventario | {{ sucursal.nombre }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'cajas:detalle' sucursal.pk %}">Volver a información de la caja</a></p>
+  <h1>Reconciliar inventario — {{ sucursal.nombre }}</h1>
+  <nav aria-label="Otras operaciones de caja">
+    <a href="{% url 'cajas:registrar_movimiento' sucursal.pk %}">Registrar movimiento</a> ·
+    <a href="{% url 'cajas:registrar_denominacion' sucursal.pk %}">Agregar denominación</a>
+  </nav>
+  {% if messages %}
+    {% for message in messages %}<p>{{ message }}</p>{% endfor %}
+  {% endif %}
+  <p>Usá este conteo para inicializar o corregir el desglose de saldos existentes. La suma de los billetes debe coincidir con el saldo registrado.</p>
+
+  <form method="post" action="{% url 'cajas:registrar_conteo' sucursal.pk %}" id="form-conteo">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    {% for campo in formulario.campos_generales %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <fieldset>
+      <legend>Billetes contados</legend>
+      {% for item in formulario.campos_billetes %}
+        <p data-billete-conteo data-moneda="{{ item.denominacion.moneda_id }}">
+          <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
+          {{ item.campo }}
+          {{ item.campo.errors }}
+        </p>
+      {% empty %}
+        <p>Primero agregá denominaciones desde la página correspondiente.</p>
+      {% endfor %}
+    </fieldset>
+    <button class="boton" type="submit">Guardar conteo</button>
+  </form>
+</div>
+
+<script>
+  const formularioConteo = document.getElementById("form-conteo");
+  const monedaConteo = formularioConteo.querySelector("#id_conteo-moneda");
+  function actualizarDenominacionesConteo() {
+    formularioConteo.querySelectorAll("[data-billete-conteo]").forEach((grupo) => {
+      const visible = grupo.dataset.moneda === monedaConteo.value;
+      grupo.hidden = !visible;
+      const cantidad = grupo.querySelector("input");
+      cantidad.disabled = !visible;
+      if (!visible) cantidad.value = "0";
+    });
+  }
+  monedaConteo.addEventListener("change", actualizarDenominacionesConteo);
+  actualizarDenominacionesConteo();
+</script>
+{% endblock %}

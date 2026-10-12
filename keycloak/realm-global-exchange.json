@@ -24,7 +24,8 @@
     "realm": [
       { "name": "administrador",      "description": "Administra el sistema, los usuarios y los roles" },
       { "name": "analista_cambiario", "description": "Gestiona clientes y operaciones de cambio" },
-      { "name": "usuario_cliente",    "description": "Cliente de la plataforma" }
+      { "name": "usuario_cliente",    "description": "Cliente de la plataforma" },
+      { "name": "cajero",              "description": "Opera la caja y administra efectivo asignado" }
     ]
   },
 
@@ -88,6 +89,14 @@
       "enabled": true, "emailVerified": true,
       "credentials": [{ "type": "password", "value": "Demo1234!", "temporary": false }],
       "realmRoles": ["usuario_cliente"]
+    },
+    {
+      "username": "cajero.demo",
+      "email": "cajero.demo@globalexchange.local",
+      "firstName": "Diego", "lastName": "Cajero",
+      "enabled": true, "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "Demo1234!", "temporary": false }],
+      "realmRoles": ["cajero"]
     }
   ]
 }

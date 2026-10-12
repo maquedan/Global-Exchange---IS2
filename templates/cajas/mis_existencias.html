@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block titulo %}Mis existencias | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Mis existencias de efectivo</h1>
+  <p>
+    Consultá el efectivo que tenés asignado actualmente, desglosado por caja,
+    divisa y denominación.
+  </p>
+
+  <h2>Fondos asignados</h2>
+
+  {% if fondos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Sucursal</th>
+            <th>Divisa</th>
+            <th>Saldo disponible</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for fondo in fondos %}
+            <tr>
+              <td>{{ fondo.caja.sucursal.nombre }}</td>
+              <td>
+                {{ fondo.moneda.codigo }} — {{ fondo.moneda.nombre }}
+              </td>
+              <td>{{ fondo.saldo }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>Todavía no tenés fondos asignados en ninguna caja.</p>
+  {% endif %}
+
+  <h2>Detalle por denominación</h2>
+
+  {% if inventario %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Sucursal</th>
+            <th>Divisa</th>
+            <th>Denominación</th>
+            <th>Cantidad de billetes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for existencia in inventario %}
+            <tr>
+              <td>{{ existencia.caja.sucursal.nombre }}</td>
+              <td>{{ existencia.denominacion.moneda.codigo }}</td>
+              <td>{{ existencia.denominacion.valor }}</td>
+              <td>{{ existencia.cantidad }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No tenés billetes asignados actualmente.</p>
+  {% endif %}
+</div>
+{% endblock %}

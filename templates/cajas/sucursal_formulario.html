@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block titulo %}{{ accion }} sucursal | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>{{ accion }} sucursal</h1>
+  <form method="post">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    {% for campo in formulario %}
+      <p>
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>
+        {{ campo }}
+        {{ campo.errors }}
+      </p>
+    {% endfor %}
+    <button class="boton" type="submit">{{ accion }} sucursal</button>
+    <a href="{% url 'cajas:lista' %}">Cancelar</a>
+  </form>
+</div>
+{% endblock %}
