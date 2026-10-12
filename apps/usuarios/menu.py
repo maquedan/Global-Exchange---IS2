@@ -56,9 +56,39 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        "texto": "Cajas y sucursales",
+        "url": "cajas:lista",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Historial de cajas",
+        "url": "cajas:historial_movimientos",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Arqueo de caja",
+        "url": "cajas:arqueo",
+        "roles": ["cajero"],
+    },
+    {
+        "texto": "Diferencias de caja",
+        "url": "cajas:diferencias",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Mis existencias",
+        "url": "cajas:mis_existencias",
+        "roles": ["cajero"],
+    },
+    {
     "texto": "Historial de transacciones",
     "url": "conversiones:historial",
     "roles": ["usuario_cliente"],
+    },
+    {
+        "texto": "Notificaciones",
+        "url": "notificaciones:lista",
+        "roles": ["usuario_cliente"],
     },
 ]
 

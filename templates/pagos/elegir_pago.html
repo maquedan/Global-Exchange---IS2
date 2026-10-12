@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block titulo %}Elegí cómo pagar | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Elegí cómo pagar</h1>
+  <p>Operación #{{ compra.pk }} — total a pagar: {{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}.</p>
+
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  <form method="post">
+    {% csrf_token %}
+    <button class="boton" type="submit">Pagar ahora</button>
+  </form>
+  <p class="mensaje">Te vamos a redirigir a la pasarela de pago para completar el cobro de forma segura.</p>
+</div>
+{% endblock %}

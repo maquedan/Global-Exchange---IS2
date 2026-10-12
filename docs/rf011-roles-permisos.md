@@ -21,8 +21,8 @@ asigna esos permisos automáticamente.
 
 ## Uso
 
-1. Ejecutar `python3 scripts/sincronizar_secret.py` y reiniciar el contenedor
-   `web` si el realm se importó por primera vez.
+1. Ejecutar `docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 web python scripts/sincronizar_secret.py`
+   y reiniciar el contenedor `web` si el realm se importó por primera vez.
 2. Iniciar sesión como `admin.demo` y abrir **Roles y permisos** en el menú.
 3. Crear un rol o permiso, marcar los permisos que corresponden a cada rol y
    guardar.

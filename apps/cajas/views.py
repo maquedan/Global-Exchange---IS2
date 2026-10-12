@@ -1,0 +1,518 @@
+from functools import wraps
+
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models.deletion import ProtectedError
+from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_GET, require_http_methods
+
+from apps.usuarios.menu import tiene_rol
+
+from .forms import (
+    ArqueoCajaForm,
+    AjusteDiferenciaCajaForm,
+    ConteoInventarioBilletesForm,
+    DiferenciaCajaForm,
+    DenominacionBilleteForm,
+    MovimientoCajaForm,
+    SucursalForm,
+)
+from .models import (
+    ArqueoCaja,
+    Caja,
+    ConteoInventarioBilletes,
+    DenominacionBillete,
+    MovimientoCaja,
+    DiferenciaCaja,
+    FondoCajero,
+    InventarioBilleteCajero,
+    MovimientoCaja,
+    Sucursal,
+)
+from .services import (
+    MovimientoNoPermitido,
+    denominacion_tiene_referencias,
+    registrar_conteo_inventario,
+    registrar_diferencia_caja,
+    registrar_arqueo,
+    registrar_movimiento,
+    registrar_ajuste_por_diferencia,
+)
+
+
+def requiere_administrador(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "administrador"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_cajero(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "cajero"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def _contexto_sucursal(request, sucursal):
+    caja = sucursal.caja
+    movimientos = Paginator(
+        caja.movimientos.select_related(
+            "moneda", "cajero", "realizado_por"
+        ).prefetch_related("detalle_billetes__denominacion"),
+        50,
+    ).get_page(request.GET.get("page"))
+    return {
+        "sucursal": sucursal,
+        "saldos": caja.saldos.select_related("moneda"),
+        "fondos": caja.fondos_cajeros.select_related("cajero", "moneda"),
+        "inventario_caja": caja.inventario_billetes.select_related(
+            "denominacion__moneda"
+        ),
+        "inventario_cajeros": caja.inventario_billetes_cajeros.select_related(
+            "cajero", "denominacion__moneda"
+        ),
+        "denominaciones": DenominacionBillete.objects.filter(
+            moneda__activo=True
+        ).select_related("moneda"),
+        "conteos": ConteoInventarioBilletes.objects.filter(caja=caja)
+        .select_related("moneda", "cajero", "realizado_por")
+        .prefetch_related("detalle_billetes__denominacion")
+        .order_by("-creado_en", "-pk")[:50],
+        "movimientos": movimientos,
+        "page_obj": movimientos,
+    }
+
+
+def _render_detalle(request, sucursal):
+    return render(
+        request, "cajas/detalle.html", _contexto_sucursal(request, sucursal)
+    )
+
+
+def _render_movimiento(request, sucursal, formulario=None):
+    caja = sucursal.caja
+    return render(
+        request,
+        "cajas/movimiento_formulario.html",
+        {
+            "sucursal": sucursal,
+            "formulario": formulario
+            or MovimientoCajaForm(caja=caja, prefix="mov"),
+        },
+    )
+
+
+def _render_denominacion(request, sucursal, formulario=None):
+    denominaciones = DenominacionBillete.objects.filter(
+        moneda__activo=True
+    ).select_related("moneda")
+    for denominacion in denominaciones:
+        denominacion.en_uso = denominacion_tiene_referencias(denominacion)
+    return render(
+        request,
+        "cajas/denominacion_formulario.html",
+        {
+            "sucursal": sucursal,
+            "denominaciones": denominaciones,
+            "formulario": formulario
+            or DenominacionBilleteForm(prefix="denominacion"),
+        },
+    )
+
+
+def _render_editar_denominacion(request, sucursal, denominacion, formulario=None):
+    en_uso = denominacion_tiene_referencias(denominacion)
+    return render(
+        request,
+        "cajas/denominacion_editar.html",
+        {
+            "sucursal": sucursal,
+            "denominacion": denominacion,
+            "en_uso": en_uso,
+            "formulario": formulario
+            or DenominacionBilleteForm(
+                instance=denominacion, prefix="denominacion"
+            ),
+        },
+    )
+
+
+def _render_conteo(request, sucursal, formulario=None):
+    caja = sucursal.caja
+    return render(
+        request,
+        "cajas/conteo_formulario.html",
+        {
+            "sucursal": sucursal,
+            "formulario": formulario
+            or ConteoInventarioBilletesForm(caja=caja, prefix="conteo"),
+        },
+    )
+
+
+@login_required
+@requiere_administrador
+def lista(request):
+    sucursales = Sucursal.objects.prefetch_related(
+        "caja__saldos__moneda", "caja__fondos_cajeros__moneda"
+    )
+    return render(request, "cajas/lista.html", {"sucursales": sucursales})
+
+
+@login_required
+@requiere_administrador
+@require_GET
+def historial_movimientos(request):
+    """Consulta auditable de operaciones de efectivo de las cajas (RF048)."""
+    caja = Caja.objects.select_related("sucursal").first()
+    movimientos = (
+        MovimientoCaja.objects.select_related(
+            "caja__sucursal", "moneda", "cajero", "realizado_por"
+        )
+        .prefetch_related("detalle_billetes__denominacion")
+        .filter(caja=caja)
+    )
+
+    pagina = Paginator(movimientos, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "cajas/historial_movimientos.html",
+        {
+            "movimientos": pagina,
+            "page_obj": pagina,
+            "caja": caja,
+        },
+    )
+
+@login_required
+@requiere_cajero
+@require_GET
+def mis_existencias(request):
+    """Consulta de solo lectura de efectivo asignado al cajero (RF044)."""
+    fondos = (
+        FondoCajero.objects.filter(cajero=request.user)
+        .select_related("caja__sucursal", "moneda")
+        .order_by("caja__sucursal__nombre", "moneda__codigo")
+    )
+    inventario = (
+        InventarioBilleteCajero.objects.filter(
+            cajero=request.user,
+            cantidad__gt=0,
+        )
+        .select_related("caja__sucursal", "denominacion__moneda")
+        .order_by(
+            "caja__sucursal__nombre",
+            "denominacion__moneda__codigo",
+            "-denominacion__valor",
+        )
+    )
+
+    return render(
+        request,
+        "cajas/mis_existencias.html",
+        {
+            "fondos": fondos,
+            "inventario": inventario,
+        },
+    )
+
+
+@login_required
+@requiere_administrador
+def crear_sucursal(request):
+    formulario = SucursalForm(request.POST or None)
+    if request.method == "POST" and formulario.is_valid():
+        with transaction.atomic():
+            sucursal = formulario.save()
+            Caja.objects.create(sucursal=sucursal)
+        messages.success(request, "Sucursal y caja creadas correctamente.")
+        return redirect("cajas:lista")
+    return render(
+        request,
+        "cajas/sucursal_formulario.html",
+        {"formulario": formulario, "accion": "Registrar"},
+    )
+
+
+@login_required
+@requiere_administrador
+def editar_sucursal(request, pk):
+    sucursal = get_object_or_404(Sucursal, pk=pk)
+    formulario = SucursalForm(request.POST or None, instance=sucursal)
+    if request.method == "POST" and formulario.is_valid():
+        formulario.save()
+        messages.success(request, "Sucursal actualizada correctamente.")
+        return redirect("cajas:lista")
+    return render(
+        request,
+        "cajas/sucursal_formulario.html",
+        {"formulario": formulario, "accion": "Modificar"},
+    )
+
+
+@login_required
+@requiere_administrador
+def detalle(request, pk):
+    sucursal = get_object_or_404(Sucursal, pk=pk)
+    return _render_detalle(request, sucursal)
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def registrar_movimiento_view(request, pk):
+    caja = get_object_or_404(Caja.objects.select_related("sucursal"), sucursal_id=pk)
+    if request.method == "GET":
+        return _render_movimiento(request, caja.sucursal)
+    formulario = MovimientoCajaForm(request.POST, caja=caja, prefix="mov")
+    if not formulario.is_valid():
+        return _render_movimiento(request, caja.sucursal, formulario=formulario)
+
+    datos = formulario.cleaned_data
+    try:
+        registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=datos["tipo"],
+            moneda_id=datos["moneda"].pk,
+            cajero_id=datos["cajero"].pk if datos["cajero"] else None,
+            realizado_por=request.user,
+            nota=datos["nota"],
+            billetes=datos["billetes"],
+        )
+    except (MovimientoNoPermitido, ValidationError) as error:
+        formulario.add_error(None, str(error))
+        return _render_movimiento(request, caja.sucursal, formulario=formulario)
+
+    messages.success(request, "Movimiento de caja registrado correctamente.")
+    return redirect("cajas:detalle", pk=caja.sucursal_id)
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def registrar_denominacion_view(request, pk):
+    sucursal = get_object_or_404(Sucursal, pk=pk)
+    if request.method == "GET":
+        return _render_denominacion(request, sucursal)
+    formulario = DenominacionBilleteForm(
+        request.POST, prefix="denominacion"
+    )
+    if formulario.is_valid():
+        formulario.save()
+        messages.success(request, "Denominación de billete registrada correctamente.")
+        return redirect("cajas:detalle", pk=sucursal.pk)
+    return _render_denominacion(request, sucursal, formulario)
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def editar_denominacion_view(request, pk, denominacion_pk):
+    sucursal = get_object_or_404(Sucursal, pk=pk)
+    denominacion = get_object_or_404(DenominacionBillete, pk=denominacion_pk)
+    if request.method == "GET":
+        return _render_editar_denominacion(request, sucursal, denominacion)
+
+    with transaction.atomic():
+        denominacion = DenominacionBillete.objects.select_for_update().get(
+            pk=denominacion.pk
+        )
+        formulario = DenominacionBilleteForm(
+            request.POST, instance=denominacion, prefix="denominacion"
+        )
+        if denominacion_tiene_referencias(denominacion):
+            formulario.add_error(
+                None,
+                "No se puede modificar una denominación que ya tiene inventario, "
+                "movimientos o conteos asociados.",
+            )
+        elif formulario.is_valid():
+            formulario.save()
+            messages.success(request, "Denominación actualizada correctamente.")
+            return redirect("cajas:registrar_denominacion", pk=sucursal.pk)
+
+    return _render_editar_denominacion(
+        request, sucursal, denominacion, formulario=formulario
+    )
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["POST"])
+def eliminar_denominacion_view(request, pk, denominacion_pk):
+    sucursal = get_object_or_404(Sucursal, pk=pk)
+    with transaction.atomic():
+        denominacion = get_object_or_404(
+            DenominacionBillete.objects.select_for_update(), pk=denominacion_pk
+        )
+        if denominacion_tiene_referencias(denominacion):
+            messages.error(
+                request,
+                "No se puede eliminar una denominación que ya tiene inventario, "
+                "movimientos o conteos asociados.",
+            )
+        else:
+            try:
+                denominacion.delete()
+            except ProtectedError:
+                messages.error(
+                    request,
+                    "No se puede eliminar una denominación que ya está en uso.",
+                )
+            else:
+                messages.success(request, "Denominación eliminada correctamente.")
+    return redirect("cajas:registrar_denominacion", pk=sucursal.pk)
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def registrar_conteo_view(request, pk):
+    caja = get_object_or_404(Caja.objects.select_related("sucursal"), sucursal_id=pk)
+    if request.method == "GET":
+        return _render_conteo(request, caja.sucursal)
+    formulario = ConteoInventarioBilletesForm(
+        request.POST, caja=caja, prefix="conteo"
+    )
+    if not formulario.is_valid():
+        return _render_conteo(request, caja.sucursal, formulario)
+
+    datos = formulario.cleaned_data
+    try:
+        registrar_conteo_inventario(
+            caja_id=caja.pk,
+            moneda_id=datos["moneda"].pk,
+            cajero_id=datos["cajero"].pk if datos["cajero"] else None,
+            realizado_por=request.user,
+            billetes=datos["billetes"],
+        )
+    except (MovimientoNoPermitido, ValidationError) as error:
+        formulario.add_error(None, str(error))
+        return _render_conteo(request, caja.sucursal, formulario)
+
+    messages.success(
+        request, "Conteo de inventario registrado y reconciliado correctamente."
+    )
+    return redirect("cajas:detalle", pk=caja.sucursal_id)
+
+
+@login_required
+@requiere_cajero
+@require_http_methods(["GET", "POST"])
+def arqueo_view(request):
+    formulario = ArqueoCajaForm(request.POST or None, cajero=request.user)
+    if request.method == "POST" and formulario.is_valid():
+        datos = formulario.cleaned_data
+        try:
+            arqueo = registrar_arqueo(
+                caja_id=datos["caja"].pk,
+                cajero_id=request.user.pk,
+                moneda_id=datos["moneda"].pk,
+                billetes=datos["billetes"],
+                observaciones=datos["observaciones"],
+            )
+        except (MovimientoNoPermitido, ValidationError) as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(request, "Arqueo de caja registrado correctamente.")
+            return render(request, "cajas/arqueo_resultado.html", {"arqueo": arqueo})
+    arqueos = ArqueoCaja.objects.filter(cajero=request.user).select_related(
+        "caja__sucursal", "moneda"
+    )[:20]
+    return render(
+        request,
+        "cajas/arqueo_formulario.html",
+        {"formulario": formulario, "arqueos": arqueos},
+    )
+
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def registrar_diferencia_view(request):
+    formulario = DiferenciaCajaForm(request.POST or None)
+    if request.method == "POST" and formulario.is_valid():
+        datos = formulario.cleaned_data
+        try:
+            registrar_diferencia_caja(
+                arqueo_id=datos["arqueo"].pk,
+                monto=datos["monto"],
+                moneda_id=datos["moneda"].pk,
+                motivo=datos["motivo"],
+                responsable_id=datos["responsable"].pk,
+                registrado_por=request.user,
+            )
+        except (MovimientoNoPermitido, ValidationError) as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(request, "Diferencia de caja registrada correctamente.")
+            return redirect("cajas:diferencias")
+    diferencias = DiferenciaCaja.objects.select_related(
+        "arqueo__caja__sucursal", "arqueo__cajero", "moneda", "responsable", "registrado_por","movimiento_ajuste",
+    )[:50]
+    return render(
+        request,
+        "cajas/diferencias.html",
+        {"formulario": formulario, "diferencias": diferencias},
+    )
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def autorizar_ajuste_view(request, pk):
+    """Autoriza y registra el ajuste asociado a una diferencia de caja."""
+    diferencia = get_object_or_404(
+        DiferenciaCaja.objects.select_related(
+            "arqueo__caja__sucursal",
+            "arqueo__cajero",
+            "moneda",
+        ),
+        pk=pk,
+    )
+
+    if MovimientoCaja.objects.filter(diferencia=diferencia).exists():
+        messages.error(
+            request,
+            "Esta diferencia ya fue regularizada mediante un ajuste.",
+        )
+        return redirect("cajas:diferencias")
+
+    formulario = AjusteDiferenciaCajaForm(
+        request.POST or None,
+        diferencia=diferencia,
+    )
+
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            registrar_ajuste_por_diferencia(
+                diferencia_id=diferencia.pk,
+                realizado_por=request.user,
+                billetes=formulario.cleaned_data["billetes"],
+            )
+        except (MovimientoNoPermitido, ValidationError) as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(
+                request,
+                "Ajuste de caja autorizado y registrado correctamente.",
+            )
+            return redirect("cajas:diferencias")
+
+    return render(
+        request,
+        "cajas/ajuste_diferencia_formulario.html",
+        {
+            "diferencia": diferencia,
+            "formulario": formulario,
+        },
+    )

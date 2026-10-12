@@ -15,6 +15,7 @@ Si EMAIL_HOST está vacío, usa Mailpit (http://localhost:8025), que atrapa los
 correos sin mandarlos a internet. Solo la biblioteca estándar de Python.
 """
 import json
+import os
 import sys
 import urllib.error
 import urllib.parse
@@ -23,15 +24,15 @@ import uuid
 from pathlib import Path
 
 RAIZ = Path(__file__).resolve().parent.parent
+ARCHIVO_ENV = Path(os.environ.get("ENV_FILE", str(RAIZ / ".env")))
 
 
 def leer_env():
     """Lee el .env como un diccionario simple."""
     valores = {}
-    archivo = RAIZ / ".env"
-    if not archivo.exists():
-        sys.exit("No encuentro el .env. Copiá .env.example a .env primero.")
-    for linea in archivo.read_text().splitlines():
+    if not ARCHIVO_ENV.exists():
+        sys.exit(f"No encuentro {ARCHIVO_ENV}. Copiá .env.example a .env primero.")
+    for linea in ARCHIVO_ENV.read_text().splitlines():
         linea = linea.strip()
         if not linea or linea.startswith("#") or "=" not in linea:
             continue
@@ -41,7 +42,9 @@ def leer_env():
 
 
 ENV = leer_env()
-KEYCLOAK = ENV.get("KEYCLOAK_SERVER_URL", "http://localhost:8080")
+KEYCLOAK = os.environ.get(
+    "KEYCLOAK_URL", ENV.get("KEYCLOAK_SERVER_URL", "http://localhost:8080")
+)
 REALM = ENV.get("KEYCLOAK_REALM", "global-exchange")
 ADMIN_USER = ENV.get("KC_ADMIN_USER", "admin")
 ADMIN_PASS = ENV.get("KC_ADMIN_PASSWORD", "admin")

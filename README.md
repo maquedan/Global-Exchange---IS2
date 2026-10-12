@@ -27,6 +27,39 @@ Este proyecto tiene dos ambientes montados con Docker:
    docker compose exec web python manage.py createsuperuser
    ```
 
+## Scripts de Keycloak dentro de Docker
+
+Con los servicios levantados (`docker compose up -d`), ejecutá los scripts
+como contenedores temporales. En desarrollo, `.env` ya está disponible dentro
+del contenedor:
+
+```bash
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/sincronizar_secret.py
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py --mailpit
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py --probar tu@correo.com
+```
+
+En producción, montá `.env.prod` para que `sincronizar_secret.py` escriba los
+secretos en ese archivo:
+
+```bash
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$PWD/.env.prod:/app/.env.prod" \
+  -e ENV_FILE=/app/.env.prod \
+  -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/sincronizar_secret.py
+docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps \
+  -v "$PWD/.env.prod:/app/.env.prod" \
+  -e ENV_FILE=/app/.env.prod \
+  -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py
+```
+
 ## Tailwind CSS
 
 El CSS de la interfaz se compila localmente con Tailwind CSS v4 y se guarda en
@@ -58,13 +91,9 @@ El archivo ya compilado se incluye en el repositorio y Django lo recoge desde
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 ```
 (Requiere un archivo `.env.prod` con las variables de producción.)
-Sincronizá el callback OIDC y los secretos del realm, y recargá Django:
+Después de ejecutar `sincronizar_secret.py` como se indica arriba, recreá Django
+para que tome los secretos nuevos:
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml run --rm --no-deps \
-   -v "$PWD/.env.prod:/app/.env.prod" \
-   -e ENV_FILE=/app/.env.prod \
-   -e KEYCLOAK_URL=http://keycloak:8080 \
-   web python scripts/sincronizar_secret.py
 docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate web nginx
 ```
 La aplicación queda disponible en la URL de `APP_PUBLIC_URL` a través de Nginx.

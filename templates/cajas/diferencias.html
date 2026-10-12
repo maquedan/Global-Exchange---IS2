@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+
+{% block titulo %}Diferencias de caja | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Registro de diferencias de caja</h1>
+  <p>Registrá las discrepancias detectadas durante un arqueo para darles seguimiento.</p>
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    <div><label for="id_arqueo">Arqueo</label>{{ formulario.arqueo }}{{ formulario.arqueo.errors }}</div>
+    <div><label for="id_monto">Monto</label>{{ formulario.monto }}{{ formulario.monto.errors }}</div>
+    <div><label for="id_moneda">Divisa</label>{{ formulario.moneda }}{{ formulario.moneda.errors }}</div>
+    <div><label for="id_motivo">Motivo</label>{{ formulario.motivo }}{{ formulario.motivo.errors }}</div>
+    <div><label for="id_responsable">Responsable</label>{{ formulario.responsable }}{{ formulario.responsable.errors }}</div>
+    <button class="boton" type="submit">Registrar diferencia</button>
+  </form>
+
+  <h2>Historial de diferencias</h2>
+  {% if diferencias %}
+    <div class="overflow-x-auto"><table class="datos">
+      <thead><tr><th>Fecha</th><th>Caja</th><th>Arqueo</th><th>Monto</th><th>Divisa</th><th>Motivo</th><th>Responsable</th><th>Registrado por</th><th>Ajuste</th></tr></thead>
+      <tbody>{% for diferencia in diferencias %}<tr>
+        <td>{{ diferencia.creado_en }}</td>
+        <td>{{ diferencia.arqueo.caja.sucursal.nombre }}</td>
+        <td>{{ diferencia.arqueo.creado_en }}</td>
+        <td>{{ diferencia.monto }}</td>
+        <td>{{ diferencia.moneda.codigo }}</td>
+        <td>{{ diferencia.motivo }}</td>
+        <td>{{ diferencia.responsable.get_full_name|default:diferencia.responsable.username }}</td>
+        <td>{{ diferencia.registrado_por.get_full_name|default:diferencia.registrado_por.username }}</td>
+        <td>
+        {% if diferencia.movimiento_ajuste %}
+          Regularizado:
+          {{ diferencia.movimiento_ajuste.get_tipo_display }}
+        {% elif diferencia.arqueo.estado == "CUADRADO" %}
+          No aplica
+        {% else %}
+          <a
+            class="boton boton-secundario"
+            href="{% url 'cajas:autorizar_ajuste' diferencia.pk %}"
+          >
+            Autorizar ajuste
+          </a>
+        {% endif %}
+      </td>
+      </tr>{% endfor %}</tbody>
+    </table></div>
+  {% else %}<p>No hay diferencias registradas.</p>{% endif %}
+</div>
+{% endblock %}
