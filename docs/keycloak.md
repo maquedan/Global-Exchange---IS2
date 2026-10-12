@@ -7,7 +7,8 @@ para todos los roles, y roles sincronizados con Django.
 
 ```bash
 docker compose up -d
-python3 scripts/sincronizar_secret.py     # copia el client secret al .env
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/sincronizar_secret.py
 docker compose restart web
 docker compose exec web python manage.py migrate
 ```
@@ -34,7 +35,9 @@ Para empezar de cero (borra usuarios y sesiones, reimporta el realm):
 
 ```bash
 docker compose down -v && docker compose up -d
-python3 scripts/sincronizar_secret.py && docker compose restart web
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/sincronizar_secret.py
+docker compose restart web
 ```
 
 ## Usuarios de prueba
@@ -125,9 +128,12 @@ llega nada. Para que sí lleguen, hay que configurar un SMTP de verdad.
 Las credenciales van en el `.env` (que no se versiona), y se aplican con:
 
 ```bash
-python3 scripts/configurar_smtp.py                    # lee el .env y lo aplica
-python3 scripts/configurar_smtp.py --probar tu@correo.com   # manda una prueba
-python3 scripts/configurar_smtp.py --mailpit          # vuelve a desarrollo
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py --probar tu@correo.com
+docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
+  web python scripts/configurar_smtp.py --mailpit
 ```
 
 Si `EMAIL_HOST` está vacío, el script deja Mailpit. Las mismas variables las usa
