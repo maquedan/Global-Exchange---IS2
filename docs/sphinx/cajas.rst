@@ -3,10 +3,11 @@ Cajas
 
 Administración de sucursales, saldos de caja y fondos en efectivo asignados a
 cajeros (RF041 y RF043), con control del inventario de billetes por denominación
-(RF042), arqueos de caja (RF046) y registro de diferencias (RF047). Las
-asignaciones a cajeros se registran como movimientos de caja con
-cantidades por denominación, importe total, sucursal, cajero, divisa y fecha y
-hora; los conteos reconciliados quedan auditados con su detalle.
+(RF042), control de movimientos y ajustes autorizados (RF045), arqueos de caja
+(RF046) y registro de diferencias (RF047). Las asignaciones a cajeros se
+registran como movimientos de caja con cantidades por denominación, importe
+total, sucursal, cajero, divisa y fecha y hora; los conteos reconciliados quedan
+auditados con su detalle.
 
 La pantalla de detalle de una sucursal se dedica a consultar saldos, existencias
 e historiales. Registrar movimientos, agregar denominaciones y reconciliar el
@@ -40,6 +41,16 @@ La divisa de la diferencia debe coincidir con la del arqueo, y el formulario
 solo ofrece monedas y responsables activos. La pantalla también muestra el
 historial de las últimas diferencias registradas. El acceso está restringido
 al rol ``administrador``.
+
+RF045 — Control de Movimientos de Caja
+--------------------------------------
+
+Los ingresos, retiros, asignaciones y devoluciones se registran como
+``MovimientoCaja`` inmutable, con saldo resultante, usuario que lo realizó y
+desglose de billetes. Los ajustes autorizados están vinculados a una única
+``DiferenciaCaja``: un faltante genera un ajuste de egreso y un sobrante un
+ajuste de ingreso. El administrador debe indicar un desglose de billetes que
+coincida exactamente con el importe de la diferencia.
 
 Modelos
 -------

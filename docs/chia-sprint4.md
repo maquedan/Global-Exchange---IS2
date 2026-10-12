@@ -511,3 +511,44 @@ administrativos de Caja.
 - Flujo manual validado: tras una asignación de billetes, el cajero visualiza su saldo y el detalle por denominación.
 - Pruebas automatizadas cubren visibilidad de fondos propios, aislamiento de existencias de otro cajero, restricción por rol y rechazo de solicitudes `POST`.
 - La documentación técnica se actualizó en `docs/sphinx/cajas.rst`.
+
+---
+
+## 9. Daniela Gonzalez — RF045, Control de Movimientos de Caja (GEG9-43)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 9.1. «¿Qué faltaba si Caja ya registraba ingresos, retiros y entregas?»
+
+**Lo que aprendimos.** El módulo ya registraba ingresos, retiros, asignaciones a cajeros y devoluciones, con saldo resultante y detalle por denominación.
+Sin embargo, una diferencia detectada durante un arqueo no podía regularizar el saldo de forma trazable.
+
+**Decisión.** Incorporar los movimientos `AJUSTE_INGRESO` y
+`AJUSTE_EGRESO`, exclusivamente para regularizar diferencias de caja
+registradas por RF047.
+
+### 9.2. «¿Cómo impedir que una diferencia se ajuste dos veces?»
+
+**Lo que aprendimos.** Permitir varios ajustes sobre la misma diferencia
+alteraría repetidamente el fondo del cajero y rompería la auditoría.
+
+**Decisión.** Vincular `MovimientoCaja` con `DiferenciaCaja` mediante una
+relación uno a uno. Cada diferencia puede generar como máximo un movimiento de ajuste.
+
+### 9.3. «¿Cómo se determina si el ajuste es ingreso o egreso?»
+
+**Lo que aprendimos.** La diferencia del arqueo expresa el efectivo físico respecto al saldo esperado: un faltante requiere reducir el fondo registrado, mientras que un sobrante requiere aumentarlo.
+
+**Decisión.** El sistema infiere el tipo de ajuste desde el estado del arqueo:
+`FALTANTE` genera `AJUSTE_EGRESO` y `SOBRANTE` genera `AJUSTE_INGRESO`. El monto y la moneda deben coincidir exactamente con la diferencia registrada.
+
+### 9.4. «¿Por qué el ajuste exige el desglose de billetes?»
+
+**Lo que aprendimos.** Modificar solamente el saldo dejaría el inventario por denominación inconsistente y bloquearía posteriores operaciones de caja.
+
+**Decisión.** El administrador ingresa cantidades de billetes que deben sumar exactamente el monto de la diferencia. El ajuste actualiza de forma atómica el fondo del cajero, su inventario por denominación y el libro inmutable de movimientos.
+
+### 9.5. Verificaciones realizadas
+
+- Migración `0005_movimientocaja_diferencia_alter_movimientocaja_tipo.py` generada y aplicada en Docker.
+- Pruebas automatizadas cubren ajustes de faltante y sobrante, prevención de ajustes duplicados, rechazo de ajustes directos sin diferencia, autorización desde la interfaz y restricción de acceso al administrador.

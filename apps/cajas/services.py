@@ -140,33 +140,64 @@ def registrar_movimiento(
 
     fondo_cajero = None
     inventario_cajero = None
-    if tipo in (MovimientoCaja.Tipo.ASIGNACION, MovimientoCaja.Tipo.DEVOLUCION):
+    if tipo in (
+        MovimientoCaja.Tipo.AJUSTE_INGRESO,
+        MovimientoCaja.Tipo.AJUSTE_EGRESO,
+    ):
+        raise MovimientoNoPermitido(
+            "Los ajustes solo pueden registrarse desde una diferencia de caja."
+        )
+
+    fondo_cajero = None
+    inventario_cajero = None
+
+    if tipo in (
+        MovimientoCaja.Tipo.ASIGNACION,
+        MovimientoCaja.Tipo.DEVOLUCION,
+    ):
         if cajero_id is None:
             raise ValidationError("Debe seleccionar un cajero para este movimiento.")
+
         if tipo == MovimientoCaja.Tipo.ASIGNACION:
             usuario_cajero = get_user_model().objects.filter(
-                pk=cajero_id, is_active=True, groups__name="cajero"
+                pk=cajero_id,
+                is_active=True,
+                groups__name="cajero",
             ).first()
             if usuario_cajero is None:
                 raise MovimientoNoPermitido(
                     "El usuario seleccionado no es un cajero activo."
                 )
             fondo_cajero, _ = FondoCajero.objects.get_or_create(
-                caja=caja, cajero=usuario_cajero, moneda=moneda
+                caja=caja,
+                cajero=usuario_cajero,
+                moneda=moneda,
             )
         else:
             fondo_cajero = FondoCajero.objects.filter(
-                caja=caja, cajero_id=cajero_id, moneda=moneda
+                caja=caja,
+                cajero_id=cajero_id,
+                moneda=moneda,
             ).first()
             if fondo_cajero is None:
                 raise MovimientoNoPermitido(
                     "Ese cajero no tiene fondos asignados en esta moneda."
                 )
-        fondo_cajero = FondoCajero.objects.select_for_update().get(pk=fondo_cajero.pk)
+
+        fondo_cajero = FondoCajero.objects.select_for_update().get(
+            pk=fondo_cajero.pk
+        )
         inventario_cajero = InventarioBilleteCajero.objects.filter(
-            caja=caja, cajero=fondo_cajero.cajero, denominacion__moneda=moneda
+            caja=caja,
+            cajero=fondo_cajero.cajero,
+            denominacion__moneda=moneda,
         ).select_for_update()
-        _verificar_inventario(inventario_cajero, moneda, fondo_cajero.saldo)
+        _verificar_inventario(
+            inventario_cajero,
+            moneda,
+            fondo_cajero.saldo,
+        )
+
     elif cajero_id is not None:
         raise ValidationError("Este movimiento no debe indicar un cajero.")
 
@@ -414,3 +445,116 @@ def registrar_diferencia_caja(
         responsable=responsable,
         registrado_por=registrado_por,
     )
+
+@transaction.atomic
+def registrar_ajuste_por_diferencia(*, diferencia_id, realizado_por, billetes):
+    """Regulariza una diferencia de arqueo mediante un único ajuste autorizado."""
+    diferencia = (
+        DiferenciaCaja.objects.select_for_update()
+        .select_related("arqueo__caja", "arqueo__cajero", "arqueo__moneda", "moneda")
+        .get(pk=diferencia_id)
+    )
+    arqueo = diferencia.arqueo
+
+    if arqueo.estado == ArqueoCaja.Estado.CUADRADO:
+        raise MovimientoNoPermitido(
+            "Un arqueo sin diferencia no puede generar un ajuste."
+        )
+
+    if diferencia.monto != abs(arqueo.diferencia):
+        raise MovimientoNoPermitido(
+            "El monto registrado debe coincidir con la diferencia del arqueo."
+        )
+
+    if MovimientoCaja.objects.filter(diferencia=diferencia).exists():
+        raise MovimientoNoPermitido(
+            "Esta diferencia ya fue regularizada mediante un ajuste."
+        )
+
+    cantidades, denominaciones, importe = _normalizar_billetes(
+        billetes, diferencia.moneda
+    )
+    importe = importe.quantize(Decimal("0.01"))
+
+    if importe != diferencia.monto:
+        raise MovimientoNoPermitido(
+            "El desglose de billetes debe coincidir con el monto de la diferencia."
+        )
+
+    caja = Caja.objects.select_for_update().get(pk=arqueo.caja_id)
+    fondo = FondoCajero.objects.select_for_update().filter(
+        caja=caja,
+        cajero=arqueo.cajero,
+        moneda=diferencia.moneda,
+    ).first()
+    if fondo is None:
+        raise MovimientoNoPermitido(
+            "El cajero no tiene fondos asignados para regularizar esta diferencia."
+        )
+
+    saldo_caja, _ = SaldoCaja.objects.get_or_create(
+        caja=caja,
+        moneda=diferencia.moneda,
+    )
+    saldo_caja = SaldoCaja.objects.select_for_update().get(pk=saldo_caja.pk)
+
+    inventario_cajero = InventarioBilleteCajero.objects.filter(
+        caja=caja,
+        cajero=arqueo.cajero,
+        denominacion__moneda=diferencia.moneda,
+    ).select_for_update()
+    _verificar_inventario(inventario_cajero, diferencia.moneda, fondo.saldo)
+
+    if arqueo.estado == ArqueoCaja.Estado.FALTANTE:
+        tipo = MovimientoCaja.Tipo.AJUSTE_EGRESO
+        if fondo.saldo < importe:
+            raise MovimientoNoPermitido(
+                "El fondo del cajero no alcanza para regularizar el faltante."
+            )
+        _verificar_disponibilidad(
+            inventario_cajero,
+            cantidades,
+            denominaciones,
+        )
+        fondo.saldo -= importe
+        _aplicar_cantidades_cajero(
+            caja,
+            arqueo.cajero,
+            cantidades,
+            sumar=False,
+        )
+    else:
+        tipo = MovimientoCaja.Tipo.AJUSTE_INGRESO
+        fondo.saldo += importe
+        _aplicar_cantidades_cajero(
+            caja,
+            arqueo.cajero,
+            cantidades,
+            sumar=True,
+        )
+
+    fondo.save(update_fields=["saldo"])
+
+    movimiento = MovimientoCaja.objects.create(
+        caja=caja,
+        tipo=tipo,
+        moneda=diferencia.moneda,
+        cajero=arqueo.cajero,
+        diferencia=diferencia,
+        importe=importe,
+        saldo_caja_resultante=saldo_caja.saldo,
+        saldo_cajero_resultante=fondo.saldo,
+        realizado_por=realizado_por,
+        nota=f"Ajuste autorizado por diferencia #{diferencia.pk}: {diferencia.motivo}",
+    )
+    DetalleMovimientoBillete.objects.bulk_create(
+        [
+            DetalleMovimientoBillete(
+                movimiento=movimiento,
+                denominacion_id=denominacion_id,
+                cantidad=cantidad,
+            )
+            for denominacion_id, cantidad in cantidades.items()
+        ]
+    )
+    return movimiento

@@ -8,6 +8,7 @@ from .models import (
     ArqueoCaja,
     Caja,
     DenominacionBillete,
+    DiferenciaCaja,
     FondoCajero,
     MovimientoCaja,
     Sucursal,
@@ -284,4 +285,66 @@ class DiferenciaCajaForm(forms.Form):
         moneda = datos.get("moneda")
         if arqueo and moneda and arqueo.moneda_id != moneda.pk:
             self.add_error("moneda", "La divisa debe coincidir con la del arqueo.")
+        return datos
+
+class AjusteDiferenciaCajaForm(forms.Form):
+    """Desglose físico para autorizar el ajuste de una diferencia de caja."""
+
+    def __init__(self, *args, diferencia, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.diferencia = diferencia
+        self.campos_billetes = []
+
+        denominaciones = DenominacionBillete.objects.filter(
+            moneda=diferencia.moneda
+        ).select_related("moneda")
+
+        for denominacion in denominaciones:
+            nombre = f"billete_{denominacion.pk}"
+            self.fields[nombre] = forms.IntegerField(
+                label=f"{denominacion.moneda.codigo} {denominacion.valor}",
+                min_value=0,
+                required=False,
+                initial=0,
+                widget=forms.NumberInput(
+                    attrs={
+                        "min": "0",
+                        "step": "1",
+                    }
+                ),
+            )
+            self.campos_billetes.append(
+                {
+                    "denominacion": denominacion,
+                    "campo": self[nombre],
+                    "valor_centavos": int(denominacion.valor * 100),
+                }
+            )
+
+    def clean(self):
+        datos = super().clean()
+        cantidades = {}
+        total = 0
+
+        for item in self.campos_billetes:
+            denominacion = item["denominacion"]
+            cantidad = datos.get(f"billete_{denominacion.pk}") or 0
+
+            if cantidad:
+                cantidades[denominacion.pk] = cantidad
+                total += cantidad * denominacion.valor
+
+        if not cantidades:
+            self.add_error(
+                None,
+                "Ingresá al menos una cantidad de billetes para el ajuste.",
+            )
+        elif total != self.diferencia.monto:
+            self.add_error(
+                None,
+                "El total de billetes debe coincidir con el monto de la diferencia.",
+            )
+
+        datos["billetes"] = cantidades
+        datos["importe_calculado"] = total
         return datos
