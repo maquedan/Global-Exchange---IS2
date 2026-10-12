@@ -8,6 +8,7 @@ from django.urls import reverse
 
 from apps.cajas.forms import MovimientoCajaForm
 from apps.cajas.models import (
+    ArqueoCaja,
     Caja,
     DenominacionBillete,
     DetalleMovimientoBillete,
@@ -23,6 +24,7 @@ from apps.cajas.services import (
     MovimientoNoPermitido,
     denominacion_tiene_referencias,
     registrar_conteo_inventario,
+    registrar_arqueo,
     registrar_movimiento,
 )
 
@@ -541,3 +543,39 @@ class GestionCajasTests(TestCase):
             ).cantidad,
             2,
         )
+
+    def test_cajero_registra_arqueo_cuadrado(self):
+        FondoCajero.objects.create(
+            caja=self.caja, cajero=self.cajero, moneda=self.moneda, saldo="20.00"
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("20.00", self.billete_10),
+            observaciones="Cierre normal",
+        )
+        self.assertEqual(arqueo.estado, ArqueoCaja.Estado.CUADRADO)
+        self.assertEqual(arqueo.diferencia, Decimal("0.00"))
+        self.assertEqual(arqueo.detalle_billetes.get().cantidad, 2)
+
+    def test_cajero_arqueo_detecta_faltante_y_sobrante(self):
+        FondoCajero.objects.create(
+            caja=self.caja, cajero=self.cajero, moneda=self.moneda, saldo="20.00"
+        )
+        faltante = registrar_arqueo(
+            caja_id=self.caja.pk, cajero_id=self.cajero.pk, moneda_id=self.moneda.pk,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+        sobrante = registrar_arqueo(
+            caja_id=self.caja.pk, cajero_id=self.cajero.pk, moneda_id=self.moneda.pk,
+            billetes=self.billetes("30.00", self.billete_10),
+        )
+        self.assertEqual(faltante.estado, ArqueoCaja.Estado.FALTANTE)
+        self.assertEqual(sobrante.estado, ArqueoCaja.Estado.SOBRANTE)
+
+    def test_solo_el_cajero_puede_usar_el_arqueo(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get(reverse("cajas:arqueo")).status_code, 403)
+        self.client.force_login(self.cajero)
+        self.assertEqual(self.client.get(reverse("cajas:arqueo")).status_code, 200)

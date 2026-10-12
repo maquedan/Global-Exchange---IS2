@@ -4,7 +4,7 @@ from django.db.models import Q
 
 from apps.monedas.models import Moneda
 
-from .models import DenominacionBillete, MovimientoCaja, Sucursal
+from .models import Caja, DenominacionBillete, FondoCajero, MovimientoCaja, Sucursal
 
 
 class SucursalForm(forms.ModelForm):
@@ -191,5 +191,62 @@ class ConteoInventarioBilletesForm(forms.Form):
                     continue
                 if cantidad:
                     cantidades[denominacion.pk] = cantidad
+        datos["billetes"] = cantidades
+        return datos
+
+
+class ArqueoCajaForm(forms.Form):
+    caja = forms.ModelChoiceField(queryset=None)
+    moneda = forms.ModelChoiceField(queryset=Moneda.objects.none())
+    observaciones = forms.CharField(max_length=255, required=False)
+
+    def __init__(self, *args, cajero=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cajero = cajero
+        self.fields["caja"].queryset = Caja.objects.filter(
+            fondos_cajeros__cajero=cajero
+        ).distinct().select_related("sucursal")
+        self.fields["moneda"].queryset = Moneda.objects.filter(
+            activo=True, fondocajero__cajero=cajero
+        ).distinct().order_by("codigo")
+        self.campos_billetes = []
+        for denominacion in DenominacionBillete.objects.filter(
+            moneda__activo=True
+        ).select_related("moneda"):
+            nombre = f"billete_{denominacion.pk}"
+            self.fields[nombre] = forms.IntegerField(
+                label=f"{denominacion.moneda.codigo} {denominacion.valor}",
+                min_value=0,
+                required=False,
+                initial=0,
+                widget=forms.NumberInput(attrs={"min": "0", "step": "1"}),
+            )
+            self.campos_billetes.append({"denominacion": denominacion, "campo": self[nombre]})
+
+    def clean(self):
+        datos = super().clean()
+        caja = datos.get("caja")
+        moneda = datos.get("moneda")
+        cantidades = {}
+        if caja and moneda:
+            if not FondoCajero.objects.filter(
+                caja=caja, cajero=self.cajero, moneda=moneda
+            ).exists():
+                self.add_error("moneda", "No tenés fondos asignados en esa caja y moneda.")
+            total = 0
+            for item in self.campos_billetes:
+                denominacion = item["denominacion"]
+                cantidad = datos.get(f"billete_{denominacion.pk}") or 0
+                if denominacion.moneda_id != moneda.pk:
+                    if cantidad:
+                        self.add_error(
+                            f"billete_{denominacion.pk}",
+                            "La denominación no pertenece a la moneda seleccionada.",
+                        )
+                    continue
+                if cantidad:
+                    cantidades[denominacion.pk] = cantidad
+                    total += cantidad * denominacion.valor
+            datos["importe_calculado"] = total
         datos["billetes"] = cantidades
         return datos

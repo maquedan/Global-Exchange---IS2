@@ -190,6 +190,86 @@ operaciones de backend y los permisos relacionados con Cajas; no verifican
 directamente el comportamiento JavaScript que muestra u oculta el campo de
 cajero en el formulario de GEG9-39.
 
+## Fabrizio Cardozo RF046 — Arqueo de Caja (GEG9-44)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | domingo 11 de octubre de 2026, 22:31:00 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/cajas/tests/test_cajas.py`, `apps/usuarios/tests/test_menu.py` y suite completa (`apps/`) |
+| **Comandos** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v`; `docker compose exec web pytest -v` |
+| **Resultado** | **36 passed** en las pruebas enfocadas y **173 passed** en la suite completa; ambas ejecuciones reportaron 1 warning |
+
+```text
+$ docker compose exec -T web pytest apps/cajas/tests/test_cajas.py apps/usuarios/tests/test_menu.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 36 items
+
+apps/cajas/tests/test_cajas.py .........................                 [ 69%]
+apps/usuarios/tests/test_menu.py ...........                             [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+
+======================== 36 passed, 1 warning in 15.52s =========================
+```
+
+La prueba enfocada cubre el registro de arqueos cuadrados, faltantes y
+sobrantes; el cálculo de la diferencia entre el saldo esperado y el efectivo
+contado; el almacenamiento del desglose de billetes; la validación del acceso
+exclusivo al rol `cajero`; y la visibilidad del menú según el rol. También
+verifica las operaciones existentes de cajas, fondos, inventario, movimientos,
+conteos y permisos administrativos.
+
+La suite completa se ejecutó con el siguiente resultado:
+
+```text
+$ docker compose exec -T web pytest -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.15, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+testpaths: apps
+plugins: django-4.14.0
+collected 173 items
+
+apps/cajas/tests/test_cajas.py ...                                        [ 14%]
+apps/clientes/tests/test_clientes.py ...............                     [ 23%]
+apps/comisiones/tests/test_comisiones.py ......                          [ 26%]
+apps/conversiones/tests/test_conversiones.py ........................... [ 47%]
+apps/cuentas/tests/test_cuentas.py ..........                            [ 53%]
+apps/monedas/tests/test_monedas.py .......                               [ 57%]
+apps/notificaciones/tests/test_notificaciones.py .........               [ 63%]
+apps/pagos/tests/test_pagos.py ............                              [ 69%]
+apps/tasa_cambios/tests.py ........                                      [ 74%]
+apps/tasas/tests/test_tasas.py ...........                               [ 80%]
+apps/usuarios/tests/test_auth.py .....                                   [ 83%]
+apps/usuarios/tests/test_menu.py ..........                              [ 89%]
+apps/usuarios/tests/test_roles_permisos.py ....                          [ 91%]
+apps/conversiones/tests/test_conversiones.py ...                         [ 93%]
+apps/pagos/tests/test_pagos.py ..                                        [ 94%]
+apps/usuarios/tests/test_auth.py ........                                [ 99%]
+apps/usuarios/tests/test_menu.py .                                       [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+
+======================= 173 passed, 1 warning in 33.66s ========================
+```
+
+La suite completa pasó sin fallos ni regresiones. El único warning corresponde
+a la configuración de `EMAIL_BACKEND` reportada por pytest-django y no afecta
+RF046.
+
+---
+
 ## Leyda Fleitas — RF022, Pago con pasarela real en modo prueba (GEG9-36)
 
 | Campo | Valor |

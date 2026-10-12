@@ -301,3 +301,51 @@ class DetalleConteoInventarioBilletes(models.Model):
                 name="detalle_conteo_billete_cantidad_positiva",
             ),
         ]
+
+
+class ArqueoCaja(models.Model):
+    """Cierre auditado del efectivo asignado a un cajero."""
+
+    class Estado(models.TextChoices):
+        CUADRADO = "CUADRADO", "Cuadrado"
+        FALTANTE = "FALTANTE", "Faltante"
+        SOBRANTE = "SOBRANTE", "Sobrante"
+
+    caja = models.ForeignKey(Caja, on_delete=models.PROTECT, related_name="arqueos")
+    cajero = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="arqueos_caja"
+    )
+    moneda = models.ForeignKey(Moneda, on_delete=models.PROTECT)
+    saldo_esperado = models.DecimalField(max_digits=18, decimal_places=2)
+    total_contado = models.DecimalField(max_digits=18, decimal_places=2)
+    diferencia = models.DecimalField(max_digits=18, decimal_places=2)
+    estado = models.CharField(max_length=10, choices=Estado.choices)
+    observaciones = models.CharField(max_length=255, blank=True)
+    creado_en = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-pk"]
+        verbose_name = "arqueo de caja"
+        verbose_name_plural = "arqueos de caja"
+
+
+class DetalleArqueoBillete(models.Model):
+    """Desglose inmutable del efectivo físico contado en un arqueo."""
+
+    arqueo = models.ForeignKey(
+        ArqueoCaja, on_delete=models.PROTECT, related_name="detalle_billetes"
+    )
+    denominacion = models.ForeignKey(DenominacionBillete, on_delete=models.PROTECT)
+    cantidad = models.PositiveIntegerField()
+
+    class Meta:
+        ordering = ["-denominacion__valor"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["arqueo", "denominacion"], name="detalle_arqueo_billete_unico"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(cantidad__gt=0),
+                name="detalle_arqueo_billete_cantidad_positiva",
+            ),
+        ]
