@@ -432,3 +432,49 @@ asignados en la caja y moneda seleccionadas.
 para el rol `cajero`, con formulario, resultado e historial de arqueos. La
 opción se muestra en el menú del cajero. El administrador puede consultar los
 registros desde el admin de Django en modo de solo lectura.
+
+---
+## 7. RF047 — Registro de Diferencias de Caja (GEG9-45)
+
+**Consulta.** Después de un arqueo, ¿cómo se registra una diferencia para que
+el administrador pueda darle seguimiento?
+
+**Diseño.** Se agregó el modelo `DiferenciaCaja`, asociado a un
+`ArqueoCaja`. El registro conserva el monto, la moneda, el motivo, el
+responsable, el usuario administrador que lo registró y la fecha de creación.
+El monto se guarda como un valor positivo; el arqueo conserva el contexto de
+si la diferencia fue un faltante o un sobrante.
+
+**Reglas de negocio.** La divisa seleccionada debe coincidir con la divisa del
+arqueo. Solo se pueden seleccionar monedas activas y usuarios activos como
+responsables. El registro se realiza dentro de una transacción y mantiene el
+arqueo protegido para conservar la trazabilidad.
+
+**Interfaz y permisos.** Se agregó la ruta `/cajas/diferencias/`, disponible
+solo para el rol `administrador`. La pantalla permite registrar diferencias y
+consultar las últimas 50 registradas. También se agregó el acceso desde el
+menú administrativo y desde el detalle de una caja.
+
+**Decisión sobre la etiqueta del arqueo.** Se implementó `ArqueoCaja.__str__`
+para que el selector muestre el identificador, la moneda, el cajero y la fecha
+del arqueo, en lugar del texto genérico `ArqueoCaja object (...)`.
+
+### 7.1. Pruebas unitarias
+
+Se agregaron casos en `apps/cajas/tests/test_cajas.py` para verificar que:
+
+- un administrador registra una diferencia y se guardan el arqueo, responsable
+  y usuario que realizó el registro;
+- un cajero no puede acceder a la pantalla administrativa;
+- el servicio rechaza una divisa distinta a la del arqueo.
+
+La migración correspondiente es
+`apps/cajas/migrations/0004_diferenciacaja.py`.
+
+### 7.2. Verificaciones realizadas
+
+- Pruebas enfocadas de Cajas: **28 passed**.
+- Suite completa del proyecto: **176 passed**, con una advertencia de
+  deprecación de `EMAIL_BACKEND` proveniente de Django.
+- `git diff --check` y compilación sintáctica de los módulos Python pasaron sin
+  errores.

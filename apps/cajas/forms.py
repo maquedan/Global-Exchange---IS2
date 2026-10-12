@@ -4,7 +4,14 @@ from django.db.models import Q
 
 from apps.monedas.models import Moneda
 
-from .models import Caja, DenominacionBillete, FondoCajero, MovimientoCaja, Sucursal
+from .models import (
+    ArqueoCaja,
+    Caja,
+    DenominacionBillete,
+    FondoCajero,
+    MovimientoCaja,
+    Sucursal,
+)
 
 
 class SucursalForm(forms.ModelForm):
@@ -249,4 +256,32 @@ class ArqueoCajaForm(forms.Form):
                     total += cantidad * denominacion.valor
             datos["importe_calculado"] = total
         datos["billetes"] = cantidades
+        return datos
+
+
+class DiferenciaCajaForm(forms.Form):
+    arqueo = forms.ModelChoiceField(queryset=ArqueoCaja.objects.none())
+    monto = forms.DecimalField(min_value=0.01, max_digits=18, decimal_places=2)
+    moneda = forms.ModelChoiceField(queryset=Moneda.objects.none())
+    motivo = forms.CharField(max_length=255)
+    responsable = forms.ModelChoiceField(queryset=get_user_model().objects.none())
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["arqueo"].queryset = ArqueoCaja.objects.select_related(
+            "caja__sucursal", "cajero", "moneda"
+        ).order_by("-creado_en", "-pk")
+        self.fields["moneda"].queryset = Moneda.objects.filter(activo=True).order_by(
+            "codigo"
+        )
+        self.fields["responsable"].queryset = get_user_model().objects.filter(
+            is_active=True
+        ).order_by("username")
+
+    def clean(self):
+        datos = super().clean()
+        arqueo = datos.get("arqueo")
+        moneda = datos.get("moneda")
+        if arqueo and moneda and arqueo.moneda_id != moneda.pk:
+            self.add_error("moneda", "La divisa debe coincidir con la del arqueo.")
         return datos

@@ -11,6 +11,7 @@ from .models import (
     ConteoInventarioBilletes,
     ArqueoCaja,
     DetalleArqueoBillete,
+    DiferenciaCaja,
     DenominacionBillete,
     DetalleConteoInventarioBilletes,
     DetalleMovimientoBillete,
@@ -387,3 +388,29 @@ def registrar_arqueo(*, caja_id, cajero_id, moneda_id, billetes, observaciones="
         ]
     )
     return arqueo
+
+
+@transaction.atomic
+def registrar_diferencia_caja(
+    *, arqueo_id, monto, moneda_id, motivo, responsable_id, registrado_por
+):
+    """Registra una diferencia detectada durante un arqueo."""
+    arqueo = ArqueoCaja.objects.select_for_update().get(pk=arqueo_id)
+    moneda = Moneda.objects.filter(pk=moneda_id, activo=True).first()
+    if moneda is None:
+        raise MovimientoNoPermitido("La divisa no existe o está inactiva.")
+    if arqueo.moneda_id != moneda.pk:
+        raise MovimientoNoPermitido("La divisa debe coincidir con la del arqueo.")
+    if not motivo.strip():
+        raise MovimientoNoPermitido("El motivo es obligatorio.")
+    responsable = get_user_model().objects.filter(pk=responsable_id, is_active=True).first()
+    if responsable is None:
+        raise MovimientoNoPermitido("El responsable debe ser un usuario activo.")
+    return DiferenciaCaja.objects.create(
+        arqueo=arqueo,
+        monto=monto,
+        moneda=moneda,
+        motivo=motivo.strip(),
+        responsable=responsable,
+        registrado_por=registrado_por,
+    )

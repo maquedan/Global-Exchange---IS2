@@ -328,6 +328,12 @@ class ArqueoCaja(models.Model):
         verbose_name = "arqueo de caja"
         verbose_name_plural = "arqueos de caja"
 
+    def __str__(self):
+        return (
+            f"Arqueo #{self.pk} — {self.moneda.codigo} — "
+            f"{self.cajero.username} — {self.creado_en:%d/%m/%Y %H:%M}"
+        )
+
 
 class DetalleArqueoBillete(models.Model):
     """Desglose inmutable del efectivo físico contado en un arqueo."""
@@ -349,3 +355,42 @@ class DetalleArqueoBillete(models.Model):
                 name="detalle_arqueo_billete_cantidad_positiva",
             ),
         ]
+
+
+class DiferenciaCaja(models.Model):
+    """Diferencia detectada en un arqueo y registrada para seguimiento."""
+
+    arqueo = models.ForeignKey(
+        ArqueoCaja, on_delete=models.PROTECT, related_name="diferencias"
+    )
+    monto = models.DecimalField(
+        max_digits=18,
+        decimal_places=2,
+        validators=[MinValueValidator(Decimal("0.01"))],
+    )
+    moneda = models.ForeignKey(Moneda, on_delete=models.PROTECT)
+    motivo = models.CharField(max_length=255)
+    responsable = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="diferencias_caja_responsable",
+    )
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="diferencias_caja_registradas",
+    )
+    creado_en = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-creado_en", "-pk"]
+        verbose_name = "diferencia de caja"
+        verbose_name_plural = "diferencias de caja"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(monto__gt=0), name="diferencia_caja_monto_positivo"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.monto} {self.moneda.codigo} — {self.arqueo}"

@@ -14,6 +14,7 @@ from .models import (
     SaldoCaja,
     Sucursal,
     DetalleArqueoBillete,
+    DiferenciaCaja,
 )
 
 
@@ -132,3 +133,11 @@ class DetalleArqueoBilleteAdmin(SoloLecturaAdmin):
     list_display = ("arqueo", "denominacion", "cantidad")
     list_filter = ("denominacion__moneda",)
     readonly_fields = ("arqueo", "denominacion", "cantidad")
+
+
+@admin.register(DiferenciaCaja)
+class DiferenciaCajaAdmin(SoloLecturaAdmin):
+    list_display = ("creado_en", "arqueo", "monto", "moneda", "motivo", "responsable")
+    list_filter = ("moneda", "arqueo__estado")
+    search_fields = ("motivo", "responsable__username", "arqueo__cajero__username")
+    readonly_fields = tuple(field.name for field in DiferenciaCaja._meta.fields)

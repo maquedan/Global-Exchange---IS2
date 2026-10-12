@@ -66,6 +66,11 @@ MENU_PRINCIPAL = [
         "roles": ["cajero"],
     },
     {
+        "texto": "Diferencias de caja",
+        "url": "cajas:diferencias",
+        "roles": ["administrador"],
+    },
+    {
     "texto": "Historial de transacciones",
     "url": "conversiones:historial",
     "roles": ["usuario_cliente"],
