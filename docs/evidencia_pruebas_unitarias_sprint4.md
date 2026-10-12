@@ -402,3 +402,43 @@ Las pruebas verifican que un cajero consulte únicamente sus fondos y
 billetes asignados, que no pueda visualizar existencias de otro cajero, que un usuario sin rol cajero reciba acceso denegado y que la consulta sea de solo lectura al rechazar solicitudes POST con estado 405. La ejecución también mantiene aprobadas las pruebas existentes de Caja, Billetes, Arqueo y Registro de Diferencias.
 
 ---
+
+## Daniela Gonzalez — RF045, Control de Movimientos de Caja (GEG9-43)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 12 de octubre de 2026, 05:22:06 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/cajas/tests/test_cajas.py` |
+| **Comando** | `docker compose exec web pytest apps/cajas/tests/test_cajas.py -v` |
+| **Resultado** | **38 passed** en 45.77s |
+
+```text
+$ date
+Mon Oct 12 05:22:06 -03 2026
+
+$ docker compose exec web pytest apps/cajas/tests/test_cajas.py -v
+===================================== test session starts =====================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 38 items
+
+apps/cajas/tests/test_cajas.py ......................................                   [100%]
+
+====================================== warnings summary =======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=============================== 38 passed, 1 warning in 45.77s ================================
+```
+
+Las pruebas verifican la regularización de diferencias detectadas en
+arqueos mediante movimientos inmutables de ajuste. Se cubren ajustes de egreso para faltantes y de ingreso para sobrantes, actualización consistente del fondo e inventario del cajero por denominación, vínculo único entre diferencia y ajuste, prevención de ajustes duplicados, rechazo de ajustes directos sin una diferencia asociada, autorización desde la interfaz administrativa y restricción de acceso para usuarios sin rol `administrador`.
+
+La ejecución también conserva aprobadas las pruebas existentes de Gestión de Cajas, Control de Billetes, Entrega de Efectivo, Consulta de Existencias, Arqueo y Registro de Diferencias. No se registró validación manual adicional para este flujo.
+
+---

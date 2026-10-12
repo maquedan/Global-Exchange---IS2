@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block titulo %}Autorizar ajuste de caja | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p>
+    <a href="{% url 'cajas:diferencias' %}">
+      Volver a diferencias de caja
+    </a>
+  </p>
+
+  <h1>Autorizar ajuste de caja</h1>
+  <p>
+    Regularizá la diferencia detectada en el arqueo mediante el desglose real
+    de billetes. Esta acción genera un movimiento inmutable.
+  </p>
+
+  <dl>
+    <dt>Sucursal</dt>
+    <dd>{{ diferencia.arqueo.caja.sucursal.nombre }}</dd>
+
+    <dt>Cajero</dt>
+    <dd>
+      {{ diferencia.arqueo.cajero.get_full_name|default:diferencia.arqueo.cajero.username }}
+    </dd>
+
+    <dt>Estado del arqueo</dt>
+    <dd>{{ diferencia.arqueo.get_estado_display }}</dd>
+
+    <dt>Diferencia a regularizar</dt>
+    <dd>
+      <strong>{{ diferencia.monto }} {{ diferencia.moneda.codigo }}</strong>
+    </dd>
+
+    <dt>Motivo registrado</dt>
+    <dd>{{ diferencia.motivo }}</dd>
+  </dl>
+
+  <form method="post" class="space-y-4">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+
+    <fieldset>
+      <legend>Desglose de billetes</legend>
+
+      {% for item in formulario.campos_billetes %}
+        <p>
+          {{ item.campo.label_tag }}<br>
+          {{ item.campo }}
+          {{ item.campo.errors }}
+        </p>
+      {% empty %}
+        <p>
+          No hay denominaciones configuradas para esta divisa.
+        </p>
+      {% endfor %}
+    </fieldset>
+
+    <button class="boton" type="submit">
+      Autorizar y registrar ajuste
+    </button>
+  </form>
+</div>
+{% endblock %}

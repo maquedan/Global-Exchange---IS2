@@ -13,6 +13,7 @@ from apps.usuarios.menu import tiene_rol
 
 from .forms import (
     ArqueoCajaForm,
+    AjusteDiferenciaCajaForm,
     ConteoInventarioBilletesForm,
     DiferenciaCajaForm,
     DenominacionBilleteForm,
@@ -24,6 +25,7 @@ from .models import (
     Caja,
     ConteoInventarioBilletes,
     DenominacionBillete,
+    MovimientoCaja,
     DiferenciaCaja,
     FondoCajero,
     InventarioBilleteCajero,
@@ -36,6 +38,7 @@ from .services import (
     registrar_diferencia_caja,
     registrar_arqueo,
     registrar_movimiento,
+    registrar_ajuste_por_diferencia,
 )
 
 
@@ -428,10 +431,61 @@ def registrar_diferencia_view(request):
             messages.success(request, "Diferencia de caja registrada correctamente.")
             return redirect("cajas:diferencias")
     diferencias = DiferenciaCaja.objects.select_related(
-        "arqueo__caja__sucursal", "arqueo__cajero", "moneda", "responsable", "registrado_por"
+        "arqueo__caja__sucursal", "arqueo__cajero", "moneda", "responsable", "registrado_por","movimiento_ajuste",
     )[:50]
     return render(
         request,
         "cajas/diferencias.html",
         {"formulario": formulario, "diferencias": diferencias},
+    )
+
+@login_required
+@requiere_administrador
+@require_http_methods(["GET", "POST"])
+def autorizar_ajuste_view(request, pk):
+    """Autoriza y registra el ajuste asociado a una diferencia de caja."""
+    diferencia = get_object_or_404(
+        DiferenciaCaja.objects.select_related(
+            "arqueo__caja__sucursal",
+            "arqueo__cajero",
+            "moneda",
+        ),
+        pk=pk,
+    )
+
+    if MovimientoCaja.objects.filter(diferencia=diferencia).exists():
+        messages.error(
+            request,
+            "Esta diferencia ya fue regularizada mediante un ajuste.",
+        )
+        return redirect("cajas:diferencias")
+
+    formulario = AjusteDiferenciaCajaForm(
+        request.POST or None,
+        diferencia=diferencia,
+    )
+
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            registrar_ajuste_por_diferencia(
+                diferencia_id=diferencia.pk,
+                realizado_por=request.user,
+                billetes=formulario.cleaned_data["billetes"],
+            )
+        except (MovimientoNoPermitido, ValidationError) as error:
+            formulario.add_error(None, str(error))
+        else:
+            messages.success(
+                request,
+                "Ajuste de caja autorizado y registrado correctamente.",
+            )
+            return redirect("cajas:diferencias")
+
+    return render(
+        request,
+        "cajas/ajuste_diferencia_formulario.html",
+        {
+            "diferencia": diferencia,
+            "formulario": formulario,
+        },
     )

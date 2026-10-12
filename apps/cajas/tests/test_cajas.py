@@ -28,6 +28,8 @@ from apps.cajas.services import (
     registrar_arqueo,
     registrar_diferencia_caja,
     registrar_movimiento,
+    registrar_ajuste_por_diferencia,
+    registrar_diferencia_caja,
 )
 
 
@@ -711,3 +713,195 @@ class GestionCajasTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 405)
         self.assertFalse(MovimientoCaja.objects.exists())
+
+    def test_regulariza_faltante_con_ajuste_de_egreso(self):
+        self.ingresar_efectivo("100.00", self.billete_10)
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+        diferencia = registrar_diferencia_caja(
+            arqueo_id=arqueo.pk,
+            monto="10.00",
+            moneda_id=self.moneda.pk,
+            motivo="Faltante detectado en arqueo",
+            responsable_id=self.cajero.pk,
+            registrado_por=self.admin,
+        )
+
+        ajuste = registrar_ajuste_por_diferencia(
+            diferencia_id=diferencia.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+
+        fondo = FondoCajero.objects.get(
+            caja=self.caja,
+            cajero=self.cajero,
+            moneda=self.moneda,
+        )
+        inventario = InventarioBilleteCajero.objects.get(
+            caja=self.caja,
+            cajero=self.cajero,
+            denominacion=self.billete_10,
+        )
+
+        self.assertEqual(ajuste.tipo, MovimientoCaja.Tipo.AJUSTE_EGRESO)
+        self.assertEqual(ajuste.diferencia, diferencia)
+        self.assertEqual(ajuste.importe, Decimal("10.00"))
+        self.assertEqual(fondo.saldo, Decimal("10.00"))
+        self.assertEqual(inventario.cantidad, 1)
+        self.assertEqual(ajuste.saldo_cajero_resultante, Decimal("10.00"))
+
+    def test_regulariza_sobrante_con_ajuste_de_ingreso(self):
+        self.ingresar_efectivo("100.00", self.billete_10)
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("30.00", self.billete_10),
+        )
+        diferencia = registrar_diferencia_caja(
+            arqueo_id=arqueo.pk,
+            monto="10.00",
+            moneda_id=self.moneda.pk,
+            motivo="Sobrante detectado en arqueo",
+            responsable_id=self.cajero.pk,
+            registrado_por=self.admin,
+        )
+
+        ajuste = registrar_ajuste_por_diferencia(
+            diferencia_id=diferencia.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+
+        fondo = FondoCajero.objects.get(
+            caja=self.caja,
+            cajero=self.cajero,
+            moneda=self.moneda,
+        )
+        inventario = InventarioBilleteCajero.objects.get(
+            caja=self.caja,
+            cajero=self.cajero,
+            denominacion=self.billete_10,
+        )
+
+        self.assertEqual(ajuste.tipo, MovimientoCaja.Tipo.AJUSTE_INGRESO)
+        self.assertEqual(ajuste.diferencia, diferencia)
+        self.assertEqual(fondo.saldo, Decimal("30.00"))
+        self.assertEqual(inventario.cantidad, 3)
+        self.assertEqual(ajuste.saldo_cajero_resultante, Decimal("30.00"))
+
+    def test_no_permite_regularizar_una_diferencia_dos_veces(self):
+        self.ingresar_efectivo("100.00", self.billete_10)
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+        diferencia = registrar_diferencia_caja(
+            arqueo_id=arqueo.pk,
+            monto="10.00",
+            moneda_id=self.moneda.pk,
+            motivo="Faltante detectado en arqueo",
+            responsable_id=self.cajero.pk,
+            registrado_por=self.admin,
+        )
+
+        registrar_ajuste_por_diferencia(
+            diferencia_id=diferencia.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+
+        with self.assertRaises(MovimientoNoPermitido):
+            registrar_ajuste_por_diferencia(
+                diferencia_id=diferencia.pk,
+                realizado_por=self.admin,
+                billetes=self.billetes("10.00", self.billete_10),
+            )
+
+    def test_no_permite_ajustes_directos_sin_una_diferencia(self):
+        with self.assertRaises(MovimientoNoPermitido):
+            registrar_movimiento(
+                caja_id=self.caja.pk,
+                tipo=MovimientoCaja.Tipo.AJUSTE_INGRESO,
+                moneda_id=self.moneda.pk,
+                realizado_por=self.admin,
+                billetes=self.billetes("10.00", self.billete_10),
+            )
+
+    def test_administrador_autoriza_ajuste_desde_la_interfaz(self):
+        self.ingresar_efectivo("100.00", self.billete_10)
+        registrar_movimiento(
+            caja_id=self.caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=self.moneda.pk,
+            cajero_id=self.cajero.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+        arqueo = registrar_arqueo(
+            caja_id=self.caja.pk,
+            cajero_id=self.cajero.pk,
+            moneda_id=self.moneda.pk,
+            billetes=self.billetes("10.00", self.billete_10),
+        )
+        diferencia = registrar_diferencia_caja(
+            arqueo_id=arqueo.pk,
+            monto="10.00",
+            moneda_id=self.moneda.pk,
+            motivo="Faltante detectado en arqueo",
+            responsable_id=self.cajero.pk,
+            registrado_por=self.admin,
+        )
+
+        self.client.force_login(self.admin)
+        respuesta = self.client.post(
+            reverse("cajas:autorizar_ajuste", args=[diferencia.pk]),
+            {
+                f"billete_{self.billete_10.pk}": "1",
+            },
+        )
+
+        self.assertRedirects(respuesta, reverse("cajas:diferencias"))
+        ajuste = MovimientoCaja.objects.get(diferencia=diferencia)
+        self.assertEqual(ajuste.tipo, MovimientoCaja.Tipo.AJUSTE_EGRESO)
+        self.assertEqual(ajuste.realizado_por, self.admin)
+
+    def test_solo_administrador_puede_autorizar_un_ajuste(self):
+        self.client.force_login(self.cajero)
+
+        respuesta = self.client.get(
+            reverse("cajas:autorizar_ajuste", args=[999])
+        )
+
+        self.assertEqual(respuesta.status_code, 403)
