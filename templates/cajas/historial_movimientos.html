@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block titulo %}Historial de operaciones de caja | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'cajas:lista' %}">Volver a cajas y sucursales</a></p>
+  <h1>Historial de operaciones de caja</h1>
+  {% if caja %}
+    <p>Mostrando la caja única de la sucursal <strong>{{ caja.sucursal.nombre }}</strong>.</p>
+  {% else %}
+    <p>No hay una caja registrada.</p>
+  {% endif %}
+
+  {% if movimientos %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Fecha y hora</th><th>Sucursal / caja</th><th>Operación</th>
+            <th>Moneda</th><th>Importe</th><th>Cajero</th><th>Usuario responsable</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for movimiento in movimientos %}
+            <tr>
+              <td>{{ movimiento.creado_en|date:"d/m/Y H:i:s" }}</td>
+              <td>{{ movimiento.caja.sucursal.nombre }}<br><small>Caja #{{ movimiento.caja.pk }}</small></td>
+              <td>{{ movimiento.get_tipo_display }}</td>
+              <td>{{ movimiento.moneda.codigo }}</td>
+              <td>{{ movimiento.importe }}</td>
+              <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
+              <td>{{ movimiento.realizado_por.get_full_name|default:movimiento.realizado_por.username }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay operaciones registradas para el filtro seleccionado.</p>
+  {% endif %}
+
+  {% if page_obj.paginator.num_pages > 1 %}
+    <nav class="mt-4 flex items-center gap-4" aria-label="Páginas del historial">
+      {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
+      <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
+      {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Siguiente</a>{% endif %}
+    </nav>
+  {% endif %}
+</div>
+{% endblock %}
