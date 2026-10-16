@@ -1,19 +1,17 @@
 {% extends "base.html" %}
 
-{% block titulo %}Caja de {{ sucursal.nombre }} | Global Exchange{% endblock %}
+{% block titulo %}Caja principal | Global Exchange{% endblock %}
 
 {% block contenido %}
 <div class="tarjeta">
-  <p><a href="{% url 'cajas:lista' %}">Volver a sucursales</a></p>
-  <h1>Caja — {{ sucursal.nombre }}</h1>
+  <h1>Caja principal — {{ sucursal.nombre }}</h1>
   <p>{{ sucursal.direccion }} · {% if sucursal.activa %}Activa{% else %}Inactiva{% endif %}</p>
   <p>
     <a class="boton" href="{% url 'cajas:registrar_movimiento' sucursal.pk %}">Registrar movimiento</a>
     <a class="boton" href="{% url 'cajas:registrar_denominacion' sucursal.pk %}">Agregar denominación de billete</a>
     <a class="boton" href="{% url 'cajas:registrar_conteo' sucursal.pk %}">Reconciliar inventario</a>
     <a class="boton" href="{% url 'cajas:diferencias' %}">Registrar diferencia de caja</a>
-    <a class="boton boton-secundario" href="{% url 'cajas:historial_movimientos' %}">Ver historial completo</a>
-    <a class="boton boton-secundario" href="{% url 'cajas:editar_sucursal' sucursal.pk %}">Modificar sucursal</a>
+    <a class="boton boton-secundario" href="{% url 'cajas:historial_movimientos' %}">Ver historial de caja</a>
   </p>
 
   {% if messages %}
@@ -117,77 +115,6 @@
     <p>No hay denominaciones configuradas.</p>
   {% endif %}
 
-  <h2>Historial de movimientos</h2>
-  {% if movimientos %}
-    <div class="overflow-x-auto">
-      <table class="datos">
-        <thead>
-          <tr><th>Fecha y hora</th><th>Tipo</th><th>Moneda</th><th>Importe total</th><th>Billetes y monedas</th><th>Cajero</th><th>Saldo caja</th><th>Saldo cajero</th><th>Registrado por</th><th>Nota</th></tr>
-        </thead>
-        <tbody>
-          {% for movimiento in movimientos %}
-            <tr>
-              <td>{{ movimiento.creado_en }}</td>
-              <td>{{ movimiento.get_tipo_display }}</td>
-              <td>{{ movimiento.moneda.codigo }}</td>
-              <td>{{ movimiento.importe }}</td>
-              <td>
-                {% for detalle in movimiento.detalle_billetes.all %}
-                  {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
-                {% endfor %}
-              </td>
-              <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
-              <td>{{ movimiento.saldo_caja_resultante }}</td>
-              <td>{{ movimiento.saldo_cajero_resultante|default:"—" }}</td>
-              <td>{{ movimiento.realizado_por.get_full_name|default:movimiento.realizado_por.username }}</td>
-              <td>{{ movimiento.nota|default:"—" }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <p>No hay movimientos registrados.</p>
-  {% endif %}
-  <h2>Historial de conteos y conciliaciones</h2>
-  {% if conteos %}
-    <div class="overflow-x-auto">
-      <table class="datos">
-        <thead><tr><th>Fecha</th><th>Divisa</th><th>Inventario</th><th>Importe total</th><th>Cajero</th><th>Registrado por</th></tr></thead>
-        <tbody>
-          {% for conteo in conteos %}
-            <tr>
-              <td>{{ conteo.creado_en }}</td>
-              <td>{{ conteo.moneda.codigo }}</td>
-              <td>
-                {% for detalle in conteo.detalle_billetes.all %}
-                  {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
-                {% empty %}
-                  Sin billetes
-                {% endfor %}
-              </td>
-              <td>{{ conteo.importe_total }}</td>
-              <td>{% if conteo.cajero %}{{ conteo.cajero.get_full_name|default:conteo.cajero.username }}{% else %}Caja{% endif %}</td>
-              <td>{{ conteo.realizado_por.get_full_name|default:conteo.realizado_por.username }}</td>
-            </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <p>No hay conteos registrados.</p>
-  {% endif %}
-  {% if page_obj.paginator.num_pages > 1 %}
-    <nav class="mt-4 flex items-center gap-4" aria-label="Páginas del historial">
-      {% if page_obj.has_previous %}
-        <a href="?page={{ page_obj.previous_page_number }}">Anterior</a>
-      {% endif %}
-      <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
-      {% if page_obj.has_next %}
-        <a href="?page={{ page_obj.next_page_number }}">Siguiente</a>
-      {% endif %}
-    </nav>
-  {% endif %}
 </div>
 
 {% endblock %}

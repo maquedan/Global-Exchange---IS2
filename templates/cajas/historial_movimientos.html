@@ -1,51 +1,111 @@
 {% extends "base.html" %}
 
-{% block titulo %}Historial de operaciones de caja | Global Exchange{% endblock %}
+{% block titulo %}Historial de caja | Global Exchange{% endblock %}
 
 {% block contenido %}
 <div class="tarjeta">
-  <p><a href="{% url 'cajas:lista' %}">Volver a cajas y sucursales</a></p>
-  <h1>Historial de operaciones de caja</h1>
+  <p><a href="{% url 'cajas:lista' %}">Volver a caja principal</a></p>
+  <h1>Historial de caja</h1>
   {% if caja %}
-    <p>Mostrando la caja única de la sucursal <strong>{{ caja.sucursal.nombre }}</strong>.</p>
+    <p>Movimientos y conteos de la caja de <strong>{{ caja.sucursal.nombre }}</strong>.</p>
   {% else %}
     <p>No hay una caja registrada.</p>
   {% endif %}
 
-  {% if movimientos %}
-    <div class="overflow-x-auto">
-      <table class="datos">
-        <thead>
-          <tr>
-            <th>Fecha y hora</th><th>Sucursal / caja</th><th>Operación</th>
-            <th>Moneda</th><th>Importe</th><th>Cajero</th><th>Usuario responsable</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for movimiento in movimientos %}
+  <section aria-labelledby="historial-movimientos">
+    <h2 id="historial-movimientos">Historial de movimientos</h2>
+    {% if movimientos %}
+      <div class="overflow-x-auto">
+        <table class="datos">
+          <thead>
             <tr>
-              <td>{{ movimiento.creado_en|date:"d/m/Y H:i:s" }}</td>
-              <td>{{ movimiento.caja.sucursal.nombre }}<br><small>Caja #{{ movimiento.caja.pk }}</small></td>
-              <td>{{ movimiento.get_tipo_display }}</td>
-              <td>{{ movimiento.moneda.codigo }}</td>
-              <td>{{ movimiento.importe }}</td>
-              <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
-              <td>{{ movimiento.realizado_por.get_full_name|default:movimiento.realizado_por.username }}</td>
+              <th>Fecha y hora</th><th>Operación</th><th>Moneda</th><th>Importe</th>
+              <th>Billetes y monedas</th><th>Cajero</th><th>Saldo de caja</th>
+              <th>Saldo del cajero</th><th>Registrado por</th><th>Nota</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% else %}
-    <p>No hay operaciones registradas para el filtro seleccionado.</p>
-  {% endif %}
+          </thead>
+          <tbody>
+            {% for movimiento in movimientos %}
+              <tr>
+                <td>{{ movimiento.creado_en|date:"d/m/Y H:i:s" }}</td>
+                <td>{{ movimiento.get_tipo_display }}</td>
+                <td>{{ movimiento.moneda.codigo }}</td>
+                <td>{{ movimiento.importe }}</td>
+                <td>
+                  {% for detalle in movimiento.detalle_billetes.all %}
+                    {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
+                  {% empty %}
+                    —
+                  {% endfor %}
+                </td>
+                <td>{% if movimiento.cajero %}{{ movimiento.cajero.get_full_name|default:movimiento.cajero.username }}{% else %}—{% endif %}</td>
+                <td>{{ movimiento.saldo_caja_resultante }}</td>
+                <td>{{ movimiento.saldo_cajero_resultante|default:"—" }}</td>
+                <td>{{ movimiento.realizado_por.get_full_name|default:movimiento.realizado_por.username }}</td>
+                <td>{{ movimiento.nota|default:"—" }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>No hay movimientos registrados.</p>
+    {% endif %}
+    {% if movimientos_page_obj.paginator.num_pages > 1 %}
+      <nav class="mt-4 flex items-center gap-4" aria-label="Páginas de movimientos">
+        {% if movimientos_page_obj.has_previous %}
+          <a href="?movimientos_page={{ movimientos_page_obj.previous_page_number }}&conteos_page={{ conteos_page_obj.number }}">Anterior</a>
+        {% endif %}
+        <span>Página {{ movimientos_page_obj.number }} de {{ movimientos_page_obj.paginator.num_pages }}</span>
+        {% if movimientos_page_obj.has_next %}
+          <a href="?movimientos_page={{ movimientos_page_obj.next_page_number }}&conteos_page={{ conteos_page_obj.number }}">Siguiente</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  </section>
 
-  {% if page_obj.paginator.num_pages > 1 %}
-    <nav class="mt-4 flex items-center gap-4" aria-label="Páginas del historial">
-      {% if page_obj.has_previous %}<a href="?page={{ page_obj.previous_page_number }}">Anterior</a>{% endif %}
-      <span>Página {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}</span>
-      {% if page_obj.has_next %}<a href="?page={{ page_obj.next_page_number }}">Siguiente</a>{% endif %}
-    </nav>
-  {% endif %}
+  <section aria-labelledby="historial-conteos">
+    <h2 id="historial-conteos">Historial de conteos y conciliaciones</h2>
+    {% if conteos %}
+      <div class="overflow-x-auto">
+        <table class="datos">
+          <thead>
+            <tr><th>Fecha y hora</th><th>Divisa</th><th>Inventario contado</th><th>Importe total</th><th>Cajero</th><th>Registrado por</th></tr>
+          </thead>
+          <tbody>
+            {% for conteo in conteos %}
+              <tr>
+                <td>{{ conteo.creado_en|date:"d/m/Y H:i:s" }}</td>
+                <td>{{ conteo.moneda.codigo }}</td>
+                <td>
+                  {% for detalle in conteo.detalle_billetes.all %}
+                    {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}{% if not forloop.last %}, {% endif %}
+                  {% empty %}
+                    Sin billetes
+                  {% endfor %}
+                </td>
+                <td>{{ conteo.importe_total }}</td>
+                <td>{% if conteo.cajero %}{{ conteo.cajero.get_full_name|default:conteo.cajero.username }}{% else %}Caja{% endif %}</td>
+                <td>{{ conteo.realizado_por.get_full_name|default:conteo.realizado_por.username }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% else %}
+      <p>No hay conteos registrados.</p>
+    {% endif %}
+    {% if conteos_page_obj.paginator.num_pages > 1 %}
+      <nav class="mt-4 flex items-center gap-4" aria-label="Páginas de conteos y conciliaciones">
+        {% if conteos_page_obj.has_previous %}
+          <a href="?movimientos_page={{ movimientos_page_obj.number }}&conteos_page={{ conteos_page_obj.previous_page_number }}">Anterior</a>
+        {% endif %}
+        <span>Página {{ conteos_page_obj.number }} de {{ conteos_page_obj.paginator.num_pages }}</span>
+        {% if conteos_page_obj.has_next %}
+          <a href="?movimientos_page={{ movimientos_page_obj.number }}&conteos_page={{ conteos_page_obj.next_page_number }}">Siguiente</a>
+        {% endif %}
+      </nav>
+    {% endif %}
+  </section>
 </div>
 {% endblock %}

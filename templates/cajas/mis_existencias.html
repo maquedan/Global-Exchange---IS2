@@ -6,8 +6,8 @@
 <div class="tarjeta">
   <h1>Mis existencias de efectivo</h1>
   <p>
-    Consultá el efectivo que tenés asignado actualmente, desglosado por caja,
-    divisa y denominación.
+    Consultá el efectivo que tenés asignado actualmente en la caja principal,
+    desglosado por divisa y denominación.
   </p>
 
   <h2>Fondos asignados</h2>
@@ -17,7 +17,6 @@
       <table class="datos">
         <thead>
           <tr>
-            <th>Sucursal</th>
             <th>Divisa</th>
             <th>Saldo disponible</th>
           </tr>
@@ -25,7 +24,6 @@
         <tbody>
           {% for fondo in fondos %}
             <tr>
-              <td>{{ fondo.caja.sucursal.nombre }}</td>
               <td>
                 {{ fondo.moneda.codigo }} — {{ fondo.moneda.nombre }}
               </td>
@@ -46,7 +44,6 @@
       <table class="datos">
         <thead>
           <tr>
-            <th>Sucursal</th>
             <th>Divisa</th>
             <th>Denominación</th>
             <th>Cantidad de billetes</th>
@@ -55,7 +52,6 @@
         <tbody>
           {% for existencia in inventario %}
             <tr>
-              <td>{{ existencia.caja.sucursal.nombre }}</td>
               <td>{{ existencia.denominacion.moneda.codigo }}</td>
               <td>{{ existencia.denominacion.valor }}</td>
               <td>{{ existencia.cantidad }}</td>

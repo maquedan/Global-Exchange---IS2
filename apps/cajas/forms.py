@@ -11,27 +11,7 @@ from .models import (
     DiferenciaCaja,
     FondoCajero,
     MovimientoCaja,
-    Sucursal,
 )
-
-
-class SucursalForm(forms.ModelForm):
-    class Meta:
-        model = Sucursal
-        fields = ("nombre", "direccion", "activa")
-
-    def clean_activa(self):
-        activa = self.cleaned_data["activa"]
-        if not activa and self.instance.pk:
-            caja = getattr(self.instance, "caja", None)
-            if caja and (
-                caja.saldos.filter(saldo__gt=0).exists()
-                or caja.fondos_cajeros.filter(saldo__gt=0).exists()
-            ):
-                raise forms.ValidationError(
-                    "No se puede desactivar una sucursal con fondos pendientes en caja o asignados a cajeros."
-                )
-        return activa
 
 
 class MovimientoCajaForm(forms.Form):
@@ -204,16 +184,18 @@ class ConteoInventarioBilletesForm(forms.Form):
 
 
 class ArqueoCajaForm(forms.Form):
-    caja = forms.ModelChoiceField(queryset=None)
     moneda = forms.ModelChoiceField(queryset=Moneda.objects.none())
     observaciones = forms.CharField(max_length=255, required=False)
 
     def __init__(self, *args, cajero=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.cajero = cajero
-        self.fields["caja"].queryset = Caja.objects.filter(
-            fondos_cajeros__cajero=cajero
-        ).distinct().select_related("sucursal")
+        self.caja = (
+            Caja.objects.filter(fondos_cajeros__cajero=cajero)
+            .distinct()
+            .select_related("sucursal")
+            .first()
+        )
         self.fields["moneda"].queryset = Moneda.objects.filter(
             activo=True, fondocajero__cajero=cajero
         ).distinct().order_by("codigo")
@@ -233,12 +215,11 @@ class ArqueoCajaForm(forms.Form):
 
     def clean(self):
         datos = super().clean()
-        caja = datos.get("caja")
         moneda = datos.get("moneda")
         cantidades = {}
-        if caja and moneda:
+        if moneda:
             if not FondoCajero.objects.filter(
-                caja=caja, cajero=self.cajero, moneda=moneda
+                caja=self.caja, cajero=self.cajero, moneda=moneda
             ).exists():
                 self.add_error("moneda", "No tenés fondos asignados en esa caja y moneda.")
             total = 0

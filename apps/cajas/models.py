@@ -8,17 +8,24 @@ from apps.monedas.models import Moneda
 
 
 class Sucursal(models.Model):
-    """Sucursal operativa con una caja asociada."""
+    """Sucursal única del sistema, con una caja asociada."""
 
     nombre = models.CharField(max_length=120, unique=True)
     direccion = models.CharField(max_length=255)
     activa = models.BooleanField(default=True, db_index=True)
     creada_en = models.DateTimeField(auto_now_add=True)
+    es_unica = models.BooleanField(default=True, editable=False, unique=True)
 
     class Meta:
         ordering = ["nombre"]
         verbose_name = "sucursal"
         verbose_name_plural = "sucursales"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(es_unica=True),
+                name="sucursal_es_unica",
+            ),
+        ]
 
     def __str__(self):
         return self.nombre
