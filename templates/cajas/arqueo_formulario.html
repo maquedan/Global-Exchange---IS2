@@ -5,11 +5,10 @@
 {% block contenido %}
 <div class="tarjeta">
   <h1>Arqueo de caja</h1>
-  <p>Contá el efectivo físico de tu fondo para cerrar el turno.</p>
+  <p>Contá el efectivo físico de tu fondo en la caja principal para cerrar el turno.</p>
   <form method="post" class="space-y-4">
     {% csrf_token %}
     {{ formulario.non_field_errors }}
-    <div><label for="id_caja">Caja</label>{{ formulario.caja }}{{ formulario.caja.errors }}</div>
     <div><label for="id_moneda">Moneda</label>{{ formulario.moneda }}{{ formulario.moneda.errors }}</div>
     <h2>Billetes contados</h2>
     <div class="grid gap-3 md:grid-cols-3">
@@ -26,9 +25,9 @@
   <h2>Mis últimos arqueos</h2>
   {% if arqueos %}
     <div class="overflow-x-auto"><table class="datos">
-      <thead><tr><th>Fecha</th><th>Caja</th><th>Moneda</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Estado</th></tr></thead>
+      <thead><tr><th>Fecha</th><th>Moneda</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Estado</th></tr></thead>
       <tbody>{% for arqueo in arqueos %}<tr>
-        <td>{{ arqueo.creado_en }}</td><td>{{ arqueo.caja.sucursal.nombre }}</td><td>{{ arqueo.moneda.codigo }}</td>
+        <td>{{ arqueo.creado_en }}</td><td>{{ arqueo.moneda.codigo }}</td>
         <td>{{ arqueo.saldo_esperado }}</td><td>{{ arqueo.total_contado }}</td><td>{{ arqueo.diferencia }}</td><td>{{ arqueo.get_estado_display }}</td>
       </tr>{% endfor %}</tbody>
     </table></div>

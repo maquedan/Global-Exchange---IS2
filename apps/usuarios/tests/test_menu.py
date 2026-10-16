@@ -56,9 +56,9 @@ def test_clientes_se_muestra_a_los_roles_autorizados():
 
 @pytest.mark.django_db
 def test_cajas_y_sucursales_solo_se_muestra_al_administrador():
-    assert "Cajas y sucursales" in textos_del_menu(usuario_con("administrador"))
-    assert "Cajas y sucursales" not in textos_del_menu(usuario_con("analista_cambiario"))
-    assert "Cajas y sucursales" not in textos_del_menu(usuario_con("usuario_cliente"))
+    assert "Caja principal" in textos_del_menu(usuario_con("administrador"))
+    assert "Caja principal" not in textos_del_menu(usuario_con("analista_cambiario"))
+    assert "Caja principal" not in textos_del_menu(usuario_con("usuario_cliente"))
 
 
 @pytest.mark.django_db

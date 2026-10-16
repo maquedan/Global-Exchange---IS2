@@ -30,15 +30,11 @@ class SoloLecturaAdmin(admin.ModelAdmin):
 
 
 @admin.register(Sucursal)
-class SucursalAdmin(admin.ModelAdmin):
+class SucursalAdmin(SoloLecturaAdmin):
     list_display = ("nombre", "direccion", "activa", "creada_en")
     list_filter = ("activa",)
     search_fields = ("nombre", "direccion")
-    readonly_fields = ("creada_en",)
-
-    def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-        Caja.objects.get_or_create(sucursal=obj)
+    readonly_fields = tuple(field.name for field in Sucursal._meta.fields)
 
 
 @admin.register(Caja)

@@ -18,7 +18,6 @@ from .forms import (
     DiferenciaCajaForm,
     DenominacionBilleteForm,
     MovimientoCajaForm,
-    SucursalForm,
 )
 from .models import (
     ArqueoCaja,
@@ -65,12 +64,6 @@ def requiere_cajero(vista):
 
 def _contexto_sucursal(request, sucursal):
     caja = sucursal.caja
-    movimientos = Paginator(
-        caja.movimientos.select_related(
-            "moneda", "cajero", "realizado_por"
-        ).prefetch_related("detalle_billetes__denominacion"),
-        50,
-    ).get_page(request.GET.get("page"))
     return {
         "sucursal": sucursal,
         "saldos": caja.saldos.select_related("moneda"),
@@ -84,12 +77,6 @@ def _contexto_sucursal(request, sucursal):
         "denominaciones": DenominacionBillete.objects.filter(
             moneda__activo=True
         ).select_related("moneda"),
-        "conteos": ConteoInventarioBilletes.objects.filter(caja=caja)
-        .select_related("moneda", "cajero", "realizado_por")
-        .prefetch_related("detalle_billetes__denominacion")
-        .order_by("-creado_en", "-pk")[:50],
-        "movimientos": movimientos,
-        "page_obj": movimientos,
     }
 
 
@@ -163,17 +150,15 @@ def _render_conteo(request, sucursal, formulario=None):
 @login_required
 @requiere_administrador
 def lista(request):
-    sucursales = Sucursal.objects.prefetch_related(
-        "caja__saldos__moneda", "caja__fondos_cajeros__moneda"
-    )
-    return render(request, "cajas/lista.html", {"sucursales": sucursales})
+    sucursal = get_object_or_404(Sucursal, es_unica=True)
+    return redirect("cajas:detalle", pk=sucursal.pk)
 
 
 @login_required
 @requiere_administrador
 @require_GET
 def historial_movimientos(request):
-    """Consulta auditable de operaciones de efectivo de las cajas (RF048)."""
+    """Consulta los movimientos y conciliaciones de efectivo de la caja (RF048)."""
     caja = Caja.objects.select_related("sucursal").first()
     movimientos = (
         MovimientoCaja.objects.select_related(
@@ -182,14 +167,29 @@ def historial_movimientos(request):
         .prefetch_related("detalle_billetes__denominacion")
         .filter(caja=caja)
     )
+    conteos = (
+        ConteoInventarioBilletes.objects.select_related(
+            "caja__sucursal", "moneda", "cajero", "realizado_por"
+        )
+        .prefetch_related("detalle_billetes__denominacion")
+        .filter(caja=caja)
+        .order_by("-creado_en", "-pk")
+    )
 
-    pagina = Paginator(movimientos, 50).get_page(request.GET.get("page"))
+    pagina_movimientos = Paginator(movimientos, 50).get_page(
+        request.GET.get("movimientos_page")
+    )
+    pagina_conteos = Paginator(conteos, 50).get_page(
+        request.GET.get("conteos_page")
+    )
     return render(
         request,
         "cajas/historial_movimientos.html",
         {
-            "movimientos": pagina,
-            "page_obj": pagina,
+            "movimientos": pagina_movimientos,
+            "movimientos_page_obj": pagina_movimientos,
+            "conteos": pagina_conteos,
+            "conteos_page_obj": pagina_conteos,
             "caja": caja,
         },
     )
@@ -224,39 +224,6 @@ def mis_existencias(request):
             "fondos": fondos,
             "inventario": inventario,
         },
-    )
-
-
-@login_required
-@requiere_administrador
-def crear_sucursal(request):
-    formulario = SucursalForm(request.POST or None)
-    if request.method == "POST" and formulario.is_valid():
-        with transaction.atomic():
-            sucursal = formulario.save()
-            Caja.objects.create(sucursal=sucursal)
-        messages.success(request, "Sucursal y caja creadas correctamente.")
-        return redirect("cajas:lista")
-    return render(
-        request,
-        "cajas/sucursal_formulario.html",
-        {"formulario": formulario, "accion": "Registrar"},
-    )
-
-
-@login_required
-@requiere_administrador
-def editar_sucursal(request, pk):
-    sucursal = get_object_or_404(Sucursal, pk=pk)
-    formulario = SucursalForm(request.POST or None, instance=sucursal)
-    if request.method == "POST" and formulario.is_valid():
-        formulario.save()
-        messages.success(request, "Sucursal actualizada correctamente.")
-        return redirect("cajas:lista")
-    return render(
-        request,
-        "cajas/sucursal_formulario.html",
-        {"formulario": formulario, "accion": "Modificar"},
     )
 
 
@@ -415,7 +382,7 @@ def arqueo_view(request):
         datos = formulario.cleaned_data
         try:
             arqueo = registrar_arqueo(
-                caja_id=datos["caja"].pk,
+                caja_id=formulario.caja.pk,
                 cajero_id=request.user.pk,
                 moneda_id=datos["moneda"].pk,
                 billetes=datos["billetes"],

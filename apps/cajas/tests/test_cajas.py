@@ -3,10 +3,11 @@ from decimal import Decimal
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
 from django.core.exceptions import ValidationError
+from django.db import IntegrityError, transaction
 from django.test import TestCase
 from django.urls import reverse
 
-from apps.cajas.forms import MovimientoCajaForm
+from apps.cajas.forms import ArqueoCajaForm, MovimientoCajaForm
 from apps.cajas.models import (
     ArqueoCaja,
     Caja,
@@ -49,10 +50,11 @@ class GestionCajasTests(TestCase):
         self.billete_10 = DenominacionBillete.objects.create(
             moneda=self.moneda, valor=Decimal("10.00")
         )
-        self.sucursal = Sucursal.objects.create(
-            nombre="Casa Central", direccion="Av. Principal 123"
-        )
-        self.caja = Caja.objects.create(sucursal=self.sucursal)
+        self.sucursal = Sucursal.objects.get(es_unica=True)
+        self.sucursal.nombre = "Casa Central"
+        self.sucursal.direccion = "Av. Principal 123"
+        self.sucursal.save(update_fields=["nombre", "direccion"])
+        self.caja = self.sucursal.caja
 
     def billetes(self, importe, denominacion=None):
         importe = Decimal(importe)
@@ -70,17 +72,33 @@ class GestionCajasTests(TestCase):
             billetes=self.billetes(importe, denominacion),
         )
 
-    def test_admin_crea_sucursal_y_caja(self):
+    def test_el_sistema_mantiene_una_sola_sucursal(self):
         self.client.force_login(self.admin)
 
-        respuesta = self.client.post(
-            reverse("cajas:crear_sucursal"),
-            {"nombre": "Sucursal Norte", "direccion": "Calle 1", "activa": "on"},
+        respuesta = self.client.get(reverse("cajas:lista"))
+
+        self.assertRedirects(
+            respuesta, reverse("cajas:detalle", args=[self.sucursal.pk])
+        )
+        detalle = self.client.get(reverse("cajas:detalle", args=[self.sucursal.pk]))
+        self.assertContains(detalle, "Caja principal")
+        self.assertNotContains(detalle, "Registrar sucursal")
+        self.assertNotContains(detalle, "Modificar sucursal")
+        self.assertEqual(Sucursal.objects.count(), 1)
+
+        self.assertEqual(
+            self.client.get("/cajas/sucursales/nueva/").status_code,
+            404,
         )
 
-        self.assertRedirects(respuesta, reverse("cajas:lista"))
-        sucursal = Sucursal.objects.get(nombre="Sucursal Norte")
-        self.assertTrue(Caja.objects.filter(sucursal=sucursal).exists())
+    def test_la_base_de_datos_rechaza_una_segunda_sucursal(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                Sucursal.objects.create(nombre="Norte", direccion="Calle 1")
+
+    def test_arqueo_no_pide_seleccionar_una_caja(self):
+        formulario = ArqueoCajaForm(cajero=self.cajero)
+        self.assertNotIn("caja", formulario.fields)
 
     def test_solo_administrador_puede_gestionar_cajas(self):
         self.client.force_login(self.analista)
@@ -146,11 +164,13 @@ class GestionCajasTests(TestCase):
         self.assertEqual(movimiento.importe, Decimal("125.50"))
         self.assertEqual(movimiento.saldo_caja_resultante, Decimal("125.50"))
         detalle = self.client.get(reverse("cajas:detalle", args=[self.sucursal.pk]))
-        self.assertContains(detalle, "Importe")
         self.assertContains(detalle, "Registrar movimiento")
         self.assertContains(detalle, "Agregar denominación de billete")
         self.assertContains(detalle, "Reconciliar inventario")
         self.assertNotContains(detalle, 'id="form-movimiento"')
+        historial = self.client.get(reverse("cajas:historial_movimientos"))
+        self.assertContains(historial, "125,50")
+        self.assertContains(historial, "Fondo inicial")
 
         formulario_movimiento = self.client.get(
             reverse("cajas:registrar_movimiento", args=[self.sucursal.pk])
@@ -375,12 +395,38 @@ class GestionCajasTests(TestCase):
         self.client.force_login(self.admin)
 
         respuesta = self.client.get(
-            reverse("cajas:detalle", args=[self.sucursal.pk]), {"page": 2}
+            reverse("cajas:historial_movimientos"), {"movimientos_page": 2}
         )
 
         self.assertEqual(respuesta.status_code, 200)
-        self.assertEqual(respuesta.context["page_obj"].number, 2)
+        self.assertEqual(respuesta.context["movimientos_page_obj"].number, 2)
         self.assertEqual(len(respuesta.context["movimientos"]), 1)
+        self.assertEqual(respuesta.context["conteos_page_obj"].number, 1)
+
+    def test_historial_de_caja_muestra_movimientos_y_conteos_por_separado(self):
+        self.ingresar_efectivo("20.00", self.billete_10)
+        registrar_conteo_inventario(
+            caja_id=self.caja.pk,
+            moneda_id=self.moneda.pk,
+            realizado_por=self.admin,
+            billetes=self.billetes("20.00", self.billete_10),
+        )
+        self.client.force_login(self.admin)
+
+        respuesta = self.client.get(reverse("cajas:historial_movimientos"))
+
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertContains(respuesta, "Historial de movimientos")
+        self.assertContains(respuesta, "Historial de conteos y conciliaciones")
+        self.assertContains(respuesta, "Ingreso a caja")
+        self.assertContains(respuesta, "2 × 10,00")
+        self.assertContains(respuesta, "20,00")
+        self.assertEqual(len(respuesta.context["movimientos"]), 1)
+        self.assertEqual(len(respuesta.context["conteos"]), 1)
+
+        detalle = self.client.get(reverse("cajas:detalle", args=[self.sucursal.pk]))
+        self.assertNotContains(detalle, "Historial de movimientos")
+        self.assertNotContains(detalle, "Historial de conteos y conciliaciones")
 
     def test_rf048_consulta_historial_identifica_caja_cajero_y_responsable(self):
         self.ingresar_efectivo()
@@ -524,24 +570,6 @@ class GestionCajasTests(TestCase):
                 billetes=self.billetes("31.00"),
             )
 
-    def test_no_se_puede_desactivar_sucursal_con_fondos_pendientes(self):
-        self.ingresar_efectivo()
-        self.client.force_login(self.admin)
-
-        respuesta = self.client.post(
-            reverse("cajas:editar_sucursal", args=[self.sucursal.pk]),
-            {
-                "nombre": self.sucursal.nombre,
-                "direccion": self.sucursal.direccion,
-                "activa": "",
-            },
-        )
-
-        self.assertEqual(respuesta.status_code, 200)
-        self.assertIn("activa", respuesta.context["formulario"].errors)
-        self.sucursal.refresh_from_db()
-        self.assertTrue(self.sucursal.activa)
-
     def test_movimiento_requiere_billetes_para_calcular_importe(self):
         with self.assertRaises(ValidationError):
             registrar_movimiento(
@@ -624,7 +652,9 @@ class GestionCajasTests(TestCase):
         self.client.force_login(self.admin)
         self.assertEqual(self.client.get(reverse("cajas:arqueo")).status_code, 403)
         self.client.force_login(self.cajero)
-        self.assertEqual(self.client.get(reverse("cajas:arqueo")).status_code, 200)
+        respuesta = self.client.get(reverse("cajas:arqueo"))
+        self.assertEqual(respuesta.status_code, 200)
+        self.assertNotContains(respuesta, 'name="caja"')
 
     def test_administra_diferencia_de_caja_y_guarda_responsables(self):
         FondoCajero.objects.create(
@@ -698,7 +728,7 @@ class GestionCajasTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 200)
         self.assertTemplateUsed(respuesta, "cajas/mis_existencias.html")
-        self.assertContains(respuesta, self.sucursal.nombre)
+        self.assertNotContains(respuesta, self.sucursal.nombre)
         fondos = list(respuesta.context["fondos"])
         inventario = list(respuesta.context["inventario"])
 
