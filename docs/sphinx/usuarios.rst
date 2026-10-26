@@ -2,7 +2,7 @@ Usuarios y autenticación
 ========================
 
 Módulo responsable del inicio de sesión con Keycloak, la sincronización de
-roles y el menú principal.
+roles, el menú principal y el cliente activo de la sesión (RF008).
 
 Autenticación con Keycloak
 --------------------------
@@ -17,6 +17,15 @@ Menú principal según el rol
    :members:
 
 .. automodule:: apps.usuarios.context_processors
+   :members:
+
+Cliente activo de la sesión
+---------------------------
+
+.. automodule:: apps.usuarios.services
+   :members:
+
+.. automodule:: apps.usuarios.middleware
    :members:
 
 Vistas

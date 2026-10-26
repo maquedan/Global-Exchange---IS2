@@ -7,6 +7,23 @@
   <title>{% block titulo %}Global Exchange{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <style>
+    .operando-como {
+      display: inline-block;
+      max-width: 16rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #e0f2fe;
+      font-size: 0.75rem;
+    }
+
+    .operando-como strong {
+      color: #fff;
+    }
+
     .contador-notificaciones {
       display: inline-flex;
       align-items: center;
@@ -38,6 +55,11 @@
         <div class="flex items-center gap-4">
           <div class="flex shrink-0 items-center gap-3 text-sm">
             {% if user.is_authenticated %}
+              {% if cliente_activo %}
+                <span class="operando-como" title="Cliente con el que estás operando">
+                  Operando como <strong>{{ cliente_activo }}</strong>
+                </span>
+              {% endif %}
               <span class="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-300 text-xs font-black text-sky-950">{{ user.get_full_name|default:user.username|slice:":1"|upper }}</span>
               <span class="max-w-44 truncate font-medium text-blue-50" title="{{ user.get_full_name|default:user.username }}">{{ user.get_full_name|default:user.username }}</span>
               {# El logout de mozilla-django-oidc exige POST (protección CSRF) #}

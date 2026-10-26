@@ -291,9 +291,40 @@ def test_cliente_no_puede_confirmar_compra_para_otro_cliente(
         "monto_pagado": "100.00",
     })
 
-    assert respuesta.status_code == 200
-    assert "cliente" in respuesta.context["formulario"].errors
+    # Desde RF008 no hay campo "cliente" en el formulario: se opera en
+    # nombre del cliente activo. Este usuario no tiene ninguno asociado,
+    # así que ni siquiera puede operar.
+    assert respuesta.status_code == 302
     assert CompraDivisa.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_mandar_un_cliente_ajeno_en_el_post_no_tiene_efecto(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    """El id de cliente del POST se ignora: la compra siempre se registra a
+    nombre del cliente activo de la sesión (RF008 — GEG9-18)."""
+    ajeno = Cliente.objects.create(
+        tipo=Cliente.Tipo.FISICA,
+        nombres="Luis",
+        apellidos="Lopez",
+        documento="7654321",
+        email="luis@example.com",
+        telefono="0981222222",
+        direccion="Asuncion",
+    )
+    client.force_login(usuario_cliente)
+
+    client.post(reverse("conversiones:comprar"), {
+        "cliente": ajeno.pk,
+        "moneda_pagada": monedas[0].pk,
+        "moneda_adquirida": monedas[1].pk,
+        "monto_pagado": "100.00",
+    })
+
+    compra = CompraDivisa.objects.get()
+    assert compra.cliente == cliente_asociado
+    assert compra.cliente != ajeno
 
 
 # --------------------------------------------------------------------------

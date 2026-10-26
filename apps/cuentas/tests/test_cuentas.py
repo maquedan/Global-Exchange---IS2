@@ -95,10 +95,13 @@ class CuentasPagoTests(TestCase):
         self.assertEqual(CuentaPago.objects.count(), 1)
 
     def test_no_permite_elegir_cliente_ajeno(self):
+        """Desde RF008 el cliente ya no se elige en el formulario: sale del
+        cliente activo de la sesión. Mandar el id de un cliente ajeno en el
+        POST no tiene ningún efecto, se ignora."""
         _, cliente_de_bruno = self.crear_segundo_cliente()
         self.client.force_login(self.usuario)  # Carla intenta usar el cliente de Bruno
 
-        respuesta = self.client.post(reverse("cuentas:crear"), {
+        self.client.post(reverse("cuentas:crear"), {
             "cliente": cliente_de_bruno.pk,
             "tipo": CuentaPago.Tipo.BANCARIA,
             "entidad": "Banco Itaú",
@@ -106,9 +109,9 @@ class CuentasPagoTests(TestCase):
             "titular": "Carla Gómez",
         })
 
-        self.assertEqual(respuesta.status_code, 200)  # no redirige: hay error
-        self.assertEqual(CuentaPago.objects.count(), 0)
-        self.assertIn("cliente", respuesta.context["formulario"].errors)
+        cuenta = CuentaPago.objects.get()
+        self.assertEqual(cuenta.cliente, self.cliente)  # el suyo, no el de Bruno
+        self.assertNotEqual(cuenta.cliente, cliente_de_bruno)
 
     def test_no_permite_cuenta_duplicada(self):
         CuentaPago.objects.create(

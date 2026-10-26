@@ -42,6 +42,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Deja request.cliente_activo y manda a elegir antes de operar (RF008).
+    # Va después del de autenticación: necesita request.user ya resuelto.
+    "apps.usuarios.middleware.ClienteActivoMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
