@@ -7,6 +7,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.services import requiere_cliente_activo
 
 from .forms import (
     CompraDivisaForm,
@@ -72,6 +73,7 @@ def simular(request):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def comprar(request):
     """Inicia una compra con los valores vigentes al enviar el formulario.
 
@@ -81,14 +83,12 @@ def comprar(request):
     Si viene con datos por query string (el botón "Repetir esta operación" de
     una compra cancelada), se usan para pre-llenar el formulario.
     """
-    formulario = CompraDivisaForm(
-        request.POST or None, usuario=request.user, initial=request.GET or None
-    )
+    formulario = CompraDivisaForm(request.POST or None, initial=request.GET or None)
     if request.method == "POST" and formulario.is_valid():
         datos = formulario.cleaned_data
         try:
             compra = iniciar_compra(
-                cliente_id=datos["cliente"].pk,
+                cliente_id=request.cliente_activo.pk,
                 moneda_pagada=datos["moneda_pagada"],
                 moneda_adquirida=datos["moneda_adquirida"],
                 monto_pagado=datos["monto_pagado"],
@@ -162,6 +162,7 @@ def cancelar_compra_view(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def vender(request):
     """Inicia una venta con la cuenta de acreditación elegida.
 
@@ -171,13 +172,13 @@ def vender(request):
     una venta cancelada), se usan para pre-llenar el formulario.
     """
     formulario = VentaDivisaForm(
-        request.POST or None, usuario=request.user, initial=request.GET or None
+        request.POST or None, cliente=request.cliente_activo, initial=request.GET or None
     )
     if request.method == "POST" and formulario.is_valid():
         datos = formulario.cleaned_data
         try:
             venta = iniciar_venta(
-                cliente_id=datos["cliente"].pk,
+                cliente_id=request.cliente_activo.pk,
                 moneda_entregada=datos["moneda_entregada"],
                 moneda_acreditada=datos["moneda_acreditada"],
                 cuenta_destino=datos["cuenta_destino"],
@@ -251,12 +252,17 @@ def cancelar_venta_view(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def historial(request):
-    """Muestra en modo consulta las transacciones confirmadas del usuario."""
+    """Transacciones confirmadas del cliente activo, en modo consulta.
+
+    Antes de RF008 mezclaba las de todos los clientes asociados; ahora
+    muestra solo las del cliente con el que se está operando.
+    """
 
     compras = (
         CompraDivisa.objects.filter(
-            cliente__asociaciones_usuarios__usuario=request.user,
+            cliente=request.cliente_activo,
             estado=CompraDivisa.Estado.CONFIRMADA,
         )
         .select_related(
@@ -269,7 +275,7 @@ def historial(request):
 
     ventas = (
         VentaDivisa.objects.filter(
-            cliente__asociaciones_usuarios__usuario=request.user,
+            cliente=request.cliente_activo,
             estado=VentaDivisa.Estado.CONFIRMADA,
         )
         .select_related(

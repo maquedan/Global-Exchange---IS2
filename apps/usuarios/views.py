@@ -7,6 +7,7 @@ from django.views.decorators.http import require_http_methods
 from .keycloak_admin import KeycloakAdmin, KeycloakAdminError
 from .menu import roles_de
 from .models import PermisoRol, PermisoSistema
+from .services import ClienteNoDisponible, clientes_del_usuario, elegir_cliente
 
 
 def inicio(request):
@@ -28,6 +29,31 @@ def panel(request):
         request,
         "usuarios/panel.html",
         {"roles": sorted(roles_de(request.user))},
+    )
+
+
+@login_required
+def seleccionar_cliente(request):
+    """Pantalla "Elegí el cliente con el que vas a operar" (RF008 — GEG9-18).
+
+    La reutiliza RF009 para cambiar de cliente sin cerrar sesión: es la
+    misma pantalla, solo que llegando a propósito en vez de por redirección.
+    """
+    siguiente = request.POST.get("siguiente") or request.GET.get("siguiente")
+
+    if request.method == "POST":
+        try:
+            cliente = elegir_cliente(request, request.POST.get("cliente_id"))
+        except ClienteNoDisponible as error:
+            messages.error(request, str(error))
+        else:
+            messages.success(request, f"Vas a operar en nombre de {cliente}.")
+            return redirect(siguiente or "usuarios:panel")
+
+    return render(
+        request,
+        "usuarios/seleccionar_cliente.html",
+        {"clientes": clientes_del_usuario(request.user), "siguiente": siguiente},
     )
 
 

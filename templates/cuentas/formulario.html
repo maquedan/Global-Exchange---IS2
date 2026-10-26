@@ -15,11 +15,7 @@
       <p class="mensaje error">{{ error }}</p>
     {% endfor %}
 
-    <p>
-      <label for="{{ formulario.cliente.id_for_label }}">Cliente</label><br>
-      {{ formulario.cliente }}
-      {% for error in formulario.cliente.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
-    </p>
+    <p class="mensaje">Se va a registrar a nombre de <strong>{{ cliente_activo }}</strong>.</p>
 
     <p>
       <label for="{{ formulario.tipo.id_for_label }}">Tipo</label><br>

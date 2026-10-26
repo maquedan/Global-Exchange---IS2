@@ -2,7 +2,6 @@ from decimal import Decimal
 
 from django import forms
 
-from apps.clientes.models import Cliente
 from apps.cuentas.models import CuentaPago
 from apps.monedas.models import Moneda
 
@@ -68,9 +67,12 @@ def construir_resultado(formulario, tasa_cambio):
 
 
 class CompraDivisaForm(forms.Form):
-    """Datos que el cliente debe indicar para confirmar una compra de divisas."""
+    """Datos que el cliente debe indicar para confirmar una compra de divisas.
 
-    cliente = forms.ModelChoiceField(queryset=Cliente.objects.none(), label="Cliente")
+    No pide elegir el cliente: la compra se hace en nombre del cliente
+    activo de la sesión (RF008 — GEG9-18), que resuelve el servidor.
+    """
+
     moneda_pagada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True),
         label="Moneda con la que pagás",
@@ -88,14 +90,6 @@ class CompraDivisaForm(forms.Form):
         help_text="La comisión se calcula aparte y se suma al total.",
     )
 
-    def __init__(self, *args, usuario=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        if usuario is not None:
-            self.fields["cliente"].queryset = Cliente.objects.filter(
-                asociaciones_usuarios__usuario=usuario,
-                activo=True,
-            ).distinct()
-
     def clean(self):
         datos = super().clean()
         if (
@@ -111,9 +105,12 @@ class CompraDivisaForm(forms.Form):
 
 
 class VentaDivisaForm(forms.Form):
-    """Datos de una venta y la cuenta del cliente donde acreditar el neto."""
+    """Datos de una venta y la cuenta del cliente donde acreditar el neto.
 
-    cliente = forms.ModelChoiceField(queryset=Cliente.objects.none(), label="Cliente")
+    Igual que la compra, opera en nombre del cliente activo de la sesión
+    (RF008): por eso recibe ese cliente, para ofrecer solo SUS cuentas.
+    """
+
     moneda_entregada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True), label="Divisa que vendés"
     )
@@ -131,34 +128,22 @@ class VentaDivisaForm(forms.Form):
         widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
 
-    def __init__(self, *args, usuario=None, **kwargs):
+    def __init__(self, *args, cliente=None, **kwargs):
         super().__init__(*args, **kwargs)
-        if usuario is not None:
-            self.fields["cliente"].queryset = Cliente.objects.filter(
-                asociaciones_usuarios__usuario=usuario,
-                activo=True,
-            ).distinct()
+        if cliente is not None:
             self.fields["cuenta_destino"].queryset = CuentaPago.objects.filter(
-                cliente__asociaciones_usuarios__usuario=usuario,
-                cliente__activo=True,
+                cliente=cliente,
                 activa=True,
-            ).distinct()
+            )
 
     def clean(self):
         datos = super().clean()
         entregada = datos.get("moneda_entregada")
         acreditada = datos.get("moneda_acreditada")
-        cliente = datos.get("cliente")
-        cuenta = datos.get("cuenta_destino")
 
         if entregada and acreditada and entregada == acreditada:
             self.add_error(
                 "moneda_acreditada",
                 "La moneda acreditada debe ser diferente de la que vendés.",
-            )
-        if cliente and cuenta and cuenta.cliente_id != cliente.pk:
-            self.add_error(
-                "cuenta_destino",
-                "Elegí una cuenta perteneciente al cliente seleccionado.",
             )
         return datos
