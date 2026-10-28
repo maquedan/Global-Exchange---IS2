@@ -14,6 +14,7 @@ usage() {
 case "$1" in
   dev)
     ENV_FILE=".env"
+    seed_profile="demo"
     if [[ ! -f "$ENV_FILE" ]]; then
       cp .env.example "$ENV_FILE"
     fi
@@ -74,6 +75,7 @@ PY
     ;;
   prod)
     ENV_FILE=".env.prod"
+    seed_profile="minimal"
     if [[ ! -f "$ENV_FILE" ]]; then
       echo "No existe .env.prod. Copiá .env.prod.example, completá sus valores y volvé a ejecutar." >&2
       exit 1
@@ -95,6 +97,9 @@ required = (
     "KC_ADMIN_USER", "KC_ADMIN_PASSWORD", "SECRET_KEY",
     "DJANGO_ALLOWED_HOSTS", "APP_PUBLIC_URL", "SITE_BASE_URL",
     "KEYCLOAK_PUBLIC_URL", "KEYCLOAK_SERVER_URL", "KEYCLOAK_INTERNAL_URL",
+    "INITIAL_USD_PYG_BUY_RATE", "INITIAL_USD_PYG_SELL_RATE",
+    "INITIAL_COMMISSION_MINORISTA", "INITIAL_COMMISSION_CORPORATIVO",
+    "INITIAL_COMMISSION_VIP",
 )
 missing = [
     key for key in required
@@ -148,7 +153,7 @@ else
 fi
 
 "${compose[@]}" run --rm --no-deps web sh -c \
-  "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
+  "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py cargar_datos_iniciales --profile $seed_profile"
 
 if [[ "$1" == "prod" ]]; then
   "${compose[@]}" up -d --wait web nginx

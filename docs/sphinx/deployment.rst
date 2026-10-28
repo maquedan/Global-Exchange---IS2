@@ -38,8 +38,11 @@ Producción
 
 1. Copiá ``.env.prod.example`` a ``.env.prod``.
 2. Reemplazá los valores ``REEMPLAZAR`` y completá dominios, ``DATABASE_URL``,
-   ``DJANGO_ALLOWED_HOSTS`` y las credenciales requeridas. Usá secretos
-   aleatorios; URL-encodeá la contraseña PostgreSQL en ``DATABASE_URL``.
+   ``DJANGO_ALLOWED_HOSTS`` y las credenciales requeridas. Definí y aprobá
+   también la tasa USD/PYG inicial (``INITIAL_USD_PYG_BUY_RATE`` y
+   ``INITIAL_USD_PYG_SELL_RATE``) y las comisiones por categoría
+   (``INITIAL_COMMISSION_*``). Usá secretos aleatorios; URL-encodeá la
+   contraseña PostgreSQL en ``DATABASE_URL``.
 3. Ejecutá:
 
 .. code-block:: bash
@@ -51,6 +54,30 @@ bases de datos, inicia Keycloak e importa el realm, y luego sincroniza los
 secretos OIDC. Antes de iniciar Gunicorn y Nginx, aplica las migraciones y
 ejecuta ``collectstatic``. El archivo ``.env.prod`` está excluido de Git y debe
 mantenerse privado.
+
+Datos iniciales
+---------------
+
+El despliegue ejecuta ``python manage.py cargar_datos_iniciales`` después de
+las migraciones. Usa ``--profile demo`` en desarrollo y ``--profile minimal``
+en producción. La carga es idempotente: identifica registros por claves
+naturales, completa solo los que faltan y no sobrescribe tasas ni comisiones
+existentes.
+
+El perfil demo agrega monedas, tasas y comisiones ficticias, los grupos de rol
+de Django, clientes de ejemplo y una caja con saldos e inventario en cero. Los
+clientes usan datos reservados para demostraciones y no se crean usuarios ni
+contraseñas. El perfil minimal agrega USD/PYG, una tasa USD/PYG suministrada
+por el operador, las comisiones configuradas por el operador y los grupos de
+rol; no crea clientes, sucursales ni cajas demo. Las tasas de muestra no son
+cotizaciones de mercado. Confirmá los valores financieros antes de habilitar
+operaciones en producción.
+
+También se puede repetir la carga manualmente:
+
+.. code-block:: bash
+
+   docker compose exec web python manage.py cargar_datos_iniciales --profile demo
 
 Por defecto, Nginx publica la aplicación en el puerto 80 y Keycloak en el
 8080. Configurá TLS en un proxy o balanceador antes de exponerlos a Internet.

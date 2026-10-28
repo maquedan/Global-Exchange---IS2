@@ -53,6 +53,9 @@ docker compose down
    Reemplazá todos los valores `REEMPLAZAR`, en particular las contraseñas de
    las bases de datos, `KC_ADMIN_PASSWORD` y `SECRET_KEY`. Usá secretos
    aleatorios y URL-encodeá la contraseña PostgreSQL en `DATABASE_URL`.
+   Configurá y aprobá también la cotización inicial USD/PYG y los porcentajes
+   de comisión en las variables `INITIAL_*`; el despliegue no inventa valores
+   financieros para producción.
    Configurá los dominios reales en `APP_PUBLIC_URL`, `SITE_BASE_URL`,
    `KEYCLOAK_PUBLIC_URL`, `KEYCLOAK_SERVER_URL` y `DJANGO_ALLOWED_HOSTS`.
    `.env.prod` está excluido de Git.
@@ -65,13 +68,41 @@ docker compose down
 
    El script valida la configuración, construye la imagen, espera ambas bases
    de datos, inicia Keycloak, sincroniza las credenciales OIDC, aplica las
-   migraciones y `collectstatic`, y finalmente arranca Django con Gunicorn y
-   Nginx.
+   migraciones, recoge los estáticos y carga los datos iniciales mínimos antes
+   de arrancar Django con Gunicorn y Nginx.
 
 Por defecto, Nginx publica la aplicación en el puerto 80 y Keycloak en el 8080.
 Configurá TLS en un proxy o balanceador antes de exponer el servicio a Internet.
 Para aplicar cambios de configuración, actualizá `.env.prod` y volvé a ejecutar
 `./scripts/deploy.sh prod`.
+
+## Datos iniciales
+
+El despliegue carga datos con `python manage.py cargar_datos_iniciales` y un
+perfil explícito. Para ejecutarlo manualmente:
+
+```bash
+docker compose exec web python manage.py cargar_datos_iniciales --profile demo
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec web \
+  python manage.py cargar_datos_iniciales --profile minimal
+```
+
+La carga es idempotente: usa claves naturales y solo completa registros
+ausentes; no actualiza tasas ni comisiones que ya existan ni borra datos.
+
+- `demo` (desarrollo): monedas admitidas para la demostración, tasas ficticias
+  USD/PYG y otras divisas frente a PYG, comisiones de ejemplo para las tres
+  categorías, grupos de roles de Django, clientes ficticios y una caja demo
+  con saldos e inventario en cero. No se crean usuarios ni contraseñas demo.
+- `minimal` (producción): monedas USD y PYG, una tasa inicial USD/PYG, las tres
+  categorías con sus comisiones y grupos de roles. Los valores financieros se
+  deben revisar y definir en `.env.prod` (`INITIAL_USD_PYG_*` y
+  `INITIAL_COMMISSION_*`). No se cargan clientes ni sucursales/cajas demo.
+
+Al ejecutar de nuevo el comando no se duplican datos ni se sobrescriben
+configuraciones existentes. Las tasas de demostración no representan precios
+de mercado; en producción, confirmá la cotización y las comisiones antes de
+habilitar operaciones.
 
 ## Scripts de Keycloak dentro de Docker
 
