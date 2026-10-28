@@ -48,11 +48,29 @@ docker compose restart web
 | `analista.demo` | `Demo1234!` | `analista_cambiario` | Panel |
 | `cliente.demo` | `Demo1234!` | `usuario_cliente` | Panel |
 | `cajero.demo` | `Demo1234!` | `cajero` | Panel |
+| `nuevo.demo` | `Demo1234!` | `usuario_cliente` | Panel, Cotizaciones, Simular |
 
-El usuario `cajero.demo` se crea al importar el realm por primera vez. En un
-Keycloak ya existente, crea el usuario desde la consola de Keycloak con estas
-credenciales y asígnale el rol `cajero`; después de iniciar sesión, podrá
-seleccionarse al asignarle fondos desde el detalle de una caja.
+`nuevo.demo` es el usuario para probar **RF010 (GEG9-20)**: tiene el rol de
+cliente pero **ningún cliente asociado**, igual que alguien que acaba de
+registrarse. Sirve para comprobar que queda limitado a funciones de consulta:
+no ve en el menú las opciones de operar, y si escribe a mano una URL de
+operación lo manda a `/sin-cliente/`. **No le asocies ningún cliente**, o deja
+de servir para esa prueba.
+
+Los usuarios `cajero.demo` y `nuevo.demo` se crean al importar el realm por
+primera vez. En un Keycloak ya existente el archivo del realm no se vuelve a
+importar, así que hay dos caminos: crearlos a mano desde la consola de
+Keycloak con estas credenciales y su rol, o rehacer el contenedor para que
+importe el realm de nuevo:
+
+```bash
+docker compose down -v keycloak keycloak-db
+docker compose up -d keycloak
+```
+
+> Ojo: `-v` borra el volumen de Keycloak, así que se pierden los usuarios y
+> roles creados a mano desde la consola (los del archivo del realm vuelven
+> solos). Los datos de la aplicación están en otra base y no se tocan.
 
 > La opción **Clientes** aparece sola en el menú de `administrador` y
 > `analista_cambiario` cuando se implemente el CRUD (GEG9-11): el menú

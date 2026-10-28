@@ -97,6 +97,14 @@
       "enabled": true, "emailVerified": true,
       "credentials": [{ "type": "password", "value": "Demo1234!", "temporary": false }],
       "realmRoles": ["cajero"]
+    },
+    {
+      "username": "nuevo.demo",
+      "email": "nuevo.demo@globalexchange.local",
+      "firstName": "Emilia", "lastName": "Sin Cliente",
+      "enabled": true, "emailVerified": true,
+      "credentials": [{ "type": "password", "value": "Demo1234!", "temporary": false }],
+      "realmRoles": ["usuario_cliente"]
     }
   ]
 }

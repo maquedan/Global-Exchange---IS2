@@ -10,7 +10,6 @@ que RF009 (cambiar de cliente sin cerrar sesión) sea reutilizar lo mismo.
 """
 from functools import wraps
 
-from django.contrib import messages
 from django.shortcuts import redirect
 
 from apps.clientes.models import Cliente
@@ -21,6 +20,32 @@ CLAVE_SESION = "cliente_activo_id"
 
 class ClienteNoDisponible(Exception):
     """El cliente pedido no existe, no está activo o no es de este usuario."""
+
+
+class ClienteNoHabilitado(Exception):
+    """El usuario no puede operar en nombre de ese cliente (RF010 — GEG9-20).
+
+    Es la defensa en profundidad de la capa de servicios: las vistas ya
+    bloquean con `requiere_cliente_para_operar`, pero un servicio tiene que
+    poder negarse por su cuenta, sin depender de que lo llamen desde una
+    vista bien decorada.
+    """
+
+
+def cliente_habilitado_para(usuario, cliente_id):
+    """Devuelve el cliente si el usuario puede operar en su nombre.
+
+    Exige las dos condiciones a la vez, que son las que `clientes_del_usuario`
+    ya usa: que exista la asociación (RF007) y que el cliente esté activo
+    (RF003). Levanta `ClienteNoHabilitado` si falta alguna.
+    """
+    cliente = clientes_del_usuario(usuario).filter(pk=cliente_id).first()
+    if cliente is None:
+        raise ClienteNoHabilitado(
+            "No podés operar en nombre de ese cliente: o tu cuenta no está "
+            "asociada a él, o el cliente fue dado de baja."
+        )
+    return cliente
 
 
 def clientes_del_usuario(usuario):
@@ -89,20 +114,37 @@ def requiere_cliente_activo(vista):
     """Corta una vista operativa si no hay cliente activo.
 
     El middleware ya manda a elegir a quien tiene clientes y no eligió, así
-    que acá solo cae el usuario **sin ningún cliente asociado**. Ese caso lo
-    resuelve RF010 (GEG9-20); por ahora no se lo deja operar, pero tampoco
-    se rompe nada.
+    que acá solo cae el usuario **sin ningún cliente asociado**.
+
+    Desde RF010 (GEG9-20) el bloqueo no vuelve al panel con un mensaje
+    suelto: manda a la pantalla que explica qué sí puede hacer y cómo pedir
+    la asociación. Es un alias de `requiere_cliente_para_operar`, que hace
+    exactamente lo mismo; se conserva el nombre porque RF008 ya lo usa en
+    varias vistas.
+    """
+    return requiere_cliente_para_operar(vista)
+
+
+def requiere_cliente_para_operar(vista):
+    """Deja operar solo a quien tenga un cliente habilitado (RF010 — GEG9-20).
+
+    El ERS pide limitar al usuario no asociado a un cliente "únicamente a
+    funciones de consulta". Esta es la parte de servidor de esa regla: corta
+    tanto el GET como el POST, así que escribir la URL a mano o mandar el
+    formulario por fuera no sirve de nada.
+
+    Se apoya en `request.cliente_activo` (RF008), que ya es `None` tanto
+    para el usuario sin clientes como para aquel cuyo cliente fue dado de
+    baja, así que los dos casos quedan cubiertos con la misma pieza.
+
+    Administradores y analistas no se ven afectados: no se aplica a las
+    vistas de administración, que tienen su propio control de rol (RF011).
     """
 
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if getattr(request, "cliente_activo", None) is None:
-            messages.error(
-                request,
-                "Todavía no tenés un cliente asociado para operar. "
-                "Pedile a un administrador que te asocie uno.",
-            )
-            return redirect("usuarios:panel")
+            return redirect("usuarios:sin_cliente")
         return vista(request, *args, **kwargs)
 
     return envoltura

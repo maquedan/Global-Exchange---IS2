@@ -8,6 +8,7 @@ from apps.clientes.models import Cliente
 from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.services import cliente_habilitado_para
 
 from .models import CambioEstado, CompraDivisa, VentaDivisa
 
@@ -89,13 +90,19 @@ class CompraNoConfirmable(Exception):
 
 
 @transaction.atomic
-def iniciar_compra(*, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado):
+def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado):
     """Congela la tasa y comisión vigentes y deja la compra en estado PENDIENTE.
 
     El monto ingresado es la base de conversión. La comisión se cobra aparte y
     forma parte del total a pagar. La operación recién queda CONFIRMADA cuando
     el cliente confirma el pago en `confirmar_pago_compra` (RF051).
+
+    `usuario` es obligatorio desde RF010 (GEG9-20): el servicio comprueba por
+    su cuenta que esa persona pueda operar en nombre del cliente, en vez de
+    confiar en que la vista ya lo verificó.
     """
+    cliente_habilitado_para(usuario, cliente_id)
+
     cliente = Cliente.objects.select_for_update().filter(pk=cliente_id, activo=True).first()
     if cliente is None:
         raise CompraNoDisponible("El cliente ya no está habilitado para operar.")
@@ -175,7 +182,14 @@ def confirmar_pago_compra(*, pk, usuario):
     """
     compra = (
         CompraDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # cliente__activo: si al cliente lo dieron de baja (RF003) con la
+        # operación pendiente, tampoco se puede confirmar ni cancelar
+        # (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if compra is None:
@@ -224,7 +238,14 @@ def cancelar_compra(*, pk, usuario):
     """Cancela una compra pendiente por decisión del cliente."""
     compra = (
         CompraDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # cliente__activo: si al cliente lo dieron de baja (RF003) con la
+        # operación pendiente, tampoco se puede confirmar ni cancelar
+        # (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if compra is None:
@@ -258,9 +279,16 @@ class VentaNoConfirmable(Exception):
 
 @transaction.atomic
 def iniciar_venta(
-    *, cliente_id, moneda_entregada, moneda_acreditada, cuenta_destino, monto_entregado
+    *, usuario, cliente_id, moneda_entregada, moneda_acreditada, cuenta_destino,
+    monto_entregado
 ):
-    """Congela la tasa y comisión vigentes y deja la venta en estado PENDIENTE."""
+    """Congela la tasa y comisión vigentes y deja la venta en estado PENDIENTE.
+
+    `usuario` es obligatorio desde RF010 (GEG9-20), igual que en
+    `iniciar_compra`.
+    """
+    cliente_habilitado_para(usuario, cliente_id)
+
     cliente = Cliente.objects.select_for_update().filter(pk=cliente_id, activo=True).first()
     if cliente is None:
         raise VentaNoDisponible("El cliente ya no está habilitado para operar.")
@@ -348,7 +376,12 @@ def confirmar_pago_venta(*, pk, usuario):
     """
     venta = (
         VentaDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # Ver el comentario en confirmar_pago_compra (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if venta is None:
@@ -397,7 +430,12 @@ def cancelar_venta(*, pk, usuario):
     """Cancela una venta pendiente por decisión del cliente."""
     venta = (
         VentaDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # Ver el comentario en confirmar_pago_compra (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if venta is None:

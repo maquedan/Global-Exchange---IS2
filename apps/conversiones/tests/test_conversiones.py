@@ -259,6 +259,7 @@ def test_venta_no_permite_usar_cuenta_de_otro_cliente(
 
     with pytest.raises(VentaNoDisponible, match="no pertenece al cliente"):
         iniciar_venta(
+            usuario=usuario_cliente,
             cliente_id=cliente_asociado.pk,
             moneda_entregada=monedas[0],
             moneda_acreditada=monedas[1],

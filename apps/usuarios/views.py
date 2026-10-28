@@ -57,6 +57,22 @@ def seleccionar_cliente(request):
     )
 
 
+@login_required
+def sin_cliente(request):
+    """Explica por qué no puede operar y qué sí puede hacer (RF010 — GEG9-20).
+
+    Acá caen los bloqueos de `requiere_cliente_para_operar`. El ERS limita al
+    usuario no asociado a un cliente a funciones de consulta, así que en vez
+    de un 403 pelado se le dice qué le falta y se le ofrecen las pantallas
+    que sí tiene disponibles.
+    """
+    return render(
+        request,
+        "usuarios/sin_cliente.html",
+        {"clientes": clientes_del_usuario(request.user)},
+    )
+
+
 def es_administrador(usuario):
     """Autoriza RF011 únicamente al rol administrador del realm."""
     return usuario.is_authenticated and "administrador" in roles_de(usuario)

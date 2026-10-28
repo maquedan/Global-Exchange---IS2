@@ -145,6 +145,82 @@ documentadas en `docs/chia-sprint5.md`, sección 2.
 
 ---
 
+## Leyda Fleitas — RF010, Restricción de Operaciones (GEG9-20)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | miércoles 28 de octubre de 2026, 13:38:19 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/usuarios/tests/test_restriccion_operaciones.py` |
+| **Comando** | `docker compose exec web pytest apps/usuarios/tests/test_restriccion_operaciones.py -v` |
+| **Resultado** | **37 passed** en 2.62s |
+
+```text
+$ date
+Wed Oct 28 13:38:19 -03 2026
+
+$ docker compose exec web pytest apps/usuarios/tests/test_restriccion_operaciones.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 37 items
+
+apps/usuarios/tests/test_restriccion_operaciones.py .................... [ 54%]
+.................                                                        [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 37 passed, 1 warning in 2.62s =========================
+```
+
+Cubre los ocho casos pedidos por la historia. El criterio de diseño es que
+**ocultar botones no es seguridad**: cada vista de operación se prueba con GET
+y con POST, simulando a alguien que escribe la URL a mano o manda el
+formulario por fuera de la interfaz.
+
+- **Consulta sigue funcionando:** las 6 URLs de consulta (cotizaciones, datos
+  JSON, panel, pantalla de restricción, simulación y notificaciones)
+  responden `200` para un usuario sin ningún cliente asociado. La simulación
+  (RF017) se prueba además con POST, verificando que no registra ninguna
+  operación: es sólo cálculo.
+- **Operación bloqueada:** prueba **parametrizada sobre las 17 URLs de
+  operación**, con GET y con POST. Todas devuelven `302` a
+  `/sin-cliente/`. Esa lista hace de red: una vista de operación nueva que se
+  olvide de proteger se nota al agregarla.
+- **No queda rastro:** después de intentar una compra (mandando además el id
+  de un cliente ajeno en el POST) y el registro de una cuenta, se verifica
+  que no existe **ningún** `CompraDivisa`, `VentaDivisa`, `Pago` ni
+  `CuentaPago`.
+- **Con cliente opera normal:** la compra se crea y queda a nombre del
+  cliente asociado.
+- **Cliente desactivado (RF003):** no puede iniciar una operación **ni
+  confirmar una que ya estaba pendiente**. Este segundo caso era un hueco
+  real antes de esta historia.
+- **Defensa en profundidad:** `iniciar_compra`, `iniciar_venta` e
+  `iniciar_pago` fallan con `ClienteNoHabilitado` llamados directamente, sin
+  pasar por ninguna vista. Antes creaban la operación o el pago de otro
+  cliente con sólo pasarles el id.
+- **Menú:** sin cliente no aparecen *Comprar divisas*, *Vender divisas*, *Mis
+  medios de pago* ni *Historial*; con cliente sí. Las de consulta siempre.
+- **Administrador y analista no son bloqueados** por esta regla: sus
+  pantallas se rigen por su propio control de rol (RF011).
+
+También se corrió la suite completa del proyecto: **265 passed** (eran 228),
+sin regresiones. Se adaptaron 6 pruebas existentes de RF008, RF018 y RF022
+porque tres servicios ahora exigen `usuario=`; una de ellas quedó más fuerte
+que antes (detalle en `docs/chia-sprint5.md`, sección 3.7).
+
+La tabla completa de las 28 URLs relevadas, con lo que respondía cada una
+antes y después del cambio, está en `docs/chia-sprint5.md` sección 3.1.
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
