@@ -66,6 +66,85 @@ cuenta duplicada y el error salía crudo contra la base (detalle en
 
 ---
 
+## Leyda Fleitas — RF026, Generación Automática de Facturas (GEG9-50)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | martes 27 de octubre de 2026, 11:42:35 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/facturacion/tests/test_facturacion.py` |
+| **Comando** | `docker compose exec web pytest apps/facturacion -v` |
+| **Resultado** | **29 passed** en 4.18s |
+
+```text
+$ date
+Tue Oct 27 11:42:35 -03 2026
+
+$ docker compose exec web pytest apps/facturacion -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 29 items
+
+apps/facturacion/tests/test_facturacion.py ............................. [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 29 passed, 1 warning in 4.18s =========================
+```
+
+Ninguna prueba toca la red: el cliente de la API de Factura Segura se
+reemplaza por dobles que cumplen la misma interfaz (`ClienteFacturacion`),
+igual que se hizo con la pasarela de pago en RF022.
+
+Cubre los siete casos pedidos por la historia, más los de borde que
+aparecieron al implementarla:
+
+- **Emisión automática:** al confirmar una compra y al confirmar una venta se
+  crea la `Factura` y queda `GENERADA` con un CDC de 44 dígitos.
+- **RNF011 (la facturación nunca bloquea la operación):** con un rechazo de
+  la API la operación sigue `CONFIRMADA` y la factura queda en `ERROR`; con
+  una excepción totalmente inesperada también sigue `CONFIRMADA` y la factura
+  queda `PENDIENTE`, es decir reintentable y no perdida.
+- **Timeout:** la factura queda `A_VERIFICAR` y **no se reenvía sola** — se
+  verifica que en el segundo intento no se llama a la API, aunque el cliente
+  ya responda bien.
+- **Comando de reintento:** reintenta las `ERROR` y deja las `A_VERIFICAR`
+  como están.
+- **Una factura por operación:** emitir dos veces devuelve la misma y no
+  vuelve a llamar a la API; la base rechaza una segunda factura para la misma
+  operación y también una factura sin operación (`CheckConstraint`).
+- **Numeración:** no se repite y es consecutiva; arranca en el primer número
+  del rango autorizado por la cátedra (`0000489`); al agotarse el rango la
+  factura queda en `ERROR` sin llamar a la API; y el reintento **reusa el
+  mismo número**, para no dejar huecos en la secuencia del SIFEN.
+- **Armado del DE:** conversión del monto a guaraníes (y una operación ya en
+  guaraníes que no se convierte); un solo ítem por el total, con IVA 10% y
+  `cUniMed` 77; receptor persona física como consumidor final con cédula y
+  sin DV; receptor persona jurídica como contribuyente con RUC y DV
+  separados; las dos actividades económicas del emisor, cada una con su
+  descripción; y las dos cifras (guaraníes y moneda original) en `dInfAdic`.
+- **Errores claros antes de llamar a la API:** cliente sin correo (que
+  Factura Segura exige), RUC jurídico sin dígito verificador, actividad
+  económica mal escrita, falta del token y datos del emisor todavía en los
+  valores de prueba.
+- **Secretos:** el token no aparece en los logs ni en el JSON que se guarda
+  en la base, y tampoco la cabecera `Authentication-Token`.
+
+También se corrió la suite completa del proyecto: **228 passed**, sin
+regresiones en RF018, RF019, RF022, RF023 ni RF051. Las decisiones que el
+ticket pedía proponer y no asumir (qué monto se factura, el tratamiento del
+IVA, la moneda, el DV del receptor y los datos del emisor) están
+documentadas en `docs/chia-sprint5.md`, sección 2.
+
+---
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.

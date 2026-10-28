@@ -42,6 +42,21 @@ def registrar_cambio_estado(operacion, estado_anterior, estado_nuevo, *, motivo=
     )
 
 
+def _facturar(operacion):
+    """Agenda la emisión de la factura electrónica de la operación (RF026).
+
+    El import va acá adentro y no arriba porque `apps.facturacion` importa
+    los modelos de esta app: hacerlo a nivel de módulo sería circular.
+
+    `programar_emision` usa `transaction.on_commit`, así que la factura se
+    emite recién cuando la confirmación quedó guardada, y un fallo de la
+    facturación nunca revierte la operación.
+    """
+    from apps.facturacion.services import programar_emision
+
+    programar_emision(operacion)
+
+
 def calcular_conversion(monto, tasa, tipo_operacion):
     """Calcula el resultado de una simulacion de conversion."""
     monto = Decimal(monto)
@@ -200,6 +215,7 @@ def confirmar_pago_compra(*, pk, usuario):
     compra.confirmado_en = timezone.now()
     compra.save(update_fields=["estado", "confirmado_en"])
     registrar_cambio_estado(compra, estado_anterior, compra.estado, usuario=usuario)
+    _facturar(compra)
     return compra
 
 
@@ -372,6 +388,7 @@ def confirmar_pago_venta(*, pk, usuario):
     venta.confirmado_en = timezone.now()
     venta.save(update_fields=["estado", "confirmado_en"])
     registrar_cambio_estado(venta, estado_anterior, venta.estado, usuario=usuario)
+    _facturar(venta)
     return venta
 
 

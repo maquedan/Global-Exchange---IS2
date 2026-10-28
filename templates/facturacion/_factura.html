@@ -1,0 +1,80 @@
+{# Factura electrónica de la operación (RF026 — GEG9-50).                    #}
+{# Se incluye desde los comprobantes de compra y de venta. Espera `factura`  #}
+{# en el contexto; si la operación todavía no tiene factura, no muestra nada #}
+{# (una operación cancelada nunca se factura).                              #}
+{% if factura %}
+  <h2>Factura electrónica</h2>
+  <div class="factura factura-{{ factura.estado }}">
+    <p class="factura-numero">{{ factura.numero_completo }}</p>
+
+    {% if factura.estado == "GENERADA" %}
+      <p class="factura-estado">Generada el {{ factura.generada_en|date:"d/m/Y H:i" }} en Factura Segura.</p>
+      <p class="factura-cdc"><span>CDC</span>{{ factura.cdc }}</p>
+      <p class="factura-nota">El CDC confirma que el documento se generó y se firmó.
+        La aprobación del SIFEN se consulta aparte y puede demorar unos minutos.</p>
+    {% elif factura.estado == "PENDIENTE" %}
+      <p class="factura-estado">Pendiente de emisión. Se vuelve a intentar sola.</p>
+    {% elif factura.estado == "A_VERIFICAR" %}
+      <p class="factura-estado">Se cortó la comunicación con Factura Segura al emitirla.
+        Hay que verificar a mano si el documento se generó antes de reintentar,
+        para no emitirla dos veces.</p>
+    {% else %}
+      <p class="factura-estado">No se pudo emitir: {{ factura.mensaje_error }}</p>
+    {% endif %}
+
+    <p class="factura-importes">
+      Total facturado: <strong>{{ factura.monto|floatformat:0 }} {{ factura.moneda }}</strong>
+      {% if factura.moneda_origen != factura.moneda %}
+        — importe de la operación: {{ factura.monto_origen|floatformat:2 }} {{ factura.moneda_origen }}
+        (convertido con la tasa congelada de la operación)
+      {% endif %}
+    </p>
+  </div>
+
+  <style>
+    .factura {
+      margin-top: 0.5rem;
+      padding: 1rem 1.25rem;
+      border: 1px solid #e2e8f0;
+      border-left: 4px solid #94a3b8;
+      border-radius: 0.75rem;
+      background: #f8fafc;
+    }
+
+    .factura-GENERADA { border-left-color: #047857; background: #f0fdf7; }
+    .factura-ERROR { border-left-color: #b91c1c; background: #fef4f4; }
+    .factura-A_VERIFICAR { border-left-color: #b45309; background: #fffbeb; }
+
+    .factura p { margin: 0 0 0.35rem; }
+    .factura p:last-of-type { margin-bottom: 0; }
+
+    .factura-numero {
+      font-weight: 700;
+      font-size: 1.05rem;
+      color: #0f172a;
+    }
+
+    .factura-estado { color: #334155; }
+
+    .factura-cdc {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem;
+      word-break: break-all;
+      color: #0f172a;
+    }
+
+    .factura-cdc span {
+      display: inline-block;
+      margin-right: 0.5rem;
+      font-family: inherit;
+      font-weight: 700;
+      color: #64748b;
+    }
+
+    .factura-nota,
+    .factura-importes {
+      font-size: 0.85rem;
+      color: #64748b;
+    }
+  </style>
+{% endif %}

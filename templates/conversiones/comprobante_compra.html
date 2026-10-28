@@ -80,6 +80,10 @@
     {% endif %}
   {% endwith %}
 
+  {% with factura=compra.facturas.first %}
+    {% include "facturacion/_factura.html" %}
+  {% endwith %}
+
   <h2>Línea de tiempo</h2>
   <ul class="linea-tiempo">
     {% for cambio in compra.cambios_estado.all %}

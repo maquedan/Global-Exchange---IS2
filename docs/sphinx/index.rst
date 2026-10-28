@@ -28,6 +28,7 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    notificaciones
    cajas
    pagos
+   facturacion
 
 .. toctree::
    :maxdepth: 1
