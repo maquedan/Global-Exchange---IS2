@@ -6,13 +6,18 @@ services:
     # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
     restart: unless-stopped
     environment:
-      POSTGRES_DB: globalexchange
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:?Definí POSTGRES_DB en .env}
+      POSTGRES_USER: ${POSTGRES_USER:?Definí POSTGRES_USER en .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Definí POSTGRES_PASSWORD en .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # Base de datos PROPIA de Keycloak. Sin esto, Keycloak guarda todo en una H2
   # adentro del contenedor: al hacer "docker compose down" se pierde el realm,
@@ -23,11 +28,16 @@ services:
     # Sin esto hay que hacer 'docker compose up -d' a mano cada vez.
     restart: unless-stopped
     environment:
-      POSTGRES_DB: keycloak
-      POSTGRES_USER: keycloak
-      POSTGRES_PASSWORD: keycloak
+      POSTGRES_DB: ${KEYCLOAK_DB_NAME:?Definí KEYCLOAK_DB_NAME en .env}
+      POSTGRES_USER: ${KEYCLOAK_DB_USER:?Definí KEYCLOAK_DB_USER en .env}
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?Definí KEYCLOAK_DB_PASSWORD en .env}
     volumes:
       - keycloak_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   # Servidor de correo FALSO para desarrollo: recibe los mails de verificación
   # que manda Keycloak y los muestra en http://localhost:8025
@@ -50,12 +60,12 @@ services:
     # Así, quien clone el repo levanta el realm ya configurado, sin clickear.
     command: start-dev --import-realm
     environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KC_ADMIN_USER:?Definí KC_ADMIN_USER en .env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KC_ADMIN_PASSWORD:?Definí KC_ADMIN_PASSWORD en .env}
       KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
+      KC_DB_URL: jdbc:postgresql://keycloak-db:5432/${KEYCLOAK_DB_NAME}
+      KC_DB_USERNAME: ${KEYCLOAK_DB_USER}
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
       # Fija el emisor (issuer) de los tokens. Sin esto, Keycloak lo arma con el
       # hostname por el que le entra cada consulta y rechaza tokens legítimos
       # con 401 cuando Django le habla por "keycloak" y el navegador por
@@ -66,8 +76,10 @@ services:
     ports:
       - "8080:8080"
     depends_on:
-      - keycloak-db
-      - mailpit
+      keycloak-db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
 
   web:
     build: .
@@ -83,14 +95,17 @@ services:
       - .env
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.dev
+      DATABASE_URL: ${DATABASE_URL:?Definí DATABASE_URL en .env}
       # El navegador (que corre en Windows, fuera de Docker) tiene que poder
       # abrir la pantalla de login de Keycloak: para él siempre es localhost.
       KEYCLOAK_SERVER_URL: http://localhost:8080
       # Django, en cambio, la llama por la red interna de Docker.
       KEYCLOAK_INTERNAL_URL: http://keycloak:8080
     depends_on:
-      - db
-      - keycloak
+      db:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
 
 volumes:
   pgdata:
