@@ -11,11 +11,15 @@ from .services import clientes_del_usuario
 
 def menu_principal(request):
     usuario = getattr(request, "user", None) or AnonymousUser()
-    contexto = {"menu_principal": construir_menu(usuario)}
 
     # Cliente con el que se está operando, para mostrarlo en la barra
     # superior (RF008). Lo resuelve el middleware en cada request.
-    contexto["cliente_activo"] = getattr(request, "cliente_activo", None)
+    cliente_activo = getattr(request, "cliente_activo", None)
+    contexto = {
+        "cliente_activo": cliente_activo,
+        # Sin cliente no se muestran las opciones de operar (RF010).
+        "menu_principal": construir_menu(usuario, cliente_activo),
+    }
 
     # ¿Tiene sentido ofrecerle cambiar de cliente? Solo si tiene más de uno:
     # con uno solo la pantalla de selección no tendría nada que elegir.

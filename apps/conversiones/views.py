@@ -88,6 +88,7 @@ def comprar(request):
         datos = formulario.cleaned_data
         try:
             compra = iniciar_compra(
+                usuario=request.user,
                 cliente_id=request.cliente_activo.pk,
                 moneda_pagada=datos["moneda_pagada"],
                 moneda_adquirida=datos["moneda_adquirida"],
@@ -122,6 +123,7 @@ def comprobante_compra(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def confirmar_compra_view(request, pk):
     """Confirma el pago de una compra pendiente (RF051 — GEG9-51)."""
     if request.method != "POST":
@@ -146,6 +148,7 @@ def confirmar_compra_view(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def cancelar_compra_view(request, pk):
     """Cancela una compra pendiente por decisión del cliente (RF051)."""
     if request.method != "POST":
@@ -178,6 +181,7 @@ def vender(request):
         datos = formulario.cleaned_data
         try:
             venta = iniciar_venta(
+                usuario=request.user,
                 cliente_id=request.cliente_activo.pk,
                 moneda_entregada=datos["moneda_entregada"],
                 moneda_acreditada=datos["moneda_acreditada"],
@@ -213,6 +217,7 @@ def comprobante_venta(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def confirmar_venta_view(request, pk):
     """Confirma el pago de una venta pendiente (RF051 — GEG9-51)."""
     if request.method != "POST":
@@ -237,6 +242,7 @@ def confirmar_venta_view(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def cancelar_venta_view(request, pk):
     """Cancela una venta pendiente por decisión del cliente (RF051)."""
     if request.method != "POST":

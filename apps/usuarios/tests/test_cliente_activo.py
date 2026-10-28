@@ -170,7 +170,9 @@ def test_usuario_sin_clientes_no_puede_operar_pero_no_se_rompe(client, usuario):
 
     # No va a elegir (no hay nada que elegir): lo corta con un mensaje.
     assert respuesta.status_code == 302
-    assert respuesta.url == reverse("usuarios:panel")
+    # Desde RF010 (GEG9-20) el bloqueo no vuelve al panel: manda a la
+    # pantalla que explica qué le falta y qué sí puede consultar.
+    assert respuesta.url == reverse("usuarios:sin_cliente")
 
 
 @pytest.mark.django_db

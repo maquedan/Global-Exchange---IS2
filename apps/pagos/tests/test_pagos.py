@@ -98,8 +98,9 @@ def comision_minorista():
 
 @pytest.fixture
 def compra_pendiente(cliente_y_usuario, monedas, tasa, comision_minorista):
-    cliente, _usuario = cliente_y_usuario
+    cliente, usuario = cliente_y_usuario
     return iniciar_compra(
+        usuario=usuario,
         cliente_id=cliente.pk,
         moneda_pagada=monedas[0],
         moneda_adquirida=monedas[1],
@@ -118,7 +119,7 @@ def test_pago_aprobado_confirma_la_compra(cliente_y_usuario, compra_pendiente):
     falso = ProveedorFalso(estado_crear="PENDIENTE")
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
         falso.estado_consultar = "APROBADO"
         pago = services.confirmar_pago(pago, usuario=usuario)
 
@@ -133,7 +134,7 @@ def test_pago_rechazado_no_confirma_la_compra(cliente_y_usuario, compra_pendient
     falso = ProveedorFalso(estado_crear="PENDIENTE", estado_consultar="RECHAZADO")
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
         pago = services.confirmar_pago(pago, usuario=usuario)
 
     compra_pendiente.refresh_from_db()
@@ -147,7 +148,7 @@ def test_consultar_dos_veces_no_confirma_dos_veces(cliente_y_usuario, compra_pen
     falso = ProveedorFalso(estado_crear="PENDIENTE", estado_consultar="APROBADO")
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
         services.confirmar_pago(pago, usuario=usuario)
         services.confirmar_pago(pago, usuario=usuario)
 
@@ -163,7 +164,7 @@ def test_pago_aprobado_con_cotizacion_cambiada_no_confirma_e_intenta_reembolso(
     falso = ProveedorFalso(estado_crear="PENDIENTE", estado_consultar="APROBADO")
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
 
         # El analista actualiza la tasa mientras el cliente paga.
         tasa.activo = False
@@ -194,7 +195,7 @@ def test_pago_aprobado_con_operacion_vencida_no_confirma_e_intenta_reembolso(
     falso = ProveedorFalso(estado_crear="PENDIENTE", estado_consultar="APROBADO")
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
 
         compra_pendiente.creado_en = timezone.now() - timedelta(minutes=16)
         compra_pendiente.save(update_fields=["creado_en"])
@@ -215,7 +216,7 @@ def test_no_se_puede_iniciar_un_pago_para_una_compra_que_ya_no_esta_pendiente(
     cancelar_compra(pk=compra_pendiente.pk, usuario=usuario)
 
     with pytest.raises(services.OperacionNoDisponibleParaPago):
-        services.iniciar_pago(compra_pendiente.pk)
+        services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
 
 
 @pytest.mark.django_db
@@ -223,7 +224,7 @@ def test_monto_para_pasarela_cobra_pyg_sin_decimales(cliente_y_usuario, monedas,
     # PYG no puede ser moneda_pagada de una compra real (la tasa PYG->XXX no
     # entra en 2 decimales), así que se arma la CompraDivisa directo, sin
     # pasar por iniciar_compra, solo para probar el redondeo de la pasarela.
-    cliente, _usuario = cliente_y_usuario
+    cliente, usuario = cliente_y_usuario
     pyg = monedas[1]
     compra = CompraDivisa.objects.create(
         cliente=cliente,
@@ -246,7 +247,7 @@ def test_monto_para_pasarela_cobra_pyg_sin_decimales(cliente_y_usuario, monedas,
 
 @pytest.mark.django_db
 def test_monto_para_pasarela_convierte_moneda_no_soportada_a_pyg(cliente_y_usuario, comision_minorista):
-    cliente, _usuario = cliente_y_usuario
+    cliente, usuario = cliente_y_usuario
     eur = Moneda.objects.create(codigo="EUR", nombre="Euro", simbolo="€")
     pyg = Moneda.objects.create(codigo="PYG", nombre="Guarani", simbolo="Gs")
     TasaCambio.objects.create(
@@ -254,7 +255,13 @@ def test_monto_para_pasarela_convierte_moneda_no_soportada_a_pyg(cliente_y_usuar
         tasa_compra=Decimal("7700.00"), tasa_venta=Decimal("7820.00"),
         vigente_desde=timezone.now(),
     )
-    compra = iniciar_compra(cliente_id=cliente.pk, moneda_pagada=eur, moneda_adquirida=pyg, monto_pagado="100.00")
+    compra = iniciar_compra(
+        usuario=usuario,
+        cliente_id=cliente.pk,
+        moneda_pagada=eur,
+        moneda_adquirida=pyg,
+        monto_pagado="100.00",
+    )
 
     monto, moneda = services.monto_para_pasarela(compra)
 
@@ -304,6 +311,19 @@ def test_elegir_pago_requiere_ser_el_dueno_de_la_compra(client, compra_pendiente
     otro = django_user_model.objects.create_user(username="otro-cliente-pagos")
     grupo, _ = Group.objects.get_or_create(name="usuario_cliente")
     otro.groups.add(grupo)
+    # Se le da su propio cliente a propósito: así pasa la restricción de
+    # RF010 (que lo mandaría a /sin-cliente/) y lo que queda a prueba es el
+    # control de dueño de la compra, que es de lo que trata este caso.
+    cliente_propio = Cliente.objects.create(
+        tipo=Cliente.Tipo.FISICA,
+        nombres="Otro",
+        apellidos="Cliente",
+        documento="7777777",
+        email="otro@example.com",
+        telefono="0981777777",
+        direccion="Asuncion",
+    )
+    AsociacionUsuarioCliente.objects.create(usuario=otro, cliente=cliente_propio)
     client.force_login(otro)
 
     respuesta = client.get(reverse("pagos:elegir_pago", args=[compra_pendiente.pk]))
@@ -312,14 +332,17 @@ def test_elegir_pago_requiere_ser_el_dueno_de_la_compra(client, compra_pendiente
 
 
 @pytest.mark.django_db
-def test_confirmar_pago_sin_usuario_autenticado_igual_confirma_la_compra(compra_pendiente):
+def test_confirmar_pago_sin_usuario_autenticado_igual_confirma_la_compra(
+    compra_pendiente, cliente_y_usuario
+):
     """dLocal vuelve al navegador con un POST entre sitios: puede no traer la
     cookie de sesión. La confirmación no debe depender de eso (bug real
     encontrado probando contra el sandbox)."""
+    _cliente, usuario = cliente_y_usuario
     falso = ProveedorFalso(estado_crear="PENDIENTE", estado_consultar="APROBADO")
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
         pago = services.confirmar_pago(pago, usuario=None)
 
     compra_pendiente.refresh_from_db()
@@ -328,18 +351,19 @@ def test_confirmar_pago_sin_usuario_autenticado_igual_confirma_la_compra(compra_
 
 
 @pytest.mark.django_db
-def test_retorno_acepta_post_sin_csrf_y_sin_sesion(compra_pendiente):
+def test_retorno_acepta_post_sin_csrf_y_sin_sesion(compra_pendiente, cliente_y_usuario):
     """Simula exactamente lo que hace dLocal: un POST del navegador, sin
     token CSRF ni cookie de sesión. Se usa un `Client` que SÍ exige CSRF
     (a diferencia del fixture `client` normal, que no lo exige nunca) para
     probar de verdad que `@csrf_exempt` hace falta."""
+    _cliente, usuario = cliente_y_usuario
     from django.test import Client
 
     falso = ProveedorFalso(estado_crear="PENDIENTE", estado_consultar="APROBADO")
     cliente_estricto = Client(enforce_csrf_checks=True)
 
     with _con_proveedor_falso(falso):
-        pago = services.iniciar_pago(compra_pendiente.pk)
+        pago = services.iniciar_pago(compra_pendiente.pk, usuario=usuario)
         respuesta = cliente_estricto.post(reverse("pagos:retorno", args=[pago.pk]))
 
     assert respuesta.status_code == 302

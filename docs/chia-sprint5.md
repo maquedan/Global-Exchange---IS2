@@ -289,3 +289,141 @@ Hacienda.
   Sphinx genera sin warnings (nueva página `facturacion`).
 
 ---
+
+## 3. Leyda Fleitas — RF010, Restricción de Operaciones (GEG9-20)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket pedía relevar y reportar **antes** de programar, con una tabla
+vista por vista clasificando consulta u operación.
+
+### 3.1. «No deduzcas del código qué pasa hoy: medilo»
+
+**Lo que aprendimos.** En vez de leer los decoradores y suponer, se creó un
+usuario con rol `usuario_cliente` y **cero clientes asociados**, y se le pegó
+a las 28 URLs del sistema anotando la respuesta real. Esa tabla cambió el
+plan: lo que parecía "falta proteger todo" era en realidad "RF008 ya protege
+7 vistas, y las que faltan fallan **feo**, no inseguras".
+
+| Vista | Tipo | Antes | Después |
+|---|---|---|---|
+| `tasas:panel`, `tasas:datos` | consulta | `200` | `200` |
+| `usuarios:panel` | consulta | `200` | `200` |
+| `notificaciones:lista` | consulta | `200` | `200` |
+| `conversiones:simular` | consulta | `200` | `200` |
+| `conversiones:comprar` / `vender` | operación | `302 → /panel/` | `302 → /sin-cliente/` |
+| `conversiones:confirmar/cancelar` (×4) | operación | **`403` pelado** | `302 → /sin-cliente/` |
+| `cuentas:crear/editar/eliminar` | operación | `302 → /panel/` | `302 → /sin-cliente/` |
+| `pagos:elegir_pago`, `esperando` | operación | **`404`** | `302 → /sin-cliente/` |
+| `pagos:simulado_aprobar/rechazar` | operación | **`404`** | `302 → /sin-cliente/` |
+| `pagos:retorno` | ninguna | `302` | `302` (sin tocar) |
+| `conversiones:historial`, `cuentas:lista` | consulta propia | `302 → /panel/` | `302 → /sin-cliente/` |
+| `clientes:*` | admin (RF011) | `403` | `403` |
+
+### 3.2. «¿`historial` y `cuentas:lista` son consulta u operación?»
+
+**Lo que aprendimos.** Son las dos únicas ambiguas: no modifican nada (serían
+consulta), pero RF008 ya les exige cliente activo. Abrirlas vacías cumpliría
+más al pie de la letra el "solo funciones de consulta" del ERS.
+
+**Decisión de la integrante: dejarlas bloqueadas.** Son pantallas *de un
+cliente*: sin cliente no hay nada que mostrar, y desde "Mis medios de pago"
+además se registran y borran cuentas, que sí son operaciones. Abrirlas
+obligaba a tocar dos vistas de historias ajenas (RF020 y RF030) sin ganancia
+real.
+
+### 3.3. «El agujero no estaba en las vistas: estaba en los servicios»
+
+**Lo que aprendimos**, llamando los servicios directamente, sin pasar por
+ninguna vista:
+
+```
+iniciar_compra(cliente_id=<ajeno>)  -> CREO la compra        <-- HUECO
+iniciar_pago(<compra ajena>)        -> CREO el pago          <-- HUECO
+confirmar_pago_compra(<ajena>)      -> CompraNoConfirmable   (OK)
+
+Cliente DESACTIVADO (RF003) con una compra ya pendiente:
+  iniciar_compra                    -> CompraNoDisponible    (OK)
+  confirmar_pago_compra             -> quedo CONFIRMADA      <-- HUECO
+```
+
+`iniciar_compra`, `iniciar_venta` e `iniciar_pago` **no sabían quién era el
+usuario**: recibían un `cliente_id` (o un `compra_pk`) y confiaban. Desde la
+web no se podía explotar porque las vistas pasan `request.cliente_activo`,
+pero eso es justo lo que el ticket llama defensa en profundidad: el servicio
+tiene que negarse por su cuenta.
+
+Y el tercero es un incumplimiento directo del punto 5: `confirmar_pago_compra`
+filtraba por asociación **pero no por `cliente.activo`**, así que un cliente
+dado de baja con una operación pendiente la confirmaba igual.
+
+**Decisión.** Excepción de dominio `ClienteNoHabilitado` y un solo helper,
+`cliente_habilitado_para(usuario, cliente_id)`, que exige las dos
+condiciones a la vez (asociación **y** cliente activo). Los tres servicios
+pasan a exigir `usuario=`, y los filtros de confirmar/cancelar suman
+`cliente__activo=True`.
+
+### 3.4. «`pagos:retorno` no se toca»
+
+**Lo que aprendimos.** Es la única vista que **no** hay que proteger. Es
+`@csrf_exempt` y sin `login_required` a propósito: dLocal devuelve al
+navegador con un POST entre sitios, sin token CSRF y a veces sin la cookie de
+sesión (bug real que costó encontrar en RF022). Ponerle
+`requiere_cliente_para_operar` habría roto el cobro.
+
+No es inseguro: nunca confía en la URL ni en el cuerpo del POST, siempre
+reconsulta el estado real en la pasarela. Queda escrito en su docstring para
+que nadie lo "arregle" por error más adelante.
+
+### 3.5. «Ocultar botones no alcanza, pero igual hay que ocultarlos»
+
+**Lo que aprendimos.** El menú le ofrecía a un usuario sin cliente *Comprar
+divisas*, *Vender divisas*, *Mis medios de pago* e *Historial* — botones que
+sólo lo llevaban a un bloqueo.
+
+**Decisión.** Una marca `necesita_cliente` en esas opciones de
+`MENU_PRINCIPAL`, y `construir_menu` las oculta si no hay cliente activo. Es
+**sólo comodidad**: el bloqueo de verdad está en las vistas, y hay una prueba
+parametrizada sobre las 17 URLs de operación, con GET y POST, que lo
+demuestra.
+
+### 3.6. «Bug propio, y caro: una medición que no se revirtió»
+
+**Lo que aprendimos.** Para medir los servicios se usó
+`manage.py shell` con `transaction.savepoint()` y
+`savepoint_rollback()`, creyendo que deshacía los cambios. **No los
+deshizo:** el `shell` corre en **autocommit**, donde un savepoint suelto no
+revierte nada.
+
+Consecuencia concreta: el script confirmó una compra de prueba, el
+`transaction.on_commit` de RF026 hizo su trabajo y **se emitió una factura
+real** (`001-003-0000491`) contra Factura Segura, gastando uno de los doce
+números autorizados por la cátedra. Más usuarios y registros de prueba que
+quedaron en la base de desarrollo.
+
+**Lección.** Una medición sobre datos reales se corre con `pytest` (que sí
+revierte, porque envuelve cada prueba en una transacción) o forzando el
+proveedor simulado. Un sistema que dispara efectos externos al confirmar una
+transacción no tiene "pruebas inofensivas" en el ambiente de desarrollo si
+está apuntando al proveedor real. Las mediciones de las URLs fueron
+inofensivas —sólo GET y POST que quedaban bloqueados—; la de servicios no.
+
+## 3.7. Verificaciones realizadas
+
+- **37 pruebas nuevas.** Suite completa: **265 aprobadas** (eran 228 antes de
+  esta historia), sin regresiones.
+- Casos cubiertos: las 6 URLs de consulta responden 200; las **17 URLs de
+  operación** quedan bloqueadas y redirigidas, con GET y con POST
+  (parametrizado, para que una vista nueva sin proteger se note sola); no se
+  crea **ningún** registro (`CompraDivisa`, `VentaDivisa`, `Pago` ni
+  `CuentaPago`); el usuario con cliente opera normal; el cliente desactivado
+  no puede operar **ni iniciar ni confirmar** una pendiente; los tres
+  servicios fallan con `ClienteNoHabilitado`; el menú sin cliente no ofrece
+  operar y con cliente sí; administrador y analista no son bloqueados.
+- Se adaptaron 6 pruebas existentes de RF008, RF018 y RF022 por el `usuario=`
+  nuevo. Una quedó **más fuerte**: la de "no sos el dueño de la compra" ahora
+  le da su propio cliente al intruso, así pasa el filtro de RF010 y lo que se
+  prueba es de verdad el control de dueño.
+- `python manage.py check` sin errores y Sphinx genera sin warnings.
+
+---

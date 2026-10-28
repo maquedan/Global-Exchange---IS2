@@ -108,6 +108,17 @@ def configuracion_de_facturacion(settings):
     )
 
 
+def _asociar(cliente, username):
+    """Crea un usuario con rol de cliente y lo asocia.
+
+    Desde RF010 (GEG9-20) `iniciar_compra` exige un usuario habilitado para
+    el cliente, así que un cliente suelto ya no alcanza para armar el caso.
+    """
+    usuario = _usuario_con_rol(username, "usuario_cliente")
+    AsociacionUsuarioCliente.objects.create(usuario=usuario, cliente=cliente)
+    return usuario
+
+
 def _usuario_con_rol(username, rol):
     usuario = get_user_model().objects.create_user(
         username=username, email=f"{username}@example.com"
@@ -161,8 +172,9 @@ def cliente_y_usuario():
 
 @pytest.fixture
 def compra_pendiente(cliente_y_usuario, monedas, tasa, comision_minorista):
-    cliente, _usuario = cliente_y_usuario
+    cliente, usuario = cliente_y_usuario
     return iniciar_compra(
+        usuario=usuario,
         cliente_id=cliente.pk,
         moneda_pagada=monedas[0],
         moneda_adquirida=monedas[1],
@@ -172,7 +184,7 @@ def compra_pendiente(cliente_y_usuario, monedas, tasa, comision_minorista):
 
 @pytest.fixture
 def venta_pendiente(cliente_y_usuario, monedas, tasa, comision_minorista):
-    cliente, _usuario = cliente_y_usuario
+    cliente, usuario = cliente_y_usuario
     cuenta = CuentaPago.objects.create(
         cliente=cliente,
         tipo=CuentaPago.Tipo.BANCARIA,
@@ -181,6 +193,7 @@ def venta_pendiente(cliente_y_usuario, monedas, tasa, comision_minorista):
         titular="Ana Gomez",
     )
     return iniciar_venta(
+        usuario=usuario,
         cliente_id=cliente.pk,
         moneda_entregada=monedas[0],
         moneda_acreditada=monedas[1],
@@ -475,7 +488,7 @@ def test_el_monto_se_convierte_a_guaranies(compra_pendiente):
 def test_una_operacion_en_guaranies_no_se_convierte(
     cliente_y_usuario, monedas, comision_minorista
 ):
-    cliente, _usuario = cliente_y_usuario
+    cliente, usuario = cliente_y_usuario
     usd, pyg = monedas
     TasaCambio.objects.create(
         moneda_origen=pyg,
@@ -485,6 +498,7 @@ def test_una_operacion_en_guaranies_no_se_convierte(
         vigente_desde=timezone.now(),
     )
     compra = iniciar_compra(
+        usuario=usuario,
         cliente_id=cliente.pk,
         moneda_pagada=pyg,
         moneda_adquirida=usd,
@@ -537,6 +551,7 @@ def test_un_cliente_juridico_va_como_contribuyente_con_ruc_y_dv(
         categoria=Cliente.Categoria.MINORISTA,
     )
     compra = iniciar_compra(
+        usuario=_asociar(cliente, f"op-{cliente.pk}"),
         cliente_id=cliente.pk,
         moneda_pagada=monedas[0],
         moneda_adquirida=monedas[1],
@@ -565,6 +580,7 @@ def test_un_ruc_sin_dv_no_inventa_el_digito(monedas, tasa, comision_minorista):
         categoria=Cliente.Categoria.MINORISTA,
     )
     compra = iniciar_compra(
+        usuario=_asociar(cliente, f"op-{cliente.pk}"),
         cliente_id=cliente.pk,
         moneda_pagada=monedas[0],
         moneda_adquirida=monedas[1],
@@ -592,6 +608,7 @@ def test_un_cliente_sin_correo_da_un_error_claro(monedas, tasa, comision_minoris
         direccion="Asuncion",
     )
     compra = iniciar_compra(
+        usuario=_asociar(cliente, f"op-{cliente.pk}"),
         cliente_id=cliente.pk,
         moneda_pagada=monedas[0],
         moneda_adquirida=monedas[1],
