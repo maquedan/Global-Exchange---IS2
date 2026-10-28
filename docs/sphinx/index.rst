@@ -35,6 +35,7 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    :caption: Guías
 
    scripts
+   deployment
 
 Índices
 -------
