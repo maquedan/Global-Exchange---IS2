@@ -5,17 +5,25 @@
 {% block contenido %}
 <div class="tarjeta">
   <h1>Elegí el cliente con el que vas a operar</h1>
-  <p>Estás asociado a más de un cliente. Todas las operaciones que hagas se
-    van a registrar en nombre del que elijas acá.</p>
+  {% if cliente_activo %}
+    <p>Ahora estás operando en nombre de <strong>{{ cliente_activo }}</strong>.
+      Si elegís otro, las operaciones que hagas a partir de acá se van a
+      registrar a su nombre. No hace falta cerrar sesión.</p>
+  {% else %}
+    <p>Estás asociado a más de un cliente. Todas las operaciones que hagas se
+      van a registrar en nombre del que elijas acá.</p>
+  {% endif %}
 
   {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
 
   {% if clientes %}
     <ul class="lista-clientes">
       {% for cliente in clientes %}
-        <li class="cliente-tarjeta">
+        <li class="cliente-tarjeta{% if cliente == cliente_activo %} cliente-tarjeta-activo{% endif %}">
           <div>
-            <span class="cliente-nombre">{{ cliente }}</span>
+            <span class="cliente-nombre">{{ cliente }}
+              {% if cliente == cliente_activo %}<span class="cliente-marca">operando con este</span>{% endif %}
+            </span>
             <span class="cliente-datos">
               {% if cliente.documento %}Documento: {{ cliente.documento }}{% else %}RUC: {{ cliente.ruc }}{% endif %}
               — {{ cliente.get_categoria_display }}
@@ -25,7 +33,9 @@
             {% csrf_token %}
             <input type="hidden" name="cliente_id" value="{{ cliente.pk }}">
             {% if siguiente %}<input type="hidden" name="siguiente" value="{{ siguiente }}">{% endif %}
-            <button class="boton" type="submit">Operar con este</button>
+            <button class="boton{% if cliente == cliente_activo %} boton-secundario{% endif %}" type="submit">
+              {% if cliente == cliente_activo %}Seguir con este{% else %}Operar con este{% endif %}
+            </button>
           </form>
         </li>
       {% endfor %}
@@ -55,6 +65,24 @@
     border-left: 4px solid #0ea5e9;
     border-radius: 0.75rem;
     background: #f8fafc;
+  }
+
+  .cliente-tarjeta-activo {
+    border-left-color: #047857;
+    background: #f0fdf7;
+  }
+
+  .cliente-marca {
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 9999px;
+    background: #047857;
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    vertical-align: middle;
   }
 
   .cliente-nombre {

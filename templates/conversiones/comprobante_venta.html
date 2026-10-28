@@ -77,6 +77,10 @@
     <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}?cliente={{ venta.cliente_id }}&moneda_entregada={{ venta.moneda_entregada_id }}&moneda_acreditada={{ venta.moneda_acreditada_id }}&cuenta_destino={{ venta.cuenta_destino_id }}&monto_entregado={{ venta.monto_entregado|stringformat:'.2f' }}">Repetir esta operación</a>
   {% endif %}
 
+  {% with factura=venta.facturas.first %}
+    {% include "facturacion/_factura.html" %}
+  {% endwith %}
+
   <h2>Línea de tiempo</h2>
   <ul class="linea-tiempo">
     {% for cambio in venta.cambios_estado.all %}

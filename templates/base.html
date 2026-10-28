@@ -9,7 +9,7 @@
   <style>
     .operando-como {
       display: inline-block;
-      max-width: 16rem;
+      max-width: 22rem;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
@@ -22,6 +22,21 @@
 
     .operando-como strong {
       color: #fff;
+    }
+
+    .cambiar-cliente {
+      margin-left: 0.5rem;
+      padding-left: 0.5rem;
+      border-left: 1px solid rgba(255, 255, 255, 0.25);
+      color: #67e8f9;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .cambiar-cliente:hover,
+    .cambiar-cliente:focus {
+      color: #fff;
+      text-decoration: underline;
     }
 
     .contador-notificaciones {
@@ -58,6 +73,10 @@
               {% if cliente_activo %}
                 <span class="operando-como" title="Cliente con el que estás operando">
                   Operando como <strong>{{ cliente_activo }}</strong>
+                  {% if puede_cambiar_cliente %}
+                    <a class="cambiar-cliente" href="{% url 'usuarios:seleccionar_cliente' %}"
+                       title="Operar en nombre de otro de tus clientes, sin cerrar sesión">Cambiar</a>
+                  {% endif %}
                 </span>
               {% endif %}
               <span class="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-300 text-xs font-black text-sky-950">{{ user.get_full_name|default:user.username|slice:":1"|upper }}</span>

@@ -107,3 +107,185 @@ ve el mensaje de siempre en vez de un error 500.
 - `python manage.py check` sin errores y Sphinx genera sin warnings.
 
 ---
+
+## 2. Leyda Fleitas — RF026, Generación Automática de Facturas (GEG9-50)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket pedía explícitamente **relevar antes de programar**: leer el
+documento completo de Factura Segura y los módulos del repo con los que la
+historia se engancha. Estas son las consultas que salieron de ahí.
+
+### 2.1. «¿El brief de la historia coincide con el documento de la API?»
+
+**Lo que aprendimos.** No del todo. Cuatro diferencias, todas verificadas
+contra el documento (que es la fuente de verdad):
+
+1. **El login no está bajo `/misife00/v1/esi`.** Es
+   `POST https://apitest.facturasegura.com.py/login?include_auth_token`, en
+   el dominio raíz, y el token viene anidado en
+   `user.authentication_token`.
+2. **Las respuestas vienen anidadas dentro de `results`:** `calcular_de`
+   devuelve `results[0]["DE"]` y `generar_de` devuelve `results[0]["CDC"]`,
+   no el valor directo.
+3. **Falta `gPaConEIni` en el brief.** El documento lo marca
+   **obligatorio cuando la factura es CONTADO** (`iCondOpe=1`), que es
+   nuestro caso: cobramos antes de confirmar (RF022).
+4. **Al final del documento hay un hilo de soporte con bugs conocidos** de
+   `dRucEm` (string de 8 caracteres, con o sin ceros a la izquierda según la
+   operación) y `dNumTim` (string, no entero). No nos pega en RF026, pero sí
+   le va a pegar a Fabri en RF028.
+
+Además: `cUniMed` solo acepta `77` (UNIDAD), y Factura Segura no soporta
+descuento global, anticipos, comisiones ni redondeo SEDECO: van en 0.
+
+### 2.2. «¿Qué se factura, y por qué monto?»
+
+**El ticket pedía proponer, no asumir** — es una decisión fiscal y no está
+en el documento. Las dos opciones razonables eran facturar **solo la
+comisión** (lo que Global Exchange cobra como servicio) o **el monto total
+de la operación**.
+
+**Decisión de la integrante:** el **monto total** de la operación
+(`total_a_pagar` en una compra, `monto_entregado` en una venta), **gravado
+al IVA 10%** (`iAfecIVA=1`, `dTasaIVA=10`, `dPropIVA=100`).
+
+Los tres códigos quedaron como constantes en `apps/facturacion/codigos_sifen.py`
+y están marcados **«a confirmar con la cátedra»**: el tratamiento fiscal real
+de una casa de cambio puede ser otro, y no corresponde inventarlo.
+
+### 2.3. «La API solo acepta PYG o USD, y nosotras operamos en seis monedas»
+
+**Lo que aprendimos.** `cMoneOpe` solo admite `PYG` o `USD`, pero el sistema
+opera también en EUR, BRL, ARS, GBP y JPY. Facturar en USD habría obligado a
+mandar además `dTiCam` y a cumplir las reglas de decimales del SIFEN para
+moneda extranjera.
+
+Verificamos en el código que la conversión ya estaba resuelta: todas las
+cotizaciones del sistema son **contra el guaraní** (se revisó
+`apps/tasa_cambios/fixtures/tasas_demo.json`: los seis pares tienen
+`moneda_destino = PYG`), así que `tasa_aplicada` —la tasa **ya congelada en
+la operación**— son guaraníes por unidad. Es el mismo criterio que
+`monto_para_pasarela()` en RF022.
+
+**Decisión.** Facturar **siempre en guaraníes**, un solo camino. La cifra en
+la moneda original se guarda igual en la `Factura` (`monto_origen`,
+`moneda_origen`) y se muestra en el comprobante y en `dInfAdic`, el texto que
+se imprime en el KuDE.
+
+### 2.4. «El modelo `Cliente` no tiene campo para el DV del RUC»
+
+**Lo que aprendimos.** El SIFEN pide `dRucRec` y `dDVRec` **por separado**,
+pero `Cliente` (RF001) guarda un único campo `ruc` de texto libre, y
+`documento` es la cédula sin dígito verificador.
+
+**Decisión**, sin tocar el modelo de otra historia: para persona **física**
+se usa la cédula (`iTipIDRec`), que no lleva DV; para **jurídica** se parte
+el `ruc` por el guion (`80002247-5`). Si no tiene ese formato, la factura
+queda en `ERROR` con un mensaje claro, **antes** de llamar a la API: mejor
+eso que mandar un DV inventado.
+
+### 2.5. «Si se corta la conexión, ¿se reintenta?»
+
+**Lo que aprendimos.** La petición es **síncrona**: ante un timeout o un
+corte, el servidor **pudo haber procesado el documento igual**, y sin el CDC
+no hay forma de consultar qué pasó. Reenviar a ciegas duplicaría la factura.
+
+**Decisión.** Un estado propio, `A_VERIFICAR`, que **nunca** se reintenta
+solo —ni automáticamente ni con el comando `emitir_facturas_pendientes`—.
+Los otros fallos (`ERROR`, `PENDIENTE`) sí son reintentables, porque ahí
+sabemos que el documento no se generó.
+
+Detalle fino que apareció programando: en la librería `requests`, el error de
+JSON **hereda** de `RequestException`. Si se capturaban juntos, una respuesta
+ilegible (que sí llegó y sí fue respondida) se habría tomado como corte de
+comunicación y habría mandado la factura a `A_VERIFICAR` sin motivo. Se
+separó el `POST` del parseo del cuerpo.
+
+### 2.6. «¿Transacción única o dos, para no dejar huecos en la numeración?»
+
+**Lo que aprendimos.** El SIFEN exige que `dNumDoc` sea una secuencia **sin
+saltos ni repeticiones** por establecimiento y punto de expedición. La
+tentación era meter todo en un `@transaction.atomic`, pero eso dejaría el
+candado de la secuencia tomado durante toda la llamada HTTP: ninguna otra
+operación podría facturar mientras tanto.
+
+**Decisión.** Dos transacciones: una corta que reserva el número con
+`select_for_update`, y la llamada a la API afuera. Para que no queden
+huecos, el reintento **reutiliza la misma `Factura` y el mismo número** en
+vez de pedir uno nuevo. Hay una prueba específica para eso
+(`test_reintentar_reusa_el_mismo_numero`).
+
+### 2.7. «Llegó la habilitación de la cátedra: ¿qué cambia?»
+
+**Lo que aprendimos**, al recibir el correo con la cuenta ESI habilitada
+(emisor 2595733 en TEST): el rango autorizado es acotado —establecimiento
+`001`, punto de expedición **`003`**, facturas de **`0000489` a `0000500`**,
+doce números— y el emisor tiene **dos** actividades económicas, no una.
+
+La numeración arrancaba en `0000001` y `gActEco` aceptaba una sola
+actividad: las facturas habrían sido rechazadas por el SIFEN.
+
+**Decisión.** Dos variables nuevas, `FACTURACION_NUMERO_DESDE` y
+`FACTURACION_NUMERO_HASTA`: la secuencia arranca en el primer número
+autorizado, y si el rango se agota la factura queda en `ERROR` con el
+mensaje «hay que pedir un rango nuevo a la cátedra», **sin llamar a la API**.
+Las actividades se configuran como `codigo:descripcion` separadas por `|`,
+para que cada código conserve su propia descripción.
+
+### 2.8. «Los datos del emisor, ¿hardcodeados?»
+
+**Decisión.** Ninguno en el código: todos salen de variables de entorno. Los
+valores por defecto de `config/settings/base.py` son **claramente de
+prueba** (RUC `00000000`, nombre «GLOBAL EXCHANGE (DATOS DE PRUEBA)») y el
+cliente real **se niega a emitir** mientras sigan así, con un mensaje que
+explica qué completar. El token va únicamente en el `.env`, nunca en el
+repositorio ni en los logs: hay una prueba que verifica las dos cosas.
+
+### 2.9. «Bug propio: al cargar los datos reales en el `.env`, se rompió una prueba»
+
+**Lo que aprendimos.** Apenas se cargaron en el `.env` los datos que mandó la
+cátedra (punto de expedición `003`, rango desde `489`, proveedor
+`facturasegura`), una prueba que venía pasando empezó a fallar: esperaba la
+secuencia en `001-001` y encontraba `001-003`.
+
+La causa no era el cambio: era que **las pruebas leían el `.env`**.
+`config.settings.dev` lo carga, así que la configuración de cada máquina se
+filtraba a la corrida. Dos consecuencias, una molesta y una grave:
+
+1. Cualquier compañero con otros valores en su `.env` vería fallar pruebas
+   que no tienen nada que ver con lo que tocó.
+2. **Con `FACTURACION_PROVEEDOR=facturasegura` en el `.env`, una prueba podía
+   terminar llamando a la API de verdad** y gastando uno de los doce números
+   del rango autorizado.
+
+**Decisión.** Un fixture `autouse` que fija toda la configuración de
+facturación en valores conocidos antes de cada prueba, con el proveedor
+simulado y el token vacío. Las pruebas que necesitan otro valor lo
+sobrescriben, porque su asignación corre después del fixture. Es la misma
+idea que "una prueba no debe depender del ambiente donde corre", y acá el
+costo de no cumplirla no era una prueba inestable sino una llamada real a
+Hacienda.
+
+## 2.10. Verificaciones realizadas
+
+- **29 pruebas nuevas** para esta historia, todas sin red: el cliente de la
+  API se reemplaza por dobles que cumplen la misma interfaz.
+- Suite completa del proyecto: **228 pruebas aprobadas** (eran 199 antes de
+  esta historia), sin regresiones en RF018, RF019, RF022, RF023 ni RF051.
+- Casos cubiertos: la factura se genera al confirmar una compra y una venta;
+  si la facturación falla la operación **sigue confirmada** (RNF011), tanto
+  con un rechazo de la API como con una excepción inesperada; el timeout deja
+  `A_VERIFICAR` y no se reenvía sola; el comando reintenta los `ERROR` pero
+  no los `A_VERIFICAR`; una operación no puede tener dos facturas (ni por
+  servicio ni por base); la numeración no se repite, arranca en el rango
+  autorizado, se detiene al agotarlo y el reintento reusa el número; la
+  conversión a guaraníes; el armado del DE (receptor físico y jurídico, ítem,
+  IVA, forma de pago al contado, las dos actividades económicas, las dos
+  cifras en `dInfAdic`); RUC sin DV y cliente sin correo dan error claro sin
+  llamar a la API; y el token no aparece ni en los logs ni en lo que se
+  guarda en la base.
+- `python manage.py check` sin errores, migración `0001_initial` aplicada y
+  Sphinx genera sin warnings (nueva página `facturacion`).
+
+---
