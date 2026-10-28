@@ -173,10 +173,12 @@ SITE_BASE_URL = env("SITE_BASE_URL", default="http://localhost:8000")
 # ===== Facturación electrónica (RF026 — GEG9-50) =====
 # "facturasegura" llama de verdad al ambiente de pruebas de Factura Segura;
 # "simulado" no toca la red (desarrollo, demo y tests).
-FACTURACION_PROVEEDOR = env("FACTURACION_PROVEEDOR", default="simulado")
-FACTURASEGURA_BASE_URL = env(
-    "FACTURASEGURA_BASE_URL",
-    default="https://apitest.facturasegura.com.py/misife00/v1/esi",
+# El `or` está en todas estas lecturas por el mismo motivo: una clave presente
+# pero vacía (como queda al copiar .env.example) devuelve "" y no el default.
+FACTURACION_PROVEEDOR = env("FACTURACION_PROVEEDOR", default="") or "simulado"
+FACTURASEGURA_BASE_URL = (
+    env("FACTURASEGURA_BASE_URL", default="")
+    or "https://apitest.facturasegura.com.py/misife00/v1/esi"
 )
 # El token se genera una vez por ambiente y va SOLO en el .env, nunca acá.
 FACTURASEGURA_TOKEN = env("FACTURASEGURA_TOKEN", default="")
@@ -188,8 +190,18 @@ FACTURACION_PUNTO_EXPEDICION = env("FACTURACION_PUNTO_EXPEDICION", default="") o
 # Rango de números que la cátedra autorizó para este punto de expedición. La
 # numeración arranca en DESDE (no en 1) y no pasa de HASTA: un `dNumDoc` fuera
 # del rango lo rechaza el SIFEN. HASTA en 0 significa "sin límite".
-FACTURACION_NUMERO_DESDE = env.int("FACTURACION_NUMERO_DESDE", default=0) or 1
-FACTURACION_NUMERO_HASTA = env.int("FACTURACION_NUMERO_HASTA", default=0)
+#
+# No se usa `env.int()`: esa función revienta con ValueError si la variable
+# está presente pero vacía, y en .env.example estas dos claves van sin valor
+# justamente para que cada uno complete el rango que le autorizaron. Quien
+# copiara el .env.example tal cual no podía ni levantar Django.
+def _entero_opcional(nombre):
+    valor = env(nombre, default="").strip()
+    return int(valor) if valor else 0
+
+
+FACTURACION_NUMERO_DESDE = _entero_opcional("FACTURACION_NUMERO_DESDE") or 1
+FACTURACION_NUMERO_HASTA = _entero_opcional("FACTURACION_NUMERO_HASTA")
 
 # OJO: los datos del emisor que siguen son VALORES DE PRUEBA, puestos para
 # poder desarrollar, hacer la demo con el proveedor simulado y correr los
