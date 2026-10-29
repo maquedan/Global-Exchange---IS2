@@ -17,4 +17,5 @@ urlpatterns = [
     path("notificaciones/", include("apps.notificaciones.urls")),  # Alertas de Tasas - GEG9-38
     path("cajas/", include("apps.cajas.urls")),
     path("pagos/", include("apps.pagos.urls")),  # Pago con pasarela (dLocal) - GEG9-36
+    path("facturas/", include("apps.facturacion.urls")),  # Visualización de Facturas - GEG9-54
 ]

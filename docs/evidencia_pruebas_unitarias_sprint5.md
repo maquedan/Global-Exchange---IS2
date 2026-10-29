@@ -221,6 +221,35 @@ antes y después del cambio, está en `docs/chia-sprint5.md` sección 3.1.
 
 ---
 
+## Fabrizio Cardozo — RF053, Visualización de Facturas (GEG9-54)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 29 de octubre de 2026, 01:46:39 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/facturacion/tests/test_visualizacion.py` |
+| **Comando** | `.venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q` |
+| **Resultado** | **6 passed** |
+
+```text
+$ .venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q
+......                                      [100%]
+6 passed
+```
+
+También se ejecutó:
+
+```text
+$ .venv/bin/python manage.py check
+System check identified no issues (0 silenced).
+```
+
+Las seis pruebas cubren el listado y detalle de facturas, separación de datos
+entre clientes, acceso completo del administrador, filtros por número y estado
+fiscal, visibilidad del menú por rol, RUC de persona jurídica y uso del
+documento como RUC para persona física. Las advertencias mostradas por pytest
+corresponden a compatibilidad futura de `EMAIL_BACKEND` y a permisos de
+`.pytest_cache`; no representan fallos.
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.

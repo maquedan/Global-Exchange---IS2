@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block titulo %}{% if es_administrador %}Facturas{% else %}Mis facturas{% endif %} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<section class="rounded-2xl bg-white p-7 shadow-sm ring-1 ring-slate-200">
+  <div class="mb-6 flex items-start justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-slate-900">{% if es_administrador %}Facturas electrónicas{% else %}Mis facturas electrónicas{% endif %}</h1>
+      <p class="mt-1 text-sm text-slate-600">Consultá el estado fiscal y el detalle de cada documento.</p>
+    </div>
+  </div>
+
+  <form class="mb-6 grid gap-4 rounded-xl bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-5" method="get">
+    <label class="text-sm font-semibold text-slate-700">Número
+      <input class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" name="numero" value="{{ filtros.numero }}" placeholder="0000001">
+    </label>
+    <label class="text-sm font-semibold text-slate-700">Desde
+      <input class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" type="date" name="fecha_desde" value="{{ filtros.fecha_desde }}">
+    </label>
+    <label class="text-sm font-semibold text-slate-700">Hasta
+      <input class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" type="date" name="fecha_hasta" value="{{ filtros.fecha_hasta }}">
+    </label>
+    <label class="text-sm font-semibold text-slate-700">Estado fiscal
+      <select class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" name="estado_fiscal">
+        <option value="">Todos</option>
+        <option value="SIN_CONSULTAR" {% if filtros.estado_fiscal == "SIN_CONSULTAR" %}selected{% endif %}>Sin consultar</option>
+        {% for estado in estados_fiscales %}<option value="{{ estado }}" {% if filtros.estado_fiscal == estado %}selected{% endif %}>{{ estado }}</option>{% endfor %}
+      </select>
+    </label>
+    <div class="flex items-end gap-2">
+      <label class="grow text-sm font-semibold text-slate-700">Transacción
+        <select class="mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2" name="tipo">
+          <option value="">Todas</option>
+          <option value="compra" {% if filtros.tipo == "compra" %}selected{% endif %}>Compra</option>
+          <option value="venta" {% if filtros.tipo == "venta" %}selected{% endif %}>Venta</option>
+        </select>
+      </label>
+      <button class="rounded-lg bg-sky-700 px-4 py-2 font-bold text-white hover:bg-sky-800" type="submit">Filtrar</button>
+    </div>
+  </form>
+
+  {% if facturas %}
+  <div class="overflow-x-auto">
+    <table class="min-w-full divide-y divide-slate-200 text-left text-sm">
+      <thead class="bg-slate-50 text-xs uppercase tracking-wide text-slate-500"><tr>
+        <th class="px-4 py-3">Número</th><th class="px-4 py-3">Fecha</th>{% if es_administrador %}<th class="px-4 py-3">Cliente</th>{% endif %}<th class="px-4 py-3">Monto</th><th class="px-4 py-3">Estado fiscal</th><th class="px-4 py-3">Transacción</th><th class="px-4 py-3"><span class="sr-only">Detalle</span></th>
+      </tr></thead>
+      <tbody class="divide-y divide-slate-100 text-slate-700">
+      {% for factura in facturas %}<tr class="hover:bg-slate-50">
+        <td class="px-4 py-3 font-semibold text-slate-900">{{ factura.numero_completo }}</td>
+        <td class="px-4 py-3">{{ factura.generada_en|default:factura.creada_en|date:"d/m/Y H:i" }}</td>
+        {% if es_administrador %}<td class="px-4 py-3">{{ factura.operacion.cliente }}</td>{% endif %}
+        <td class="px-4 py-3">{{ factura.monto|floatformat:0 }} {{ factura.moneda }}</td>
+        <td class="px-4 py-3">{{ factura.estado_fiscal|default:"Sin consultar" }}</td>
+        <td class="px-4 py-3">{% if factura.compra_id %}Compra #{{ factura.compra_id }}{% else %}Venta #{{ factura.venta_id }}{% endif %}</td>
+        <td class="px-4 py-3 text-right"><a class="font-bold text-sky-700 hover:text-sky-900" href="{% url 'facturacion:detalle' factura.pk %}">Ver detalle</a></td>
+      </tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}<p class="rounded-xl bg-slate-50 p-5 text-slate-600">No hay facturas que coincidan con los filtros seleccionados.</p>{% endif %}
+</section>
+{% endblock %}
