@@ -6,6 +6,7 @@
   <h2>Factura electrónica</h2>
   <div class="factura factura-{{ factura.estado }}">
     <p class="factura-numero">{{ factura.numero_completo }}</p>
+    <p class="factura-cliente">RUC del cliente: {% if factura.operacion.cliente.ruc %}{{ factura.operacion.cliente.ruc }}{% elif factura.operacion.cliente.documento %}{{ factura.operacion.cliente.documento }}{% else %}No informado{% endif %}</p>
 
     {% if factura.estado == "GENERADA" %}
       <p class="factura-estado">Generada el {{ factura.generada_en|date:"d/m/Y H:i" }} en Factura Segura.</p>

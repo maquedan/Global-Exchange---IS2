@@ -12,8 +12,6 @@ proyecto Global Exchange (Grupo 9, FP-UNA).
 completala con tus propias consultas reales a la IA (si la usaste). Si no
 usaste IA para tu historia, dejalo dicho así, sin inventar contenido.
 
----
-
 ## 1. Leyda Fleitas — RF008, Selección de Cliente Activo (GEG9-18)
 
 **Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
@@ -427,3 +425,50 @@ inofensivas —sólo GET y POST que quedaban bloqueados—; la de servicios no.
 - `python manage.py check` sin errores y Sphinx genera sin warnings.
 
 ---
+
+## Fabrizio Cardozo — RF053, Visualización de Facturas (GEG9-54)
+
+**Herramienta:** Codex, integrado en el entorno de desarrollo del proyecto.
+
+### «¿Qué ya existe para implementar la visualización?»
+
+**Lo que aprendimos.** `apps.facturacion` ya tenía el modelo `Factura`, la
+emisión automática de RF026 y un parcial para los comprobantes, pero no tenía
+vistas, URLs ni una pantalla de consulta independiente. El modelo ya contiene
+número, fechas, montos, CDC, `estado_fiscal` y la operación relacionada.
+
+**Decisión.** Construir el listado y el detalle sobre el modelo existente, sin
+crear una migración nueva para RF053.
+
+### «¿Cómo se separan las facturas de clientes y administradores?»
+
+**Decisión.** La consulta base se filtra en el servidor: un cliente solo puede
+ver facturas cuya compra o venta pertenece a su `cliente_activo`; un
+administrador ve todas, incluso sin cliente activo. El detalle reutiliza el
+mismo queryset protegido, de modo que cambiar el id de la URL no permite
+consultar una factura ajena. Los demás roles reciben `403`.
+
+### «¿Qué filtros y datos debe mostrar la pantalla?»
+
+El listado permite filtrar por número, rango de fechas, estado fiscal y tipo de
+transacción. Muestra número, fecha, monto, estado fiscal y operación asociada.
+El detalle agrega CDC, estado de emisión, monto original, monedas, cliente y
+RUC. Si `estado_fiscal` está vacío se muestra **“Sin consultar”**. Para una
+persona física, `documento` se muestra como RUC según la convención del
+proyecto; para una persona jurídica se usa `ruc`.
+
+### Cambios realizados
+
+- Vistas y autorización en `apps/facturacion/views.py`.
+- Rutas en `apps/facturacion/urls.py` y `config/urls.py`.
+- Listado y detalle en `templates/facturacion/`.
+- Entradas **Mis facturas** y **Facturas** en `apps/usuarios/menu.py`.
+- RUC/documento en `templates/facturacion/_factura.html`.
+- Pruebas específicas en `apps/facturacion/tests/test_visualizacion.py`.
+- Documentación en `docs/sphinx/facturacion.rst`.
+
+### Verificaciones realizadas
+
+`manage.py check` terminó sin errores y las seis pruebas específicas de RF053
+pasaron. Las advertencias de `EMAIL_BACKEND` y `.pytest_cache` no afectan el
+resultado.

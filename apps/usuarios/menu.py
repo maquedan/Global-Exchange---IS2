@@ -96,6 +96,17 @@ MENU_PRINCIPAL = [
         "url": "notificaciones:lista",
         "roles": ["usuario_cliente"],
     },
+    {
+        "texto": "Mis facturas",
+        "necesita_cliente": True,
+        "url": "facturacion:lista",
+        "roles": ["usuario_cliente"],
+    },
+    {
+        "texto": "Facturas",
+        "url": "facturacion:lista",
+        "roles": ["administrador"],
+    },
 ]
 
 

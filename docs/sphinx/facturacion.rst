@@ -14,6 +14,15 @@ Esta historia es la base de la facturación: RF027 (envío por correo), RF028
 se construyen sobre el modelo ``Factura``, que guarda el CDC y deja
 ``estado_fiscal`` vacío para que RF028 lo complete.
 
+Visualización de facturas (RF053)
+----------------------------------
+
+La ruta ``/facturas/`` muestra el listado de facturas con filtros por número,
+fecha, estado fiscal y tipo de transacción. El usuario cliente consulta solo
+las facturas de su cliente activo; el administrador consulta las de todos los
+clientes. Cada fila lleva a ``/facturas/<id>/`` para ver el detalle del
+documento y de su compra o venta asociada.
+
 Modelos
 -------
 
