@@ -26,6 +26,14 @@ DOS_DECIMALES = Decimal("0.01")
 # para confirmar indefinidamente (RF051 — GEG9-51).
 MINUTOS_EXPIRACION_PENDIENTE = 15
 
+def usuario_es_terminal(usuario):
+    """Indica si el usuario autenticado corresponde a una terminal."""
+    return bool(
+        usuario
+        and usuario.is_authenticated
+        and usuario.groups.filter(name="terminal").exists()
+    )
+
 
 def _vencio_el_plazo(operacion):
     limite = operacion.creado_en + timedelta(minutes=MINUTOS_EXPIRACION_PENDIENTE)
@@ -96,7 +104,7 @@ class CompraNoConfirmable(Exception):
 
 
 @transaction.atomic
-def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado):
+def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado, desde_terminal=False):
     """Congela la tasa y comisión vigentes y deja la compra en estado PENDIENTE.
 
     El monto ingresado es la base de conversión. La comisión se cobra aparte y
@@ -107,7 +115,14 @@ def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, mont
     su cuenta que esa persona pueda operar en nombre del cliente, en vez de
     confiar en que la vista ya lo verificó.
     """
-    cliente_habilitado_para(usuario, cliente_id)
+    if desde_terminal:
+        if not usuario_es_terminal(usuario):
+            raise CompraNoDisponible(
+                "Solo una terminal autorizada puede iniciar esta operación."
+            )
+    else:
+        cliente_habilitado_para(usuario, cliente_id)
+
 
     cliente = Cliente.objects.select_for_update().filter(pk=cliente_id, activo=True).first()
     if cliente is None:
@@ -286,14 +301,20 @@ class VentaNoConfirmable(Exception):
 @transaction.atomic
 def iniciar_venta(
     *, usuario, cliente_id, moneda_entregada, moneda_acreditada,
-    monto_entregado, cuenta_destino=None,
+    monto_entregado, cuenta_destino=None, desde_terminal=False
 ):
     """Congela la tasa y comisión y deja la venta PENDIENTE de entrega en efectivo.
 
     `usuario` es obligatorio desde RF010 (GEG9-20), igual que en
     `iniciar_compra`.
     """
-    cliente_habilitado_para(usuario, cliente_id)
+    if desde_terminal:
+        if not usuario_es_terminal(usuario):
+            raise VentaNoDisponible(
+                "Solo una terminal autorizada puede iniciar esta operación."
+            )
+    else:
+        cliente_habilitado_para(usuario, cliente_id)
 
     cliente = Cliente.objects.select_for_update().filter(pk=cliente_id, activo=True).first()
     if cliente is None:

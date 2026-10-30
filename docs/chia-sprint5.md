@@ -621,6 +621,7 @@ Se ejecutaron las pruebas específicas del módulo:
 ```text
 docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
 ```
+
 Las pruebas cubren que el rol terminal vea solo las opciones de menú correspondientes, que acceda a la pantalla inicial, que otros roles reciban 403, que la ruta de reinicio rechace solicitudes GET y que una solicitud POST elimine correctamente los datos temporales de la sesión antes de redirigir al inicio.
 
 ---
@@ -666,5 +667,97 @@ completa de `apps`. `manage.py check` no reportó problemas,
 `makemigrations --check --dry-run` indicó que no hay cambios pendientes y las
 tres migraciones nuevas aparecen aplicadas. El detalle está en
 `docs/evidencia_pruebas_unitarias_sprint5.md`.
+## 9. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 9.1. «¿Cómo se identifica al cliente en una terminal de autoservicio?»
+
+**Lo que aprendimos.** La terminal se autentica con un usuario técnico que
+posee el rol `terminal`; por lo tanto, ese usuario no representa al cliente
+que realiza la operación. Usar directamente el mecanismo normal de cliente
+activo no era adecuado, porque dicho mecanismo exige que el usuario
+autenticado esté asociado al cliente.
+
+**Decisión.** La terminal solicita documento o RUC, busca exclusivamente
+clientes activos y guarda temporalmente el identificador encontrado en la
+sesión bajo `terminal_cliente_id`. Si no existe una coincidencia, o si el
+identificador coincide con más de un cliente, la operación no puede continuar
+y se muestra un mensaje claro. La identificación no crea usuarios ni
+asociaciones nuevas.
+
+### 9.2. «¿Cómo reutilizar compra y venta sin debilitar la seguridad normal?»
+
+**Lo que aprendimos.** Los servicios `iniciar_compra` e `iniciar_venta`
+validaban correctamente que un usuario normal opere solo por un cliente al que
+está asociado. Sin embargo, la terminal necesita iniciar operaciones para el
+cliente identificado en pantalla, mientras el usuario autenticado sigue siendo
+el usuario técnico de terminal.
+
+**Decisión.** Se incorporó el parámetro explícito `desde_terminal` a ambos
+servicios. Solo puede utilizarse cuando el usuario autenticado pertenece al
+grupo `terminal`; en cualquier otro caso se conserva la validación existente
+`cliente_habilitado_para`. Así, las vistas normales no pierden su protección y
+la excepción de terminal queda limitada al flujo guiado protegido por
+`requiere_terminal`.
+
+### 9.3. «¿Cuándo se congela la tasa y qué ocurre si cambia antes de confirmar?»
+
+**Lo que aprendimos.** La simulación no debe crear una operación definitiva:
+el cliente todavía puede volver, modificar sus datos o abandonar la terminal.
+Pero tampoco puede confirmarse con una tasa diferente de la que vio en el
+resumen.
+
+**Decisión.** Al mostrar la simulación se guarda en sesión el identificador de
+la tasa visualizada. Al confirmar, la aplicación consulta nuevamente la tasa
+vigente para el mismo par de monedas y compara ambos identificadores. Si ya no
+coinciden, no se crea ninguna compra ni venta y se informa que la cotización
+cambió. Si coincide, el servicio de conversiones crea la operación en estado
+`PENDIENTE`, guardando la tasa y comisión como fotografía histórica.
+
+Después de crearla, RF051 sigue protegiendo el momento de pago o entrega:
+si la cotización cambia mientras la operación pendiente espera al cajero, su
+confirmación posterior la cancela según la lógica existente.
+
+### 9.4. «¿La terminal debe cobrar o entregar efectivo?»
+
+**Lo que aprendimos.** El flujo guiado termina cuando el cliente acepta la
+simulación y se crea la operación pendiente. Cobrar efectivo, validar
+denominaciones, modificar existencias o entregar billetes pertenece a RF057 y
+RF058, respectivamente.
+
+**Decisión.** RF055 no registra movimientos de caja ni confirma pagos. La
+pantalla final informa el número de operación y pide acercarse al cajero para
+completar el pago o la entrega. Esto mantiene separadas la interfaz de
+autoservicio, la operación de cambio y la gestión física de efectivo.
+
+### 9.5. Cambios realizados
+
+- Identificación de cliente activo por documento o RUC.
+- Selección guiada de compra o venta.
+- Formulario de monedas y monto, con validación de monedas diferentes.
+- Simulación de tasa, comisión, importe total y resultado esperado.
+- Creación de compra o venta pendiente desde una terminal autorizada.
+- Verificación de cambio de cotización antes de crear la operación.
+- Pantalla de cierre con número de operación y derivación al cajero.
+- Limpieza completa de sesión al reiniciar o finalizar.
+- Diez pruebas unitarias del módulo terminal.
+
+No se crearon modelos ni migraciones: RF055 reutiliza `CompraDivisa`,
+`VentaDivisa`, `TasaCambio`, `ComisionCategoria` y los servicios ya existentes.
+
+### 9.6. Verificaciones realizadas
+
+Se ejecutó:
+
+```text
+docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+```
+
+**Resultado:** 10 pruebas aprobadas. Se cubrieron el acceso exclusivo del rol
+terminal, la identificación del cliente, la simulación, la creación de compra
+pendiente, la creación de venta pendiente, la tasa y comisión aplicadas, el
+rechazo por cambio de cotización y la limpieza de los datos temporales de la
+sesión. También se ejecutó python manage.py check sin errores.
 
 ---
