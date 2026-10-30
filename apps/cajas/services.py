@@ -217,8 +217,9 @@ def registrar_movimiento(
     cajero_id=None,
     nota="",
     billetes=None,
+    reversion_de=None,
 ):
-    """Registra el movimiento y actualiza atómicamente saldos y conteos de billetes."""
+    """Registra un movimiento y actualiza atómicamente saldos e inventario."""
     if not caja_id or not moneda_id:
         raise ValidationError("Debe indicar una caja y una divisa.")
 
@@ -227,11 +228,52 @@ def registrar_movimiento(
     except ValueError:
         raise ValidationError("El tipo de movimiento no es válido.") from None
 
-    moneda = Moneda.objects.filter(pk=moneda_id, activo=True).first()
+    movimiento_original = None
+    if reversion_de is not None:
+        movimiento_original = (
+            MovimientoCaja.objects.select_for_update()
+            .filter(pk=reversion_de.pk)
+            .first()
+        )
+        if movimiento_original is None:
+            raise MovimientoNoPermitido("El movimiento que se intenta revertir no existe.")
+        tipos_inversos = {
+            MovimientoCaja.Tipo.INGRESO_CAJERO: MovimientoCaja.Tipo.RETIRO_CAJERO,
+            MovimientoCaja.Tipo.RETIRO_CAJERO: MovimientoCaja.Tipo.INGRESO_CAJERO,
+        }
+        if tipos_inversos.get(movimiento_original.tipo) != tipo:
+            raise MovimientoNoPermitido(
+                "El tipo del movimiento no corresponde a su reversión."
+            )
+        if MovimientoCaja.objects.filter(reversion_de=movimiento_original).exists():
+            raise MovimientoNoPermitido("Este movimiento ya fue revertido.")
+        if (
+            movimiento_original.caja_id != caja_id
+            or movimiento_original.moneda_id != moneda_id
+            or movimiento_original.cajero_id != cajero_id
+        ):
+            raise MovimientoNoPermitido(
+                "La reversión debe conservar caja, moneda y cajero del movimiento original."
+            )
+
+    monedas = Moneda.objects.filter(pk=moneda_id)
+    if reversion_de is None:
+        monedas = monedas.filter(activo=True)
+    moneda = monedas.first()
     if moneda is None:
         raise MovimientoNoPermitido("La moneda no existe o está inactiva.")
 
     cantidades, denominaciones, importe = _normalizar_billetes(billetes, moneda)
+    if movimiento_original is not None:
+        cantidades_originales = dict(
+            movimiento_original.detalle_billetes.values_list(
+                "denominacion_id", "cantidad"
+            )
+        )
+        if cantidades != cantidades_originales or importe != movimiento_original.importe:
+            raise MovimientoNoPermitido(
+                "La reversión debe conservar el importe y las denominaciones originales."
+            )
     if importe >= Decimal("10000000000000000"):
         raise ValidationError(
             "El importe debe ser menor que 9.999.999.999.999.999,99."
@@ -244,7 +286,7 @@ def registrar_movimiento(
         raise ValidationError("El importe calculado debe ser mayor que cero.")
 
     caja = Caja.objects.select_for_update().select_related("sucursal").get(pk=caja_id)
-    if not caja.sucursal.activa:
+    if not caja.sucursal.activa and reversion_de is None:
         raise MovimientoNoPermitido(
             "No se pueden registrar movimientos en una sucursal inactiva."
         )
@@ -277,7 +319,13 @@ def registrar_movimiento(
         if cajero_id is None:
             raise ValidationError("Debe seleccionar un cajero para este movimiento.")
 
-        if tipo in (
+        if reversion_de is not None:
+            usuario_cajero = get_user_model().objects.filter(pk=cajero_id).first()
+            if usuario_cajero is None:
+                raise MovimientoNoPermitido(
+                    "No se encuentra el cajero del movimiento original."
+                )
+        elif tipo in (
             MovimientoCaja.Tipo.ASIGNACION,
             MovimientoCaja.Tipo.INGRESO_CAJERO,
             MovimientoCaja.Tipo.RETIRO_CAJERO,
@@ -341,7 +389,7 @@ def registrar_movimiento(
     ):
         if fondo_cajero.saldo < importe:
             raise MovimientoNoPermitido(
-                "El cajero no tiene fondos suficientes para esa devolución."
+                "El fondo del cajero no tiene saldo suficiente para ese movimiento."
             )
         _verificar_disponibilidad(inventario_cajero, cantidades, denominaciones)
 
@@ -384,6 +432,7 @@ def registrar_movimiento(
         ),
         realizado_por=realizado_por,
         nota=nota.strip(),
+        reversion_de=movimiento_original,
     )
     DetalleMovimientoBillete.objects.bulk_create(
         [

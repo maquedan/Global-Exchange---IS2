@@ -242,3 +242,12 @@ class EntregaEfectivoVentaForm(forms.Form):
                 )
             self.add_error(None, detalle)
         return cantidades
+
+
+class AnularVentaForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de anulación",
+        max_length=255,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )

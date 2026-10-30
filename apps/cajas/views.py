@@ -168,6 +168,9 @@ def historial_movimientos(request):
             "realizado_por",
             "venta_efectivo_recibido",
             "venta_efectivo_entregado",
+            "reversion_de__venta_efectivo_recibido",
+            "reversion_de__venta_efectivo_entregado",
+            "movimiento_reversion",
         )
         .prefetch_related("detalle_billetes__denominacion")
         .filter(caja=caja)

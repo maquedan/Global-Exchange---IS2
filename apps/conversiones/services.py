@@ -298,6 +298,10 @@ class VentaNoConfirmable(Exception):
     """La venta pendiente no puede confirmarse ni cancelarse por acción del cliente."""
 
 
+class AnulacionVentaNoPermitida(Exception):
+    """La venta confirmada no puede anularse de forma segura."""
+
+
 @transaction.atomic
 def iniciar_venta(
     *, usuario, cliente_id, moneda_entregada, moneda_acreditada,
@@ -559,5 +563,113 @@ def cancelar_venta(*, pk, usuario):
     registrar_cambio_estado(
         venta, estado_anterior, venta.estado,
         motivo="Cancelada por el cliente.", usuario=usuario,
+    )
+    return venta
+
+
+@transaction.atomic
+def anular_venta(*, pk, usuario, motivo):
+    """Anula una venta confirmada y registra los movimientos inversos (RF059)."""
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="administrador").exists()
+    ):
+        raise AnulacionVentaNoPermitida(
+            "Solo un administrador puede anular una venta confirmada."
+        )
+
+    motivo = (motivo or "").strip()
+    if not motivo or len(motivo) > 255:
+        raise AnulacionVentaNoPermitida(
+            "Indicá un motivo de anulación de hasta 255 caracteres."
+        )
+
+    venta = VentaDivisa.objects.select_for_update().filter(pk=pk).first()
+    if venta is None:
+        raise AnulacionVentaNoPermitida("La venta no existe.")
+    if venta.estado != VentaDivisa.Estado.CONFIRMADA:
+        raise AnulacionVentaNoPermitida(
+            "Solo se pueden anular ventas que ya fueron confirmadas."
+        )
+    if not venta.movimiento_efectivo_recibido_id or not venta.movimiento_efectivo_entregado_id:
+        raise AnulacionVentaNoPermitida(
+            "La venta no tiene ambos movimientos de efectivo vinculados; "
+            "no se puede revertir automáticamente."
+        )
+
+    movimientos = (
+        MovimientoCaja.objects.select_for_update()
+        .filter(
+            pk__in=[
+                venta.movimiento_efectivo_recibido_id,
+                venta.movimiento_efectivo_entregado_id,
+            ]
+        )
+        .prefetch_related("detalle_billetes")
+    )
+    movimientos_por_id = {movimiento.pk: movimiento for movimiento in movimientos}
+    movimiento_recibido = movimientos_por_id.get(
+        venta.movimiento_efectivo_recibido_id
+    )
+    movimiento_entregado = movimientos_por_id.get(
+        venta.movimiento_efectivo_entregado_id
+    )
+    if movimiento_recibido is None or movimiento_entregado is None:
+        raise AnulacionVentaNoPermitida(
+            "No se encuentran los movimientos originales de la venta."
+        )
+    if (
+        movimiento_recibido.tipo != MovimientoCaja.Tipo.INGRESO_CAJERO
+        or movimiento_entregado.tipo != MovimientoCaja.Tipo.RETIRO_CAJERO
+        or movimiento_recibido.caja_id != movimiento_entregado.caja_id
+        or movimiento_recibido.cajero_id != movimiento_entregado.cajero_id
+    ):
+        raise AnulacionVentaNoPermitida(
+            "Los movimientos originales no corresponden a una liquidación "
+            "de efectivo válida."
+        )
+
+    movimientos_inversos = (
+        (movimiento_recibido, MovimientoCaja.Tipo.RETIRO_CAJERO),
+        (movimiento_entregado, MovimientoCaja.Tipo.INGRESO_CAJERO),
+    )
+    for original, tipo_inverso in movimientos_inversos:
+        billetes = dict(
+            original.detalle_billetes.values_list("denominacion_id", "cantidad")
+        )
+        if not billetes:
+            raise AnulacionVentaNoPermitida(
+                "Falta el desglose de billetes de un movimiento original."
+            )
+        try:
+            registrar_movimiento(
+                caja_id=original.caja_id,
+                tipo=tipo_inverso,
+                moneda_id=original.moneda_id,
+                realizado_por=usuario,
+                cajero_id=original.cajero_id,
+                nota=(
+                    f"Anulación de venta #{venta.pk}; reversión del movimiento "
+                    f"#{original.pk}: {motivo}"
+                ),
+                billetes=billetes,
+                reversion_de=original,
+            )
+        except MovimientoNoPermitido as error:
+            raise AnulacionVentaNoPermitida(
+                f"No se puede completar la reversión: {error}"
+            ) from error
+
+    estado_anterior = venta.estado
+    venta.estado = VentaDivisa.Estado.ANULADA
+    venta.anulado_en = timezone.now()
+    venta.save(update_fields=["estado", "anulado_en"])
+    registrar_cambio_estado(
+        venta,
+        estado_anterior,
+        venta.estado,
+        motivo=f"Anulada por administrador: {motivo}",
+        usuario=usuario,
     )
     return venta

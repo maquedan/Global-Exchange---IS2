@@ -185,6 +185,7 @@ class VentaDivisa(models.Model):
     creado_en = models.DateTimeField(auto_now_add=True)
     confirmado_en = models.DateTimeField(null=True, blank=True)
     cancelado_en = models.DateTimeField(null=True, blank=True)
+    anulado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-creado_en"]

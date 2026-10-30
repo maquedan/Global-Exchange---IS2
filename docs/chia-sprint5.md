@@ -761,3 +761,37 @@ rechazo por cambio de cotización y la limpieza de los datos temporales de la
 sesión. También se ejecutó python manage.py check sin errores.
 
 ---
+
+## Ryuto Maehara - RF059, Movimientos de Caja por Transacción en Metálico
+
+La liquidación de una venta ya registra en el fondo del cajero el efectivo
+recibido y el entregado, con sucursal/caja, cajero, divisa, denominaciones,
+cantidades, importe y fecha/hora. El historial de caja enlaza cada movimiento
+con la venta; el comprobante permite consultar ambos movimientos.
+
+La anulación posterior a la confirmación queda disponible solo para
+administradores y exige un motivo. En una transacción atómica se registran
+movimientos inversos por cada movimiento original, conservando el desglose de
+billetes y una relación directa con el movimiento revertido. La venta queda en
+estado `ANULADA` y la línea de tiempo conserva administrador, fecha y motivo.
+Las existencias del fondo del cajero se actualizan con esos asientos; no se
+modifica el saldo de la caja central.
+
+Para que el administrador encuentre la operación, el menú incluye
+**Ventas y anulaciones**, una consulta paginada de ventas con acceso directo a
+cada comprobante. Desde el comprobante de una venta confirmada se inicia la
+anulación. Se verificaron los permisos de la lista, el enlace del menú y la
+consulta desde la sesión administrativa.
+
+Si el fondo ya no tiene billetes suficientes para devolver el efectivo recibido
+en la venta, la anulación se rechaza sin cambiar el estado ni dejar movimientos
+parciales. Las cancelaciones anteriores a la liquidación no requieren asiento
+inverso porque aún no existe movimiento de efectivo. Las compras pagadas por
+pasarela no son transacciones metálicas y quedan fuera de este flujo.
+
+Migraciones: `cajas/0008_movimientocaja_reversion_de.py` y
+`conversiones/0010_ventadivisa_anulado_en.py`. Se aplicaron en Docker y
+`makemigrations --check --dry-run` no detectó cambios pendientes. En Docker
+pasaron **303 pruebas** de la suite completa de `apps`, incluida la navegación
+administrativa. `manage.py check` no reportó problemas. La evidencia está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`.

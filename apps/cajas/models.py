@@ -211,11 +211,18 @@ class MovimientoCaja(models.Model):
         blank=True,
     )
     diferencia = models.OneToOneField(
-    "DiferenciaCaja",
-    on_delete=models.PROTECT,
-    related_name="movimiento_ajuste",
-    null=True,
-    blank=True,
+        "DiferenciaCaja",
+        on_delete=models.PROTECT,
+        related_name="movimiento_ajuste",
+        null=True,
+        blank=True,
+    )
+    reversion_de = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="movimiento_reversion",
+        null=True,
+        blank=True,
     )
     importe = models.DecimalField(
         max_digits=18,

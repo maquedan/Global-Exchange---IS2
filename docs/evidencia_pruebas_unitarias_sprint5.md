@@ -370,3 +370,45 @@ apps/terminal/tests/test_terminal.py .....                                      
 Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú reducido a las opciones **Panel** y **Terminal**, la visualización de las tres acciones iniciales de autoservicio, la denegación de acceso a usuarios sin dicho rol y el reinicio seguro de la terminal mediante `POST`, incluyendo la limpieza de los datos temporales de la sesión.
 
 ---
+
+## RF059 – Movimientos de Caja por Transacción en Metálico
+
+| Campo | Resultado |
+|---|---|
+| **Fecha** | viernes 30 de octubre de 2026 |
+| **Ambiente** | Docker Compose, servicio `web` con PostgreSQL |
+| **Pruebas focalizadas** | 158 passed, 1 warning |
+| **Suite completa de `apps`** | 303 passed, 1 warning |
+
+Pruebas focalizadas:
+
+```text
+$ docker compose exec -T web pytest apps/conversiones/tests/test_conversiones.py apps/cajas/tests/test_cajas.py apps/facturacion/tests/test_facturacion.py apps/usuarios/tests/test_restriccion_operaciones.py --tb=short
+158 passed, 1 warning in 23.16s
+```
+
+Suite completa:
+
+```text
+$ docker compose exec -T web pytest apps --tb=short
+303 passed, 1 warning in 43.31s
+```
+
+La cobertura comprueba que un administrador pueda anular una venta confirmada
+con motivo, que se creen los movimientos inversos asociados a los originales y
+que el detalle de caja enlace los asientos con la venta. Verifica que la
+reversión restaure inventarios del cajero sin modificar los saldos de la caja
+central, que no se permita una segunda anulación y que, si falta efectivo para
+revertir, la venta y los movimientos permanezcan sin cambios. También se
+comprueba que un usuario sin rol administrador no pueda ejecutar la anulación.
+La suite completa incluye pruebas del enlace **Ventas y anulaciones** en el
+menú, acceso a la consulta administrativa de ventas y denegación para el
+cajero.
+
+**Migraciones y chequeos.** En Docker se aplicaron
+`cajas.0008_movimientocaja_reversion_de` y
+`conversiones.0010_ventadivisa_anulado_en`. `python manage.py check` respondió
+`System check identified no issues (0 silenced)` y
+`python manage.py makemigrations --check --dry-run` respondió `No changes
+detected`. El único warning fue la deprecación futura de `EMAIL_BACKEND`
+reportada por `pytest-django`.

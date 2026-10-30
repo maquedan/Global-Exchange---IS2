@@ -15,6 +15,7 @@ from apps.cajas.models import (
     FondoCajero,
     InventarioBilleteCajero,
     MovimientoCaja,
+    SaldoCaja,
     Sucursal,
 )
 from apps.cajas.services import proponer_billetes_entrega, registrar_movimiento
@@ -26,13 +27,16 @@ from apps.tasa_cambios.models import TasaCambio
 from apps.conversiones.models import CambioEstado, CompraDivisa, VentaDivisa
 from apps.conversiones.services import (
     CompraNoConfirmable,
+    AnulacionVentaNoPermitida,
     VentaNoConfirmable,
     VentaNoDisponible,
+    anular_venta,
     cancelar_compra,
     cancelar_venta,
     calcular_comision,
     calcular_conversion,
     confirmar_pago_compra,
+    confirmar_pago_venta,
     iniciar_venta,
 )
 
@@ -213,6 +217,40 @@ def preparar_desgloses_venta(cajero, venta, importes_entregados=None):
     )
     datos[f"billete_recibido_{denominacion_recibida.pk}"] = "1"
     return datos, denominaciones_entregadas, denominacion_recibida
+
+
+def crear_venta_confirmada(
+    usuario_cliente,
+    usuario_cajero,
+    cliente,
+    monedas,
+):
+    venta = iniciar_venta(
+        usuario=usuario_cliente,
+        cliente_id=cliente.pk,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        monto_entregado=Decimal("100.00"),
+    )
+    datos, denominaciones_entregadas, denominacion_recibida = (
+        preparar_desgloses_venta(usuario_cajero, venta)
+    )
+    confirmar_pago_venta(
+        pk=venta.pk,
+        usuario=usuario_cajero,
+        billetes_recibidos={
+            int(nombre.removeprefix("billete_recibido_")): int(cantidad)
+            for nombre, cantidad in datos.items()
+            if nombre.startswith("billete_recibido_")
+        },
+        billetes_entregados={
+            int(nombre.removeprefix("billete_entregado_")): int(cantidad)
+            for nombre, cantidad in datos.items()
+            if nombre.startswith("billete_entregado_")
+        },
+    )
+    venta.refresh_from_db()
+    return venta, denominaciones_entregadas, denominacion_recibida
 
 
 @pytest.mark.django_db
@@ -621,6 +659,190 @@ def test_venta_confirma_el_pago_si_la_cotizacion_no_cambio(
     historial = client.get(reverse("cajas:historial_movimientos"))
     assert historial.status_code == 200
     assert f"Venta #{venta.pk}" in historial.content.decode()
+
+
+@pytest.mark.django_db
+def test_administrador_anula_venta_y_registra_los_movimientos_inversos(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    venta, _denominaciones_entregadas, _denominacion_recibida = (
+        crear_venta_confirmada(
+            usuario_cliente,
+            usuario_cajero,
+            cliente_asociado,
+            monedas,
+        )
+    )
+    movimiento_recibido = venta.movimiento_efectivo_recibido
+    movimiento_entregado = venta.movimiento_efectivo_entregado
+    saldos_caja_antes = dict(
+        SaldoCaja.objects.filter(caja=movimiento_recibido.caja).values_list(
+            "moneda_id", "saldo"
+        )
+    )
+    administrador = get_user_model().objects.create_user(username="admin-rf059")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.post(
+        reverse("conversiones:anular_venta", args=[venta.pk]),
+        {"motivo": "Error en la operación"},
+        follow=True,
+    )
+
+    venta.refresh_from_db()
+    movimiento_recibido.refresh_from_db()
+    movimiento_entregado.refresh_from_db()
+    reverso_recibido = movimiento_recibido.movimiento_reversion
+    reverso_entregado = movimiento_entregado.movimiento_reversion
+    assert respuesta.status_code == 200
+    assert venta.estado == VentaDivisa.Estado.ANULADA
+    assert venta.anulado_en is not None
+    assert reverso_recibido.tipo == MovimientoCaja.Tipo.RETIRO_CAJERO
+    assert reverso_recibido.reversion_de == movimiento_recibido
+    assert reverso_entregado.tipo == MovimientoCaja.Tipo.INGRESO_CAJERO
+    assert reverso_entregado.reversion_de == movimiento_entregado
+    assert reverso_recibido.importe == movimiento_recibido.importe
+    assert reverso_entregado.importe == movimiento_entregado.importe
+    assert dict(
+        SaldoCaja.objects.filter(caja=movimiento_recibido.caja).values_list(
+            "moneda_id", "saldo"
+        )
+    ) == saldos_caja_antes
+    assert FondoCajero.objects.get(
+        caja=movimiento_recibido.caja,
+        cajero=usuario_cajero,
+        moneda=monedas[0],
+    ).saldo == Decimal("0.00")
+    assert FondoCajero.objects.get(
+        caja=movimiento_entregado.caja,
+        cajero=usuario_cajero,
+        moneda=monedas[1],
+    ).saldo == movimiento_entregado.importe
+    assert "Venta anulada" in respuesta.content.decode()
+    assert f"movimiento #{reverso_recibido.pk}" in respuesta.content.decode()
+
+    historial = client.get(reverse("cajas:historial_movimientos"))
+    assert f"Venta #{venta.pk}" in historial.content.decode()
+    assert f"Reversión del movimiento #{movimiento_recibido.pk}" in (
+        historial.content.decode()
+    )
+
+    with pytest.raises(
+        AnulacionVentaNoPermitida,
+        match="Solo se pueden anular ventas que ya fueron confirmadas",
+    ):
+        anular_venta(
+            pk=venta.pk,
+            usuario=administrador,
+            motivo="Segundo intento",
+        )
+    venta.refresh_from_db()
+    assert venta.estado == VentaDivisa.Estado.ANULADA
+    assert MovimientoCaja.objects.filter(reversion_de__isnull=False).count() == 2
+
+
+@pytest.mark.django_db
+def test_anulacion_no_modifica_la_venta_si_no_hay_efectivo_para_revertir(
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    venta, _denominaciones_entregadas, denominacion_recibida = (
+        crear_venta_confirmada(
+            usuario_cliente,
+            usuario_cajero,
+            cliente_asociado,
+            monedas,
+        )
+    )
+    registrar_movimiento(
+        caja_id=venta.movimiento_efectivo_recibido.caja_id,
+        tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
+        moneda_id=monedas[0].pk,
+        cajero_id=usuario_cajero.pk,
+        realizado_por=usuario_cajero,
+        billetes={denominacion_recibida.pk: 1},
+    )
+
+    administrador = get_user_model().objects.create_user(
+        username="admin-sin-fondo-rf059"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    with pytest.raises(AnulacionVentaNoPermitida, match="saldo suficiente"):
+        anular_venta(
+            pk=venta.pk,
+            usuario=administrador,
+            motivo="Error en la operación",
+        )
+
+    venta.refresh_from_db()
+    assert venta.estado == VentaDivisa.Estado.CONFIRMADA
+    assert not MovimientoCaja.objects.filter(reversion_de__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_solo_administrador_puede_anular_una_venta(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    respuesta = client.post(
+        reverse("conversiones:anular_venta", args=[1]),
+        {"motivo": "No autorizado"},
+    )
+    assert respuesta.status_code == 403
+
+
+@pytest.mark.django_db
+def test_administrador_puede_listar_ventas_y_abrir_su_comprobante(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    venta = iniciar_venta(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        monto_entregado=Decimal("100.00"),
+    )
+    administrador = get_user_model().objects.create_user(
+        username="admin-lista-ventas"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.get(reverse("conversiones:ventas_administracion"))
+
+    assert respuesta.status_code == 200
+    assert venta in respuesta.context["ventas"]
+    assert reverse(
+        "conversiones:comprobante_venta", args=[venta.pk]
+    ) in respuesta.content.decode()
+
+
+@pytest.mark.django_db
+def test_solo_administrador_puede_consultar_lista_de_ventas(
+    client, usuario_cajero
+):
+    client.force_login(usuario_cajero)
+
+    assert (
+        client.get(reverse("conversiones:ventas_administracion")).status_code
+        == 403
+    )
 
 
 @pytest.mark.django_db
