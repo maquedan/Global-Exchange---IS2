@@ -86,10 +86,10 @@ MENU_PRINCIPAL = [
         "roles": ["cajero"],
     },
     {
-    "texto": "Historial de transacciones",
+        "texto": "Historial de transacciones",
         "necesita_cliente": True,
-    "url": "conversiones:historial",
-    "roles": ["usuario_cliente"],
+        "url": "conversiones:historial",
+        "roles": ["usuario_cliente"],
     },
     {
         "texto": "Notificaciones",
@@ -147,6 +147,13 @@ def construir_menu(usuario, cliente_activo=None):
         return []
 
     mis_roles = roles_de(usuario)
+
+    if "terminal" in mis_roles:
+        return [
+            {"texto": "Panel", "url": reverse("usuarios:panel")},
+            {"texto": "Terminal", "url": reverse("terminal:inicio")},
+        ]
+
     visibles = []
 
     for opcion in MENU_PRINCIPAL:

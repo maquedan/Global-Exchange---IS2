@@ -1,0 +1,116 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block titulo %}Terminal | Global Exchange{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+</head>
+<body class="min-h-screen bg-slate-950 text-white">
+  <main class="mx-auto flex min-h-screen max-w-5xl flex-col px-6 py-10">
+    <header class="mb-12 text-center">
+      <p class="text-sm font-bold uppercase tracking-[0.3em] text-cyan-300">
+        Global Exchange
+      </p>
+      <h1 class="mt-3 text-4xl font-black sm:text-5xl">
+        Terminal de autoservicio
+      </h1>
+    </header>
+
+    {% block contenido %}{% endblock %}
+        <form id="formulario-reinicio-terminal"
+          method="post"
+          action="{% url 'terminal:reiniciar' %}">
+      {% csrf_token %}
+    </form>
+
+    <section id="aviso-inactividad"
+             class="fixed inset-0 hidden items-center justify-center bg-slate-950/90 px-6"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="titulo-inactividad">
+      <div class="w-full max-w-xl rounded-3xl bg-white p-8 text-center text-slate-900 shadow-2xl">
+        <p class="text-sm font-bold uppercase tracking-[0.2em] text-rose-600">
+          Sesión por finalizar
+        </p>
+
+        <h2 id="titulo-inactividad" class="mt-3 text-3xl font-black">
+          ¿Seguís usando la terminal?
+        </h2>
+
+        <p class="mt-4 text-lg text-slate-600">
+          Por seguridad, volveremos al inicio en
+          <strong id="segundos-restantes">30</strong> segundos.
+        </p>
+
+        <button id="continuar-terminal"
+                type="button"
+                class="mt-7 rounded-xl bg-cyan-400 px-7 py-4 text-lg font-black text-slate-950">
+          Continuar operación
+        </button>
+      </div>
+    </section>
+  </main>
+    <script>
+    const INACTIVIDAD_MS = 300000; // 5 minutos
+    const AVISO_PREVIO_MS = 30000; // aviso 30 segundos antes
+
+    const aviso = document.getElementById("aviso-inactividad");
+    const segundosRestantes = document.getElementById("segundos-restantes");
+    const continuar = document.getElementById("continuar-terminal");
+    const formularioReinicio = document.getElementById("formulario-reinicio-terminal");
+
+    let temporizadorAviso;
+    let temporizadorFin;
+    let intervaloCuentaRegresiva;
+
+    function finalizarSesionTerminal() {
+      formularioReinicio.submit();
+    }
+
+    function mostrarAviso() {
+      aviso.classList.remove("hidden");
+      aviso.classList.add("flex");
+
+      let segundos = AVISO_PREVIO_MS / 1000;
+      segundosRestantes.textContent = segundos;
+
+      intervaloCuentaRegresiva = window.setInterval(() => {
+        segundos -= 1;
+        segundosRestantes.textContent = Math.max(segundos, 0);
+      }, 1000);
+    }
+
+    function ocultarAviso() {
+      aviso.classList.add("hidden");
+      aviso.classList.remove("flex");
+      window.clearInterval(intervaloCuentaRegresiva);
+    }
+
+    function reiniciarInactividad() {
+      window.clearTimeout(temporizadorAviso);
+      window.clearTimeout(temporizadorFin);
+      ocultarAviso();
+
+      temporizadorAviso = window.setTimeout(
+        mostrarAviso,
+        INACTIVIDAD_MS - AVISO_PREVIO_MS,
+      );
+
+      temporizadorFin = window.setTimeout(
+        finalizarSesionTerminal,
+        INACTIVIDAD_MS,
+      );
+    }
+
+    ["click", "keydown", "touchstart", "mousemove"].forEach((evento) => {
+      document.addEventListener(evento, reiniciarInactividad);
+    });
+
+    continuar.addEventListener("click", reiniciarInactividad);
+
+    reiniciarInactividad();
+  </script>
+</body>
+</html>

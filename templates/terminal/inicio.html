@@ -1,0 +1,30 @@
+{% extends "terminal/base_terminal.html" %}
+
+{% block titulo %}Inicio | Terminal Global Exchange{% endblock %}
+
+{% block contenido %}
+  <section class="mx-auto w-full max-w-3xl text-center">
+    <h2 class="text-3xl font-bold">¿Qué operación querés realizar?</h2>
+
+    <p class="mt-4 text-lg text-slate-300">
+      Elegí una opción para comenzar. La terminal te guiará paso a paso.
+    </p>
+
+    <div class="mt-12 grid gap-6 sm:grid-cols-3">
+      <button type="button"
+              class="min-h-40 rounded-2xl bg-cyan-400 px-6 py-8 text-xl font-black text-slate-950 shadow-lg transition hover:bg-cyan-300">
+        Comprar divisas
+      </button>
+
+      <button type="button"
+              class="min-h-40 rounded-2xl bg-indigo-500 px-6 py-8 text-xl font-black text-white shadow-lg transition hover:bg-indigo-400">
+        Vender divisas
+      </button>
+
+      <button type="button"
+              class="min-h-40 rounded-2xl border-2 border-slate-500 px-6 py-8 text-xl font-black text-white transition hover:border-cyan-300 hover:bg-slate-800">
+        Ver cotizaciones
+      </button>
+    </div>
+  </section>
+{% endblock %}
