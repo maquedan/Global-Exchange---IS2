@@ -220,7 +220,12 @@ def comprobante_venta(request, pk):
 
     venta = get_object_or_404(
         VentaDivisa.objects.select_related(
-            "cliente", "moneda_entregada", "moneda_acreditada", "cuenta_destino"
+            "cliente",
+            "moneda_entregada",
+            "moneda_acreditada",
+            "cuenta_destino",
+            "movimiento_efectivo_recibido__moneda",
+            "movimiento_efectivo_entregado__moneda",
         ),
         **filtros,
     )
@@ -267,6 +272,7 @@ def confirmar_venta_view(request, pk):
             caja=caja,
             moneda=venta.moneda_acreditada,
             importe=venta.monto_acreditado,
+            cajero=request.user,
         )
         if caja is not None
         else {
@@ -279,16 +285,19 @@ def confirmar_venta_view(request, pk):
     )
     formulario = EntregaEfectivoVentaForm(
         request.POST if request.method == "POST" else None,
-        moneda=venta.moneda_acreditada,
-        importe=propuesta["importe_entrega"] or venta.monto_acreditado,
-        billetes_iniciales=propuesta["billetes"],
+        moneda_recibida=venta.moneda_entregada,
+        importe_recibido=venta.monto_entregado,
+        moneda_entregada=venta.moneda_acreditada,
+        importe_entregado=propuesta["importe_entrega"] or venta.monto_acreditado,
+        billetes_entregados_iniciales=propuesta["billetes"],
     )
     if request.method == "POST" and formulario.is_valid():
         try:
             venta = confirmar_pago_venta(
                 pk=venta.pk,
                 usuario=request.user,
-                billetes=formulario.cleaned_data["billetes"],
+                billetes_recibidos=formulario.cleaned_data["billetes_recibidos"],
+                billetes_entregados=formulario.cleaned_data["billetes_entregados"],
             )
         except VentaNoConfirmable as error:
             raise PermissionDenied from error
@@ -304,8 +313,8 @@ def confirmar_venta_view(request, pk):
             else:
                 messages.success(
                     request,
-                    "La venta fue confirmada y el efectivo quedó registrado como "
-                    "retiro de caja.",
+                    "La venta fue confirmada. La divisa recibida y el efectivo "
+                    "entregado quedaron registrados en el fondo del cajero.",
                 )
             return redirect("conversiones:comprobante_venta", pk=venta.pk)
 

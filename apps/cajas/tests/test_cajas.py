@@ -100,6 +100,15 @@ class GestionCajasTests(TestCase):
         formulario = ArqueoCajaForm(cajero=self.cajero)
         self.assertNotIn("caja", formulario.fields)
 
+    def test_movimientos_de_fondo_operativo_no_se_exponen_como_movimiento_manual(self):
+        formulario = MovimientoCajaForm(caja=self.caja)
+        tipos_visibles = {
+            valor for valor, _etiqueta in formulario.fields["tipo"].choices
+        }
+
+        self.assertNotIn(MovimientoCaja.Tipo.INGRESO_CAJERO, tipos_visibles)
+        self.assertNotIn(MovimientoCaja.Tipo.RETIRO_CAJERO, tipos_visibles)
+
     def test_solo_administrador_puede_gestionar_cajas(self):
         self.client.force_login(self.analista)
 

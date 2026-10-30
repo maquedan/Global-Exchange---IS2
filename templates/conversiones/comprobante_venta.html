@@ -48,6 +48,29 @@
   {% else %}
     <p><strong>Importe neto de la venta: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
   {% endif %}
+    {% if venta.movimiento_efectivo_recibido %}
+      <h2>Movimientos del fondo del cajero</h2>
+      <p>
+        Divisa recibida:
+        movimiento #{{ venta.movimiento_efectivo_recibido_id }}
+        — {{ venta.movimiento_efectivo_recibido.importe }}
+        {{ venta.movimiento_efectivo_recibido.moneda.codigo }}
+        ({{ venta.movimiento_efectivo_recibido.creado_en|date:"d/m/Y H:i:s" }})
+        {% for detalle in venta.movimiento_efectivo_recibido.detalle_billetes.all %}
+          — {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}
+        {% endfor %}
+      </p>
+      <p>
+        Efectivo entregado:
+        movimiento #{{ venta.movimiento_efectivo_entregado_id }}
+        — {{ venta.movimiento_efectivo_entregado.importe }}
+        {{ venta.movimiento_efectivo_entregado.moneda.codigo }}
+        ({{ venta.movimiento_efectivo_entregado.creado_en|date:"d/m/Y H:i:s" }})
+        {% for detalle in venta.movimiento_efectivo_entregado.detalle_billetes.all %}
+          — {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}
+        {% endfor %}
+      </p>
+    {% endif %}
 
   {% if venta.estado == "PENDIENTE" %}
     <p id="contador-vencimiento" class="mensaje"></p>

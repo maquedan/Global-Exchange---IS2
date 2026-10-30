@@ -81,12 +81,16 @@ def _importe_inventario(queryset, moneda):
     return total
 
 
-def proponer_billetes_entrega(*, caja, moneda, importe):
-    """Propone el menor importe posible que cubra la entrega con el inventario."""
+def proponer_billetes_entrega(*, caja, moneda, importe, cajero=None):
+    """Propone el menor importe posible usando la caja o el fondo del cajero."""
+    modelo_inventario = (
+        InventarioBilleteCajero if cajero is not None else InventarioBilleteCaja
+    )
+    filtros = {"caja": caja, "denominacion__moneda": moneda}
+    if cajero is not None:
+        filtros["cajero"] = cajero
     existencias = list(
-        InventarioBilleteCaja.objects.filter(
-            caja=caja, denominacion__moneda=moneda
-        )
+        modelo_inventario.objects.filter(**filtros)
         .select_related("denominacion")
         .order_by("-denominacion__valor")
     )
@@ -252,8 +256,6 @@ def registrar_movimiento(
     ).select_for_update()
     _verificar_inventario(inventario_caja, moneda, saldo_caja.saldo)
 
-    fondo_cajero = None
-    inventario_cajero = None
     if tipo in (
         MovimientoCaja.Tipo.AJUSTE_INGRESO,
         MovimientoCaja.Tipo.AJUSTE_EGRESO,
@@ -264,15 +266,22 @@ def registrar_movimiento(
 
     fondo_cajero = None
     inventario_cajero = None
-
-    if tipo in (
+    tipos_cajero = (
         MovimientoCaja.Tipo.ASIGNACION,
         MovimientoCaja.Tipo.DEVOLUCION,
-    ):
+        MovimientoCaja.Tipo.INGRESO_CAJERO,
+        MovimientoCaja.Tipo.RETIRO_CAJERO,
+    )
+
+    if tipo in tipos_cajero:
         if cajero_id is None:
             raise ValidationError("Debe seleccionar un cajero para este movimiento.")
 
-        if tipo == MovimientoCaja.Tipo.ASIGNACION:
+        if tipo in (
+            MovimientoCaja.Tipo.ASIGNACION,
+            MovimientoCaja.Tipo.INGRESO_CAJERO,
+            MovimientoCaja.Tipo.RETIRO_CAJERO,
+        ):
             usuario_cajero = get_user_model().objects.filter(
                 pk=cajero_id,
                 is_active=True,
@@ -282,6 +291,11 @@ def registrar_movimiento(
                 raise MovimientoNoPermitido(
                     "El usuario seleccionado no es un cajero activo."
                 )
+
+        if tipo in (
+            MovimientoCaja.Tipo.ASIGNACION,
+            MovimientoCaja.Tipo.INGRESO_CAJERO,
+        ):
             fondo_cajero, _ = FondoCajero.objects.get_or_create(
                 caja=caja,
                 cajero=usuario_cajero,
@@ -321,7 +335,10 @@ def registrar_movimiento(
                 "La caja no tiene fondos suficientes para ese movimiento."
             )
         _verificar_disponibilidad(inventario_caja, cantidades, denominaciones)
-    elif tipo == MovimientoCaja.Tipo.DEVOLUCION:
+    elif tipo in (
+        MovimientoCaja.Tipo.DEVOLUCION,
+        MovimientoCaja.Tipo.RETIRO_CAJERO,
+    ):
         if fondo_cajero.saldo < importe:
             raise MovimientoNoPermitido(
                 "El cajero no tiene fondos suficientes para esa devolución."
@@ -344,6 +361,12 @@ def registrar_movimiento(
         saldo_caja.saldo += importe
         _aplicar_cantidades_cajero(caja, fondo_cajero.cajero, cantidades, sumar=False)
         _aplicar_cantidades_caja(caja, cantidades, sumar=True)
+    elif tipo == MovimientoCaja.Tipo.INGRESO_CAJERO:
+        fondo_cajero.saldo += importe
+        _aplicar_cantidades_cajero(caja, fondo_cajero.cajero, cantidades, sumar=True)
+    elif tipo == MovimientoCaja.Tipo.RETIRO_CAJERO:
+        fondo_cajero.saldo -= importe
+        _aplicar_cantidades_cajero(caja, fondo_cajero.cajero, cantidades, sumar=False)
 
     saldo_caja.save(update_fields=["saldo"])
     if fondo_cajero is not None:

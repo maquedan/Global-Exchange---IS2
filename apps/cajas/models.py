@@ -193,6 +193,8 @@ class MovimientoCaja(models.Model):
         RETIRO = "RETIRO", "Retiro de caja"
         ASIGNACION = "ASIGNACION", "Asignación a cajero"
         DEVOLUCION = "DEVOLUCION", "Devolución de cajero"
+        INGRESO_CAJERO = "INGRESO_CAJERO", "Ingreso a fondo de cajero"
+        RETIRO_CAJERO = "RETIRO_CAJERO", "Retiro de fondo de cajero"
         AJUSTE_INGRESO = "AJUSTE_INGRESO", "Ajuste de ingreso autorizado"
         AJUSTE_EGRESO = "AJUSTE_EGRESO", "Ajuste de egreso autorizado"
 

@@ -377,13 +377,16 @@ def expirar_venta_si_corresponde(venta):
 
 
 @transaction.atomic
-def confirmar_pago_venta(*, pk, usuario, billetes):
+def confirmar_pago_venta(
+    *, pk, usuario, billetes_recibidos, billetes_entregados
+):
     """Confirma una venta pendiente y entrega el neto en efectivo (RF058).
 
     Misma protección que `confirmar_pago_compra`: si la tasa activa para el
     par ya cambió respecto a la congelada al iniciar la venta, se cancela sola
     en vez de entregar un importe calculado con una tasa distinta (RF051).
-    La entrega se registra como retiro de caja en la misma transacción.
+    La divisa del cliente ingresa y el efectivo entregado sale del fondo del
+    cajero, con ambos movimientos vinculados a la venta en la misma transacción.
     """
     if not usuario or not usuario.is_authenticated or not usuario.groups.filter(
         name="cajero"
@@ -430,10 +433,6 @@ def confirmar_pago_venta(*, pk, usuario, billetes):
         )
         return venta
 
-    cantidades = billetes
-    if not isinstance(cantidades, dict) or not cantidades:
-        raise VentaNoDisponible("Ingresá el desglose de billetes para la entrega.")
-
     caja = (
         Caja.objects.select_for_update()
         .filter(sucursal__activa=True)
@@ -443,42 +442,47 @@ def confirmar_pago_venta(*, pk, usuario, billetes):
     if caja is None:
         raise VentaNoDisponible("No hay una caja activa configurada para la entrega.")
 
-    saldo_caja = SaldoCaja.objects.select_for_update().filter(
-        caja=caja, moneda=venta.moneda_acreditada
-    ).first()
-    disponible = saldo_caja.saldo if saldo_caja is not None else Decimal("0.00")
-    if disponible < venta.monto_acreditado:
-        faltante = venta.monto_acreditado - disponible
-        raise VentaNoDisponible(
-            f"Faltan {faltante:.2f} {venta.moneda_acreditada.codigo} en la caja "
-            "para cubrir la entrega."
-        )
-
     propuesta = proponer_billetes_entrega(
         caja=caja,
         moneda=venta.moneda_acreditada,
         importe=venta.monto_acreditado,
+        cajero=usuario,
     )
     importe_minimo = propuesta["importe_entrega"]
     if importe_minimo is None:
         raise VentaNoDisponible(
             f"Faltan {propuesta['faltante']:.2f} {venta.moneda_acreditada.codigo} "
-            "en billetes para cubrir la entrega."
+            "en el fondo del cajero para cubrir la entrega."
         )
 
     try:
-        movimiento = registrar_movimiento(
+        movimiento_recibido = registrar_movimiento(
             caja_id=caja.pk,
-            tipo=MovimientoCaja.Tipo.RETIRO,
+            tipo=MovimientoCaja.Tipo.INGRESO_CAJERO,
+            moneda_id=venta.moneda_entregada_id,
+            realizado_por=usuario,
+            cajero_id=usuario.pk,
+            nota=f"Divisa recibida del cliente por venta #{venta.pk}",
+            billetes=billetes_recibidos,
+        )
+        movimiento_entregado = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
             moneda_id=venta.moneda_acreditada_id,
             realizado_por=usuario,
-            nota=f"Entrega de efectivo por venta #{venta.pk}",
-            billetes=cantidades,
+            cajero_id=usuario.pk,
+            nota=f"Efectivo entregado al cliente por venta #{venta.pk}",
+            billetes=billetes_entregados,
         )
     except MovimientoNoPermitido as error:
         raise VentaNoDisponible(str(error)) from error
 
-    if movimiento.importe != importe_minimo:
+    if movimiento_recibido.importe != venta.monto_entregado:
+        raise VentaNoDisponible(
+            f"El desglose recibido debe sumar exactamente "
+            f"{venta.monto_entregado:.2f} {venta.moneda_entregada.codigo}."
+        )
+    if movimiento_entregado.importe != importe_minimo:
         raise VentaNoDisponible(
             f"El desglose debe sumar el importe mínimo posible de "
             f"{importe_minimo:.2f} {venta.moneda_acreditada.codigo}."
@@ -487,9 +491,17 @@ def confirmar_pago_venta(*, pk, usuario, billetes):
     estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CONFIRMADA
     venta.confirmado_en = timezone.now()
-    venta.monto_efectivo_entregado = movimiento.importe
+    venta.monto_efectivo_entregado = movimiento_entregado.importe
+    venta.movimiento_efectivo_recibido = movimiento_recibido
+    venta.movimiento_efectivo_entregado = movimiento_entregado
     venta.save(
-        update_fields=["estado", "confirmado_en", "monto_efectivo_entregado"]
+        update_fields=[
+            "estado",
+            "confirmado_en",
+            "monto_efectivo_entregado",
+            "movimiento_efectivo_recibido",
+            "movimiento_efectivo_entregado",
+        ]
     )
     registrar_cambio_estado(venta, estado_anterior, venta.estado, usuario=usuario)
     _facturar(venta)

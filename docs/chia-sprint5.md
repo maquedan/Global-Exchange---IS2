@@ -637,11 +637,12 @@ cancelarla mientras siga pendiente; la confirma un cajero, no el cliente.
 La acreditación bancaria deja de ser el destino de esta modalidad.
 
 **Cambios.** Se agregó la cola de ventas pendientes para cajeros y una pantalla
-de entrega con propuesta editable por denominación. Al confirmar, el servicio
-vuelve a validar cotización, saldo e inventario, registra el retiro de caja con
-su detalle de billetes y cambia la venta a confirmada en una sola transacción.
-El modelo conserva el importe efectivamente entregado, que puede diferir del
-neto de la venta si las denominaciones no permiten formar el importe exacto.
+de entrega con propuesta editable por denominación para lo que el cliente paga
+y recibe. Al confirmar, el importe recibido ingresa al fondo del cajero y el
+importe entregado se descuenta de ese mismo fondo. Ambos movimientos actualizan
+saldo e inventario por denominación, y se confirman junto con la venta en una
+sola transacción. No se descuenta efectivo de la caja central al liquidar la
+venta.
 
 **Criterio para excedentes.** A pedido del usuario, se permite exceder el neto,
 pero solo por el mínimo posible con las existencias actuales: la propuesta
@@ -650,19 +651,20 @@ cajero puede ajustar el desglose, pero no confirmar uno que entregue más que
 ese mínimo. Si el total disponible o las combinaciones de billetes no alcanzan,
 la venta permanece pendiente y se informa el faltante.
 
-**Persistencia y trazabilidad.** Las ventas en efectivo no necesitan cuenta
-destino; el campo quedó opcional para conservar las ventas históricas. Se
-registran el importe efectivo entregado y el movimiento de caja asociado.
-Migraciones: `0006_alter_ventadivisa_cuenta_destino.py` y
-`0007_ventadivisa_monto_efectivo_entregado.py`.
+**Persistencia y trazabilidad.** Cada venta conserva relaciones formales con
+los movimientos de divisa recibida y efectivo entregado. Se pueden consultar
+desde la venta y desde el historial de caja; los movimientos guardan cajero,
+moneda, sucursal, denominaciones, cantidades, importe y fecha/hora. Una
+migración vincula también retiros históricos inequívocos a su venta.
+Migraciones: `cajas/0007_alter_movimientocaja_tipo.py`,
+`conversiones/0008_ventadivisa_movimiento_efectivo_entregado_and_more.py` y
+`conversiones/0009_vincular_retiros_legacy_de_ventas.py`.
 
-**Verificaciones.** Antes del ajuste de excedente mínimo, pasaron en Docker
-109 pruebas de conversiones, facturación y permisos, y 42 pruebas de cajas;
-`manage.py check` y la comprobación de migraciones también fueron correctos.
-Para el cambio de excedente mínimo se ejecutaron también las pruebas de la
-combinación mínima, el registro del excedente y el rechazo de excedentes
-mayores. La evidencia actualizada está en
-`docs/evidencia_pruebas_unitarias_sprint5.md`: **154 pruebas pasaron** y la
-migración `0007` está aplicada en Docker.
+**Verificaciones.** En Docker pasaron **155 pruebas focalizadas** de
+conversiones, cajas, facturación y permisos, y **292 pruebas** en la suite
+completa de `apps`. `manage.py check` no reportó problemas,
+`makemigrations --check --dry-run` indicó que no hay cambios pendientes y las
+tres migraciones nuevas aparecen aplicadas. El detalle está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`.
 
 ---

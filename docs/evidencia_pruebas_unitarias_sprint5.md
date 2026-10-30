@@ -375,25 +375,40 @@ Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú re
 
 | Campo | Valor |
 |---|---|
-| **Fecha y hora** | viernes 30 de octubre de 2026, 09:54 (-03, hora de Paraguay) |
+| **Fecha y hora** | viernes 30 de octubre de 2026, 15:14 (-03, hora de Paraguay) |
 | **Ambiente** | Docker Compose, servicio `web` con Python 3.12.14, Django 6.1.2 y PostgreSQL |
-| **Artefactos probados** | `apps/conversiones/tests/test_conversiones.py`, `apps/cajas/tests/test_cajas.py`, `apps/facturacion/tests/test_facturacion.py`, `apps/usuarios/tests/test_restriccion_operaciones.py` |
-| **Resultado** | **154 passed**, 1 warning, en 22.59s |
+| **Pruebas focalizadas** | `apps/conversiones/tests/test_conversiones.py`, `apps/cajas/tests/test_cajas.py`, `apps/facturacion/tests/test_facturacion.py`, `apps/usuarios/tests/test_restriccion_operaciones.py`: **155 passed**, 1 warning, en 23.13s |
+| **Suite completa de `apps`** | **292 passed**, 1 warning, en 43.87s |
 
 ```text
 $ docker compose exec -T web pytest apps/conversiones/tests/test_conversiones.py apps/cajas/tests/test_cajas.py apps/facturacion/tests/test_facturacion.py apps/usuarios/tests/test_restriccion_operaciones.py --tb=no
 ........................................................................ [ 46%]
 ........................................................................ [ 93%]
 ..........                                                               [100%]
-154 passed, 1 warning in 22.59s
+155 passed, 1 warning in 23.13s
 ```
 
 La cobertura verifica la propuesta del menor total posible con el inventario,
 la aceptación y persistencia del excedente mínimo, el rechazo de un excedente
 mayor cuando existe una combinación mejor, la prevención de la entrega por
-saldo insuficiente, el retiro y actualización del inventario, la confirmación
-de la venta y la autorización exclusiva del cajero. También se probaron las
-regresiones de cajas, facturación y restricciones de acceso.
+saldo insuficiente en el fondo del cajero y el registro de los billetes
+recibidos del cliente. Comprueba que la entrega descuenta el fondo y el
+inventario del cajero, que ambos movimientos quedan vinculados a la venta y
+aparecen en el historial de caja, y que solo un cajero puede confirmar. También
+se probaron regresiones de asignaciones/devoluciones, facturación y permisos.
+
+Como regresión adicional por el uso de los servicios compartidos de caja, se
+ejecutó toda la suite de `apps`:
+
+```text
+$ docker compose exec -T web pytest apps --tb=short
+........................................................................ [ 24%]
+........................................................................ [ 49%]
+........................................................................ [ 73%]
+........................................................................ [ 98%]
+....                                                                     [100%]
+292 passed, 1 warning in 43.87s
+```
 
 El warning corresponde a la deprecación futura de `EMAIL_BACKEND` reportada
 por `pytest-django`; no produjo fallos.
@@ -401,8 +416,10 @@ por `pytest-django`; no produjo fallos.
 **Chequeos de Django y migración.** En Docker, `python manage.py check`
 respondió `System check identified no issues (0 silenced)` y
 `python manage.py makemigrations --check --dry-run` respondió `No changes
-detected`. Las migraciones `0006_alter_ventadivisa_cuenta_destino` y
-`0007_ventadivisa_monto_efectivo_entregado` aparecen aplicadas en la base de
-datos del entorno.
+detected`. Aparecen aplicadas las migraciones
+`cajas.0007_alter_movimientocaja_tipo`,
+`conversiones.0008_ventadivisa_movimiento_efectivo_entregado_and_more` y
+`conversiones.0009_vincular_retiros_legacy_de_ventas`, además de las migraciones
+previas de RF058.
 
 ---
