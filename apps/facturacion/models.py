@@ -80,6 +80,11 @@ class Factura(models.Model):
         # para revisión manual.
         A_VERIFICAR = "A_VERIFICAR", "A verificar manualmente"
 
+    class EstadoFiscal(models.TextChoices):
+        EMITIDA = "EMITIDA", "Emitida"
+        APROBADA = "APROBADA", "Aprobada"
+        RECHAZADA = "RECHAZADA", "Rechazada"
+
     compra = models.ForeignKey(
         CompraDivisa,
         on_delete=models.PROTECT,
@@ -120,8 +125,11 @@ class Factura(models.Model):
     estado_fiscal = models.CharField(
         max_length=50,
         blank=True,
-        help_text="Estado en el SIFEN. Lo completa RF028; esta historia lo deja vacío.",
+        choices=EstadoFiscal.choices,
+        help_text="Último estado fiscal consultado en el SIFEN.",
     )
+    motivo_rechazo = models.CharField(max_length=500, blank=True)
+    estado_fiscal_consultado_en = models.DateTimeField(null=True, blank=True)
     operation_id = models.CharField(
         max_length=100,
         blank=True,
@@ -184,3 +192,22 @@ class Factura(models.Model):
     def operacion(self):
         """La compra o la venta a la que pertenece, la que esté cargada."""
         return self.compra or self.venta
+
+
+class HistorialEstadoFiscal(models.Model):
+    """Auditoría de cada cambio de estado fiscal informado por SIFEN."""
+
+    factura = models.ForeignKey(
+        Factura, on_delete=models.CASCADE, related_name="historial_fiscal"
+    )
+    estado_anterior = models.CharField(max_length=50, blank=True)
+    estado_nuevo = models.CharField(max_length=50)
+    motivo = models.CharField(max_length=500, blank=True)
+    operation_id = models.CharField(max_length=100, blank=True)
+    respuesta = models.JSONField(default=dict, blank=True)
+    registrado_en = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-registrado_en", "-pk"]
+        verbose_name = "cambio de estado fiscal"
+        verbose_name_plural = "cambios de estado fiscal"

@@ -308,3 +308,28 @@ passed, 1 warning en 30.39s**. El warning es la deprecación futura de
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
 -->
+
+## Fabrizio Cardozo — RF028, Gestión de Estados Fiscales (GEG9-52)
+
+| Campo | Valor |
+|---|---|
+| **Fecha** | viernes 30 de octubre de 2026 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/facturacion/tests/test_estado_fiscal.py` |
+| **Comando** | `.venv/bin/python -m pytest apps/facturacion/tests/test_estado_fiscal.py apps/facturacion/tests/test_facturacion.py apps/facturacion/tests/test_visualizacion.py -q` |
+| **Resultado** | **38 passed** |
+
+```text
+$ .venv/bin/python -m pytest apps/facturacion/tests/test_estado_fiscal.py apps/facturacion/tests/test_facturacion.py apps/facturacion/tests/test_visualizacion.py -q
+......................................                                   [100%]
+38 passed
+```
+
+También se ejecutó `.venv/bin/python manage.py check`, con resultado `System
+check identified no issues (0 silenced).` La evidencia cubre consulta y
+normalización del estado fiscal, motivo de rechazo, auditoría de transiciones,
+no reenvío cuando la consulta confirma emisión/aprobación y reintento de
+rechazos después de consultar nuevamente su estado.
+
+La suite completa terminó con **2 fallos no relacionados** en
+`apps/monedas/tests/test_cargar_datos_iniciales.py`: conflicto de unicidad de
+`Sucursal.es_unica` y una sucursal residual en el perfil `minimal`.

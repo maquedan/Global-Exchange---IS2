@@ -29,12 +29,14 @@ from .clientes.facturasegura import FacturaSeguraCliente
 from .clientes.simulado import FacturaSimuladaCliente
 from .de import DatosDeFacturacionIncompletos, armar_de, monto_facturable
 from .models import Factura, SecuenciaFactura
+from .models import HistorialEstadoFiscal
 
 logger = logging.getLogger(__name__)
 
 # Estados desde los que sí se puede reintentar: el documento no llegó a
 # generarse del otro lado. `A_VERIFICAR` queda afuera a propósito.
 ESTADOS_REINTENTABLES = (Factura.Estado.PENDIENTE, Factura.Estado.ERROR)
+ESTADOS_FISCALES_FINALES = (Factura.EstadoFiscal.EMITIDA, Factura.EstadoFiscal.APROBADA)
 
 
 def _instancia_cliente(nombre):
@@ -146,6 +148,17 @@ def emitir_factura(operacion):
     if factura.estado not in ESTADOS_REINTENTABLES:
         return factura
 
+    # Una factura que ya tiene CDC pudo haber sido aceptada aunque la respuesta
+    # original se haya perdido. Consultar antes de reenviar evita duplicados.
+    if factura.cdc:
+        try:
+            consultar_estado_fiscal(factura)
+        except Exception as error:
+            return _guardar_error(factura, Factura.Estado.ERROR, f"No se pudo verificar antes de reenviar: {error}")
+        factura.refresh_from_db()
+        if factura.estado_fiscal in ESTADOS_FISCALES_FINALES:
+            return factura
+
     fuera_de_rango = _numero_fuera_de_rango(factura)
     if fuera_de_rango is not None:
         return _guardar_error(factura, Factura.Estado.ERROR, fuera_de_rango)
@@ -191,6 +204,10 @@ def emitir_factura(operacion):
     factura.operation_id = resultado["operation_id"]
     factura.respuesta = resultado["respuesta"]
     factura.estado = Factura.Estado.GENERADA
+    # Un reintento genera un documento nuevo: el rechazo consultado pertenece
+    # al CDC anterior y no debe seguir apareciendo como estado del nuevo.
+    factura.estado_fiscal = ""
+    factura.motivo_rechazo = ""
     factura.mensaje_error = ""
     factura.generada_en = timezone.now()
     factura.save(
@@ -199,6 +216,8 @@ def emitir_factura(operacion):
             "operation_id",
             "respuesta",
             "estado",
+            "estado_fiscal",
+            "motivo_rechazo",
             "mensaje_error",
             "generada_en",
             "intentos",
@@ -233,3 +252,44 @@ def programar_emision(operacion):
             )
 
     transaction.on_commit(_emitir_sin_romper_la_operacion)
+
+
+def consultar_estado_fiscal(factura):
+    """Consulta SIFEN, guarda el estado y audita solo las transiciones."""
+    if not factura.cdc:
+        raise ValueError("La factura todavía no tiene CDC para consultar.")
+    _nombre, cliente = cliente_configurado()
+    resultado = cliente.consultar_estado(factura.cdc)
+    estado = str(resultado.get("estado_fiscal", "")).upper()
+    equivalencias = {"GENERADA": "EMITIDA", "EMITIDO": "EMITIDA", "APROBADO": "APROBADA", "RECHAZADO": "RECHAZADA"}
+    estado = equivalencias.get(estado, estado)
+    if estado not in Factura.EstadoFiscal.values:
+        raise FacturaRechazada(f"Estado fiscal desconocido: {estado}", respuesta=resultado.get("respuesta"))
+
+    anterior = factura.estado_fiscal
+    motivo = (resultado.get("motivo") or "")[:500]
+    factura.estado_fiscal = estado
+    factura.motivo_rechazo = motivo if estado == Factura.EstadoFiscal.RECHAZADA else ""
+    factura.estado_fiscal_consultado_en = timezone.now()
+    factura.operation_id = resultado.get("operation_id") or factura.operation_id
+    factura.respuesta = resultado.get("respuesta") or factura.respuesta
+    factura.save(update_fields=["estado_fiscal", "motivo_rechazo", "estado_fiscal_consultado_en", "operation_id", "respuesta", "actualizada_en"])
+    if anterior != estado:
+        HistorialEstadoFiscal.objects.create(
+            factura=factura,
+            estado_anterior=anterior,
+            estado_nuevo=estado,
+            motivo=motivo,
+            operation_id=resultado.get("operation_id", ""),
+            respuesta=resultado.get("respuesta") or {},
+        )
+    return factura
+
+
+def reintentar_factura(factura):
+    """Reintenta una factura rechazada luego de consultar su estado real."""
+    if factura.estado_fiscal != Factura.EstadoFiscal.RECHAZADA:
+        raise ValueError("Solo se pueden reintentar facturas rechazadas por SIFEN.")
+    factura.estado = Factura.Estado.PENDIENTE
+    factura.save(update_fields=["estado", "actualizada_en"])
+    return emitir_factura(factura.operacion)

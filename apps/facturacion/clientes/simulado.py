@@ -34,6 +34,14 @@ class FacturaSimuladaCliente(ClienteFacturacion):
             },
         }
 
+    def consultar_estado(self, cdc):
+        return {
+            "estado_fiscal": "EMITIDA",
+            "motivo": "Documento emitido en el cliente simulado.",
+            "operation_id": str(uuid.uuid4()),
+            "respuesta": {"code": 0, "estado": "EMITIDA", "CDC": cdc, "simulado": True},
+        }
+
 
 def _cdc_simulado():
     """CDC de 44 dígitos, con el prefijo que lo delata como simulado."""

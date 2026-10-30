@@ -169,3 +169,27 @@ class FacturaSeguraCliente(ClienteFacturacion):
             )
 
         return {"cdc": cdc, "operation_id": operation_id, "respuesta": datos}
+
+    def consultar_estado(self, cdc):
+        datos = self._ejecutar("consultar_estado", {"CDC": cdc})
+        resultados = datos.get("results") or []
+        resultado = resultados[0] if resultados and isinstance(resultados[0], dict) else {}
+        estado = (
+            resultado.get("estado_fiscal")
+            or resultado.get("estado")
+            or resultado.get("status")
+            or datos.get("estado_fiscal")
+            or datos.get("estado")
+        )
+        if not estado:
+            raise FacturaRechazada(
+                "La consulta de estado no devolvió un estado fiscal.",
+                operation_id=(datos.get("operation_info") or {}).get("id", ""),
+                respuesta=datos,
+            )
+        return {
+            "estado_fiscal": str(estado).upper(),
+            "motivo": resultado.get("motivo") or resultado.get("description") or datos.get("description", ""),
+            "operation_id": (datos.get("operation_info") or {}).get("id", ""),
+            "respuesta": datos,
+        }

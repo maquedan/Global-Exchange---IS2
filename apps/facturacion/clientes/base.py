@@ -25,6 +25,10 @@ class ClienteFacturacion:
         """
         raise NotImplementedError
 
+    def consultar_estado(self, cdc):
+        """Consulta el estado fiscal de un documento ya generado."""
+        raise NotImplementedError
+
 
 class FacturacionNoConfigurada(Exception):
     """Falta configuración obligatoria para emitir (token, RUC, timbrado...)."""

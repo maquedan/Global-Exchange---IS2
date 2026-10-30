@@ -7,10 +7,12 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
 from apps.usuarios.menu import tiene_rol
 
 from .models import Factura
+from .services import consultar_estado_fiscal, reintentar_factura
 
 
 def requiere_consulta_facturas(vista):
@@ -22,6 +24,15 @@ def requiere_consulta_facturas(vista):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
+    return envoltura
+
+
+def requiere_administrador(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "administrador"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
     return envoltura
 
 
@@ -132,3 +143,29 @@ def detalle(request, pk):
             "es_administrador": tiene_rol(request.user, "administrador"),
         },
     )
+
+
+@login_required
+@requiere_administrador
+@require_POST
+def actualizar_estado(request, pk):
+    factura = get_object_or_404(Factura, pk=pk)
+    try:
+        consultar_estado_fiscal(factura)
+        messages.success(request, f"Estado fiscal actualizado para {factura.numero_completo}.")
+    except Exception as error:
+        messages.error(request, f"No se pudo consultar el estado fiscal: {error}")
+    return redirect("facturacion:detalle", pk=pk)
+
+
+@login_required
+@requiere_administrador
+@require_POST
+def reintentar(request, pk):
+    factura = get_object_or_404(Factura, pk=pk)
+    try:
+        reintentar_factura(factura)
+        messages.success(request, f"Se reintentó la factura {factura.numero_completo}.")
+    except Exception as error:
+        messages.error(request, f"No se pudo reintentar la factura: {error}")
+    return redirect("facturacion:detalle", pk=pk)
