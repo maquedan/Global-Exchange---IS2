@@ -55,6 +55,14 @@ secretos OIDC. Antes de iniciar Gunicorn y Nginx, aplica las migraciones y
 ejecuta ``collectstatic``. El archivo ``.env.prod`` está excluido de Git y debe
 mantenerse privado.
 
+El despliegue espera hasta cinco minutos a que responda el endpoint del realm
+de Keycloak. Si vence el tiempo, muestra el estado de los contenedores y el
+comando para inspeccionar sus logs:
+
+.. code-block:: bash
+
+   docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=100 keycloak keycloak-db
+
 Datos iniciales
 ---------------
 

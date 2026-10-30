@@ -127,16 +127,21 @@ else
 fi
 
 keycloak_ready=0
-for ((attempt = 1; attempt <= 60; attempt++)); do
-  if curl --silent --fail --output /dev/null \
-    http://localhost:8080/realms/global-exchange/.well-known/openid-configuration; then
+keycloak_deadline=$((SECONDS + 300))
+while (( SECONDS < keycloak_deadline )); do
+  if curl --silent --fail --connect-timeout 2 --max-time 3 --output /dev/null \
+    http://127.0.0.1:8080/realms/global-exchange/.well-known/openid-configuration; then
     keycloak_ready=1
     break
   fi
-  sleep 2
+  sleep 3
 done
 if [[ "$keycloak_ready" -ne 1 ]]; then
-  echo "El realm global-exchange de Keycloak no estuvo listo en 120 segundos." >&2
+  echo "El realm global-exchange de Keycloak no respondió en http://127.0.0.1:8080 después de 300 segundos." >&2
+  if ! "${compose[@]}" ps --all keycloak keycloak-db; then
+    echo "No pude consultar el estado de los servicios Docker." >&2
+  fi
+  echo "Revisá los logs de inicio con: ${compose[*]} logs --tail=100 keycloak keycloak-db" >&2
   exit 1
 fi
 

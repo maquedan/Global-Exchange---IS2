@@ -71,6 +71,14 @@ docker compose down
    migraciones, recoge los estáticos y carga los datos iniciales mínimos antes
    de arrancar Django con Gunicorn y Nginx.
 
+   El despliegue espera hasta cinco minutos a que responda el realm de
+   Keycloak. Si no está listo, muestra el estado de sus contenedores. Consultá
+   los detalles de inicio con:
+
+   ```bash
+   docker compose --env-file .env.prod -f docker-compose.prod.yml logs --tail=100 keycloak keycloak-db
+   ```
+
 Por defecto, Nginx publica la aplicación en el puerto 80 y Keycloak en el 8080.
 Configurá TLS en un proxy o balanceador antes de exponer el servicio a Internet.
 Para aplicar cambios de configuración, actualizá `.env.prod` y volvé a ejecutar
