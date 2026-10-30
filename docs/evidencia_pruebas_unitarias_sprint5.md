@@ -370,3 +370,49 @@ apps/terminal/tests/test_terminal.py .....                                      
 Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú reducido a las opciones **Panel** y **Terminal**, la visualización de las tres acciones iniciales de autoservicio, la denegación de acceso a usuarios sin dicho rol y el reinicio seguro de la terminal mediante `POST`, incluyendo la limpieza de los datos temporales de la sesión.
 
 ---
+
+## Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 30 de octubre de 2026, 14:44:50 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/terminal/tests/test_terminal.py` |
+| **Comando** | `docker compose exec web pytest apps/terminal/tests/test_terminal.py -v` |
+| **Resultado** | **10 passed** en 9.05s |
+
+```text
+$ date
+Fri Oct 30 14:44:50 -03 2026
+
+$ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+============================================== test session starts ==============================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 10 items
+
+apps/terminal/tests/test_terminal.py ..........                                                           [100%]
+
+=============================================== warnings summary ================================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================================= 10 passed, 1 warning in 9.05s =========================================
+
+```
+
+Las diez pruebas cubren el comportamiento previo de RF054 y el flujo guiado
+incorporado por RF055. Se verifica la identificación de un cliente activo por
+documento, la simulación con tasa y comisión vigentes, la creación de compras
+y ventas en estado PENDIENTE, el almacenamiento del identificador de la
+operación en la sesión y el rechazo de la confirmación cuando la cotización
+cambia entre la simulación y el clic de confirmación.
+También se verifica que el reinicio de la terminal elimine todo el contexto
+temporal: cliente, tipo de operación, identificadores de compra o venta,
+monedas seleccionadas, monto y tasa visualizada.
+
+---
