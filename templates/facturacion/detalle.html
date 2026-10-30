@@ -12,8 +12,8 @@
 
   {% if es_administrador %}
   <div class="mt-4 flex flex-wrap gap-3">
-    {% if factura.cdc %}<form method="post" action="{% url 'facturacion:actualizar_estado' factura.pk %}">{% csrf_token %}<button class="rounded-lg bg-sky-700 px-4 py-2 text-sm font-bold text-white" type="submit">Consultar estado en SIFEN</button></form>{% endif %}
-    {% if factura.estado_fiscal == "RECHAZADA" %}<form method="post" action="{% url 'facturacion:reintentar' factura.pk %}">{% csrf_token %}<button class="rounded-lg bg-amber-600 px-4 py-2 text-sm font-bold text-white" type="submit">Reintentar emisión</button></form>{% endif %}
+    {% if factura.cdc %}<form method="post" action="{% url 'facturacion:actualizar_estado' factura.pk %}">{% csrf_token %}<button class="boton" type="submit">Consultar estado en SIFEN</button></form>{% endif %}
+    {% if factura.estado_fiscal == "RECHAZADA" %}<form method="post" action="{% url 'facturacion:reintentar' factura.pk %}">{% csrf_token %}<button class="boton boton-secundario" type="submit">Reintentar emisión</button></form>{% endif %}
   </div>
   {% endif %}
 
