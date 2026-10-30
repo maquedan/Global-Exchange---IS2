@@ -480,7 +480,7 @@ resultado.
 ### 5.1. «¿Cómo consultar sin duplicar una factura?»
 
 Una factura puede tener CDC aunque la respuesta de la emisión se haya perdido.
-Por eso `emitir_factura()` consulta primero `consultar_estado` cuando existe
+Por eso `emitir_factura()` consulta primero `get_estado_sifen` cuando existe
 CDC y solo vuelve a generar si el resultado es `RECHAZADA`. Si la API devuelve
 `EMITIDA` o `APROBADA`, no se reenvía el documento.
 
@@ -626,7 +626,73 @@ Las pruebas cubren que el rol terminal vea solo las opciones de menú correspond
 
 ---
 
-## 9. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
+## 9. Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 9.1. «¿Qué ya existe para implementar la descarga?»
+
+**Lo que aprendimos.** La aplicación ya tenía el modelo `Factura`, el CDC
+devuelto por Factura Segura, el listado filtrable de facturas y una capa
+adaptadora para separar la API real del cliente simulado. No era necesario
+crear otra entidad para guardar descargas ni duplicar la lógica de facturación.
+
+**Decisión.** Extender la interfaz existente de `ClienteFacturacion` con una
+operación de descarga y reutilizar el modelo y los servicios actuales. El
+cliente simulado genera documentos de prueba para poder validar la funcionalidad
+sin credenciales ni llamadas de red.
+
+### 9.2. «¿Cómo se controla que un cliente no descargue una factura ajena?»
+
+**Lo que aprendimos.** Ocultar los botones de descarga no es una medida de
+seguridad: un usuario podría escribir directamente la URL de otra factura.
+
+**Decisión.** Cada vista de descarga consulta `facturas_visibles_para(request)`.
+Ese queryset limita a un cliente al cliente activo de su sesión y permite al
+administrador consultar todas las facturas. Si la factura no pertenece al
+usuario, la vista responde `404`, incluso cuando se accede manualmente por URL.
+
+### 9.3. «¿Cómo se obtienen los documentos de Factura Segura?»
+
+**Lo que aprendimos.** La API trabaja con el CDC y devuelve el contenido de
+los documentos codificado en la respuesta. La representación gráfica de la
+factura corresponde al KuDE en PDF y el documento fiscal descargable es el XML.
+
+**Decisión.** El adaptador real usa los endpoints GET `dwn_kude/{dRucEm}/{CDC}`
+y `dwn_xml/{dRucEm}/{CDC}` definidos en el manual, conserva el contenido
+binario recibido y lo devuelve a la vista. Las vistas agregan el tipo MIME y
+un nombre de archivo basado en el número de factura.
+
+### 9.4. «¿Cómo se exporta el historial respetando los filtros?»
+
+**Lo que aprendimos.** Si la exportación arma otro queryset independiente,
+puede terminar incluyendo facturas que el usuario no ve en pantalla o perder
+los filtros aplicados.
+
+**Decisión.** El PDF y el Excel-compatible se generan usando el mismo queryset
+filtrado del listado, conservando número, rango de fechas, estado fiscal y tipo
+de transacción. El Excel se entrega como `.xls` compatible con Microsoft Excel
+sin agregar una dependencia obligatoria al proyecto.
+
+### 9.5. Cambios realizados
+
+- Descarga protegida de la representación gráfica PDF y del XML por factura.
+- Exportación del historial a PDF y Excel-compatible (`.xls`).
+- Enlaces de descarga en el detalle y de exportación en el listado.
+- Métodos nuevos en los clientes real y simulado de Factura Segura.
+- Pruebas en `apps/facturacion/tests/test_visualizacion.py` y
+  `apps/facturacion/tests/test_facturacion.py`.
+
+### 9.6. Verificaciones realizadas
+
+`.venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q`
+
+Resultado: **8 passed**. También se ejecutó `.venv/bin/python manage.py check`,
+sin errores. La suite completa de facturación terminó con **40 passed**.
+
+---
+
+## 10. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
 
 **Objetivo.** Completar la venta de divisas con una entrega física en caja:
 el cajero identifica la operación pendiente, prepara los billetes y confirma
@@ -667,11 +733,14 @@ completa de `apps`. `manage.py check` no reportó problemas,
 `makemigrations --check --dry-run` indicó que no hay cambios pendientes y las
 tres migraciones nuevas aparecen aplicadas. El detalle está en
 `docs/evidencia_pruebas_unitarias_sprint5.md`.
-## 9. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
+
+---
+
+## 11. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
 
 **Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
 
-### 9.1. «¿Cómo se identifica al cliente en una terminal de autoservicio?»
+### 11.1. «¿Cómo se identifica al cliente en una terminal de autoservicio?»
 
 **Lo que aprendimos.** La terminal se autentica con un usuario técnico que
 posee el rol `terminal`; por lo tanto, ese usuario no representa al cliente
@@ -686,7 +755,7 @@ identificador coincide con más de un cliente, la operación no puede continuar
 y se muestra un mensaje claro. La identificación no crea usuarios ni
 asociaciones nuevas.
 
-### 9.2. «¿Cómo reutilizar compra y venta sin debilitar la seguridad normal?»
+### 11.2. «¿Cómo reutilizar compra y venta sin debilitar la seguridad normal?»
 
 **Lo que aprendimos.** Los servicios `iniciar_compra` e `iniciar_venta`
 validaban correctamente que un usuario normal opere solo por un cliente al que
@@ -701,7 +770,7 @@ grupo `terminal`; en cualquier otro caso se conserva la validación existente
 la excepción de terminal queda limitada al flujo guiado protegido por
 `requiere_terminal`.
 
-### 9.3. «¿Cuándo se congela la tasa y qué ocurre si cambia antes de confirmar?»
+### 11.3. «¿Cuándo se congela la tasa y qué ocurre si cambia antes de confirmar?»
 
 **Lo que aprendimos.** La simulación no debe crear una operación definitiva:
 el cliente todavía puede volver, modificar sus datos o abandonar la terminal.
@@ -719,7 +788,7 @@ Después de crearla, RF051 sigue protegiendo el momento de pago o entrega:
 si la cotización cambia mientras la operación pendiente espera al cajero, su
 confirmación posterior la cancela según la lógica existente.
 
-### 9.4. «¿La terminal debe cobrar o entregar efectivo?»
+### 11.4. «¿La terminal debe cobrar o entregar efectivo?»
 
 **Lo que aprendimos.** El flujo guiado termina cuando el cliente acepta la
 simulación y se crea la operación pendiente. Cobrar efectivo, validar
@@ -731,7 +800,7 @@ pantalla final informa el número de operación y pide acercarse al cajero para
 completar el pago o la entrega. Esto mantiene separadas la interfaz de
 autoservicio, la operación de cambio y la gestión física de efectivo.
 
-### 9.5. Cambios realizados
+### 11.5. Cambios realizados
 
 - Identificación de cliente activo por documento o RUC.
 - Selección guiada de compra o venta.
@@ -746,7 +815,7 @@ autoservicio, la operación de cambio y la gestión física de efectivo.
 No se crearon modelos ni migraciones: RF055 reutiliza `CompraDivisa`,
 `VentaDivisa`, `TasaCambio`, `ComisionCategoria` y los servicios ya existentes.
 
-### 9.6. Verificaciones realizadas
+### 11.6. Verificaciones realizadas
 
 Se ejecutó:
 
@@ -762,7 +831,7 @@ sesión. También se ejecutó python manage.py check sin errores.
 
 ---
 
-## Ryuto Maehara - RF059, Movimientos de Caja por Transacción en Metálico
+## 12. Ryuto Maehara - RF059, Movimientos de Caja por Transacción en Metálico
 
 La liquidación de una venta ya registra en el fondo del cajero el efectivo
 recibido y el entregado, con sucursal/caja, cajero, divisa, denominaciones,
@@ -795,3 +864,5 @@ Migraciones: `cajas/0008_movimientocaja_reversion_de.py` y
 pasaron **303 pruebas** de la suite completa de `apps`, incluida la navegación
 administrativa. `manage.py check` no reportó problemas. La evidencia está en
 `docs/evidencia_pruebas_unitarias_sprint5.md`.
+
+---

@@ -9,6 +9,10 @@
       <h1 class="text-2xl font-bold text-slate-900">{% if es_administrador %}Facturas electrónicas{% else %}Mis facturas electrónicas{% endif %}</h1>
       <p class="mt-1 text-sm text-slate-600">Consultá el estado fiscal y el detalle de cada documento.</p>
     </div>
+    <div class="flex flex-wrap gap-2 text-sm">
+      <a class="rounded-lg bg-slate-700 px-3 py-2 font-bold text-white hover:bg-slate-800" href="{% url 'facturacion:exportar_historial' 'pdf' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Exportar PDF</a>
+      <a class="rounded-lg bg-emerald-700 px-3 py-2 font-bold text-white hover:bg-emerald-800" href="{% url 'facturacion:exportar_historial' 'excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Exportar Excel</a>
+    </div>
   </div>
 
   <form class="mb-6 grid gap-4 rounded-xl bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-5" method="get">

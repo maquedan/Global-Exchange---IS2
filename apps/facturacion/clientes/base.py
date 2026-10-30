@@ -29,6 +29,14 @@ class ClienteFacturacion:
         """Consulta el estado fiscal de un documento ya generado."""
         raise NotImplementedError
 
+    def descargar_documento(self, cdc, formato):
+        """Devuelve el contenido binario de la representación solicitada.
+
+        ``formato`` es ``pdf`` (KuDE) o ``xml``. La implementación concreta
+        conoce los nombres de operación de Factura Segura.
+        """
+        raise NotImplementedError
+
 
 class FacturacionNoConfigurada(Exception):
     """Falta configuración obligatoria para emitir (token, RUC, timbrado...)."""

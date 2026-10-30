@@ -371,7 +371,23 @@ Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú re
 
 ---
 
-## RF059 – Movimientos de Caja por Transacción en Metálico
+## Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
+
+| Campo | Valor |
+|---|---|
+| **Fecha** | viernes 30 de octubre de 2026 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/facturacion/tests/test_visualizacion.py` |
+| **Comando** | `.venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q` |
+| **Resultado** | **8 passed** |
+
+Las pruebas cubren PDF/XML por CDC, separación de datos entre cliente y
+administrador, exportación PDF, exportación Excel-compatible y respeto de los
+filtros. El cliente de Factura Segura se reemplaza por un doble, por lo que no
+se realizan llamadas de red.
+
+---
+
+## Ryuto Maehara - RF059 – Movimientos de Caja por Transacción en Metálico
 
 | Campo | Resultado |
 |---|---|
@@ -412,3 +428,5 @@ cajero.
 `python manage.py makemigrations --check --dry-run` respondió `No changes
 detected`. El único warning fue la deprecación futura de `EMAIL_BACKEND`
 reportada por `pytest-django`.
+
+---
