@@ -15,7 +15,17 @@ from .models import (
 
 
 class MovimientoCajaForm(forms.Form):
-    tipo = forms.ChoiceField(choices=MovimientoCaja.Tipo.choices)
+    tipo = forms.ChoiceField(
+        choices=[
+            choice
+            for choice in MovimientoCaja.Tipo.choices
+            if choice[0]
+            not in (
+                MovimientoCaja.Tipo.INGRESO_CAJERO,
+                MovimientoCaja.Tipo.RETIRO_CAJERO,
+            )
+        ]
+    )
     moneda = forms.ModelChoiceField(queryset=Moneda.objects.none())
     cajero = forms.ModelChoiceField(
         queryset=get_user_model().objects.none(), required=False

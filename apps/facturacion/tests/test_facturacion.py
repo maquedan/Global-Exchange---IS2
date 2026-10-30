@@ -255,6 +255,18 @@ def test_confirmar_una_venta_genera_la_factura(
         realizado_por=cajero,
         billetes={denominacion.pk: 1},
     )
+    registrar_movimiento(
+        caja_id=caja.pk,
+        tipo=MovimientoCaja.Tipo.ASIGNACION,
+        moneda_id=venta_pendiente.moneda_acreditada_id,
+        cajero_id=cajero.pk,
+        realizado_por=cajero,
+        billetes={denominacion.pk: 1},
+    )
+    denominacion_recibida = DenominacionBillete.objects.create(
+        moneda=venta_pendiente.moneda_entregada,
+        valor=venta_pendiente.monto_entregado,
+    )
     falso = ClienteFalso()
 
     with _con_cliente_falso(falso):
@@ -262,13 +274,20 @@ def test_confirmar_una_venta_genera_la_factura(
             confirmar_pago_venta(
                 pk=venta_pendiente.pk,
                 usuario=cajero,
-                billetes={denominacion.pk: 1},
+                billetes_recibidos={denominacion_recibida.pk: 1},
+                billetes_entregados={denominacion.pk: 1},
             )
 
     venta_pendiente.refresh_from_db()
     factura = Factura.objects.get(venta=venta_pendiente)
     assert venta_pendiente.estado == VentaDivisa.Estado.CONFIRMADA
     assert factura.estado == Factura.Estado.GENERADA
+    assert venta_pendiente.movimiento_efectivo_recibido.tipo == (
+        MovimientoCaja.Tipo.INGRESO_CAJERO
+    )
+    assert venta_pendiente.movimiento_efectivo_entregado.tipo == (
+        MovimientoCaja.Tipo.RETIRO_CAJERO
+    )
 
 
 @pytest.mark.django_db(transaction=True)

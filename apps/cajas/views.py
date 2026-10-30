@@ -162,7 +162,15 @@ def historial_movimientos(request):
     caja = Caja.objects.select_related("sucursal").first()
     movimientos = (
         MovimientoCaja.objects.select_related(
-            "caja__sucursal", "moneda", "cajero", "realizado_por"
+            "caja__sucursal",
+            "moneda",
+            "cajero",
+            "realizado_por",
+            "venta_efectivo_recibido",
+            "venta_efectivo_entregado",
+            "reversion_de__venta_efectivo_recibido",
+            "reversion_de__venta_efectivo_entregado",
+            "movimiento_reversion",
         )
         .prefetch_related("detalle_billetes__denominacion")
         .filter(caja=caja)

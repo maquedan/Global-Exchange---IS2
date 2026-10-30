@@ -12,7 +12,8 @@ from apps.clientes.models import AsociacionUsuarioCliente, Cliente
 from apps.cajas.models import (
     Caja,
     DenominacionBillete,
-    InventarioBilleteCaja,
+    FondoCajero,
+    InventarioBilleteCajero,
     MovimientoCaja,
     SaldoCaja,
     Sucursal,
@@ -26,13 +27,16 @@ from apps.tasa_cambios.models import TasaCambio
 from apps.conversiones.models import CambioEstado, CompraDivisa, VentaDivisa
 from apps.conversiones.services import (
     CompraNoConfirmable,
+    AnulacionVentaNoPermitida,
     VentaNoConfirmable,
     VentaNoDisponible,
+    anular_venta,
     cancelar_compra,
     cancelar_venta,
     calcular_comision,
     calcular_conversion,
     confirmar_pago_compra,
+    confirmar_pago_venta,
     iniciar_venta,
 )
 
@@ -172,6 +176,81 @@ def cargar_billete(cajero, moneda, valor):
         billetes={denominacion.pk: 1},
     )
     return denominacion
+
+
+def preparar_desgloses_venta(cajero, venta, importes_entregados=None):
+    sucursal, _ = Sucursal.objects.get_or_create(
+        es_unica=True,
+        defaults={"nombre": "Centro", "direccion": "Centro"},
+    )
+    caja, _ = Caja.objects.get_or_create(sucursal=sucursal)
+    importes_entregados = importes_entregados or [venta.monto_acreditado]
+    datos = {}
+    denominaciones_entregadas = []
+
+    for importe in importes_entregados:
+        denominacion = DenominacionBillete.objects.create(
+            moneda=venta.moneda_acreditada,
+            valor=importe,
+        )
+        registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.INGRESO,
+            moneda_id=venta.moneda_acreditada_id,
+            realizado_por=cajero,
+            billetes={denominacion.pk: 1},
+        )
+        registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.ASIGNACION,
+            moneda_id=venta.moneda_acreditada_id,
+            cajero_id=cajero.pk,
+            realizado_por=cajero,
+            billetes={denominacion.pk: 1},
+        )
+        datos[f"billete_entregado_{denominacion.pk}"] = "1"
+        denominaciones_entregadas.append(denominacion)
+
+    denominacion_recibida = DenominacionBillete.objects.create(
+        moneda=venta.moneda_entregada,
+        valor=venta.monto_entregado,
+    )
+    datos[f"billete_recibido_{denominacion_recibida.pk}"] = "1"
+    return datos, denominaciones_entregadas, denominacion_recibida
+
+
+def crear_venta_confirmada(
+    usuario_cliente,
+    usuario_cajero,
+    cliente,
+    monedas,
+):
+    venta = iniciar_venta(
+        usuario=usuario_cliente,
+        cliente_id=cliente.pk,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        monto_entregado=Decimal("100.00"),
+    )
+    datos, denominaciones_entregadas, denominacion_recibida = (
+        preparar_desgloses_venta(usuario_cajero, venta)
+    )
+    confirmar_pago_venta(
+        pk=venta.pk,
+        usuario=usuario_cajero,
+        billetes_recibidos={
+            int(nombre.removeprefix("billete_recibido_")): int(cantidad)
+            for nombre, cantidad in datos.items()
+            if nombre.startswith("billete_recibido_")
+        },
+        billetes_entregados={
+            int(nombre.removeprefix("billete_entregado_")): int(cantidad)
+            for nombre, cantidad in datos.items()
+            if nombre.startswith("billete_entregado_")
+        },
+    )
+    venta.refresh_from_db()
+    return venta, denominaciones_entregadas, denominacion_recibida
 
 
 @pytest.mark.django_db
@@ -495,8 +574,8 @@ def test_venta_se_cancela_sola_si_la_cotizacion_cambio_antes_de_confirmar(
         "monto_entregado": "100.00",
     })
     venta = VentaDivisa.objects.get()
-    billete = cargar_billete(
-        usuario_cajero, monedas[1], venta.monto_acreditado
+    datos_billetes, _entregados, _recibido = preparar_desgloses_venta(
+        usuario_cajero, venta
     )
 
     _cambiar_cotizacion(tasa, Decimal("7.50"), Decimal("7.60"))
@@ -504,7 +583,7 @@ def test_venta_se_cancela_sola_si_la_cotizacion_cambio_antes_de_confirmar(
     client.force_login(usuario_cajero)
     client.post(
         reverse("conversiones:confirmar_venta", args=[venta.pk]),
-        {f"billete_{billete.pk}": "1"},
+        datos_billetes,
     )
 
     venta.refresh_from_db()
@@ -527,13 +606,13 @@ def test_venta_confirma_el_pago_si_la_cotizacion_no_cambio(
     })
     venta = VentaDivisa.objects.get()
 
-    billete = cargar_billete(
-        usuario_cajero, monedas[1], venta.monto_acreditado
+    datos_billetes, denominaciones_entregadas, denominacion_recibida = (
+        preparar_desgloses_venta(usuario_cajero, venta)
     )
     client.force_login(usuario_cajero)
     respuesta = client.post(
         reverse("conversiones:confirmar_venta", args=[venta.pk]),
-        {f"billete_{billete.pk}": "1"},
+        datos_billetes,
         follow=True,
     )
 
@@ -543,14 +622,227 @@ def test_venta_confirma_el_pago_si_la_cotizacion_no_cambio(
     assert venta.estado == VentaDivisa.Estado.CONFIRMADA
     assert venta.confirmado_en is not None
     assert venta.monto_efectivo_entregado == venta.monto_acreditado
-    saldo = SaldoCaja.objects.get(moneda=monedas[1])
-    assert saldo.saldo == Decimal("0.00")
-    assert not InventarioBilleteCaja.objects.filter(
-        denominacion=billete, cantidad__gt=0
+    fondo_entregado = FondoCajero.objects.get(
+        cajero=usuario_cajero, moneda=monedas[1]
+    )
+    fondo_recibido = FondoCajero.objects.get(
+        cajero=usuario_cajero, moneda=monedas[0]
+    )
+    assert fondo_entregado.saldo == Decimal("0.00")
+    assert fondo_recibido.saldo == venta.monto_entregado
+    assert not InventarioBilleteCajero.objects.filter(
+        denominacion=denominaciones_entregadas[0], cantidad__gt=0
     ).exists()
-    movimiento = MovimientoCaja.objects.get(tipo=MovimientoCaja.Tipo.RETIRO)
-    assert movimiento.importe == venta.monto_acreditado
-    assert movimiento.nota == f"Entrega de efectivo por venta #{venta.pk}"
+    assert InventarioBilleteCajero.objects.get(
+        cajero=usuario_cajero,
+        denominacion=denominacion_recibida,
+    ).cantidad == 1
+    movimiento_recibido = venta.movimiento_efectivo_recibido
+    movimiento_entregado = venta.movimiento_efectivo_entregado
+    assert movimiento_recibido.tipo == MovimientoCaja.Tipo.INGRESO_CAJERO
+    assert movimiento_recibido.importe == venta.monto_entregado
+    assert movimiento_recibido.nota == f"Divisa recibida del cliente por venta #{venta.pk}"
+    assert movimiento_entregado.tipo == MovimientoCaja.Tipo.RETIRO_CAJERO
+    assert movimiento_entregado.importe == venta.monto_acreditado
+    assert movimiento_entregado.nota == f"Efectivo entregado al cliente por venta #{venta.pk}"
+    assert movimiento_recibido.cajero == usuario_cajero
+    assert movimiento_entregado.cajero == usuario_cajero
+    comprobante = client.get(
+        reverse("conversiones:comprobante_venta", args=[venta.pk])
+    )
+    assert str(movimiento_recibido.pk) in comprobante.content.decode()
+    assert str(movimiento_entregado.pk) in comprobante.content.decode()
+
+    administrador = get_user_model().objects.create_user(username="admin-traza-rf058")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+    historial = client.get(reverse("cajas:historial_movimientos"))
+    assert historial.status_code == 200
+    assert f"Venta #{venta.pk}" in historial.content.decode()
+
+
+@pytest.mark.django_db
+def test_administrador_anula_venta_y_registra_los_movimientos_inversos(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    venta, _denominaciones_entregadas, _denominacion_recibida = (
+        crear_venta_confirmada(
+            usuario_cliente,
+            usuario_cajero,
+            cliente_asociado,
+            monedas,
+        )
+    )
+    movimiento_recibido = venta.movimiento_efectivo_recibido
+    movimiento_entregado = venta.movimiento_efectivo_entregado
+    saldos_caja_antes = dict(
+        SaldoCaja.objects.filter(caja=movimiento_recibido.caja).values_list(
+            "moneda_id", "saldo"
+        )
+    )
+    administrador = get_user_model().objects.create_user(username="admin-rf059")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.post(
+        reverse("conversiones:anular_venta", args=[venta.pk]),
+        {"motivo": "Error en la operación"},
+        follow=True,
+    )
+
+    venta.refresh_from_db()
+    movimiento_recibido.refresh_from_db()
+    movimiento_entregado.refresh_from_db()
+    reverso_recibido = movimiento_recibido.movimiento_reversion
+    reverso_entregado = movimiento_entregado.movimiento_reversion
+    assert respuesta.status_code == 200
+    assert venta.estado == VentaDivisa.Estado.ANULADA
+    assert venta.anulado_en is not None
+    assert reverso_recibido.tipo == MovimientoCaja.Tipo.RETIRO_CAJERO
+    assert reverso_recibido.reversion_de == movimiento_recibido
+    assert reverso_entregado.tipo == MovimientoCaja.Tipo.INGRESO_CAJERO
+    assert reverso_entregado.reversion_de == movimiento_entregado
+    assert reverso_recibido.importe == movimiento_recibido.importe
+    assert reverso_entregado.importe == movimiento_entregado.importe
+    assert dict(
+        SaldoCaja.objects.filter(caja=movimiento_recibido.caja).values_list(
+            "moneda_id", "saldo"
+        )
+    ) == saldos_caja_antes
+    assert FondoCajero.objects.get(
+        caja=movimiento_recibido.caja,
+        cajero=usuario_cajero,
+        moneda=monedas[0],
+    ).saldo == Decimal("0.00")
+    assert FondoCajero.objects.get(
+        caja=movimiento_entregado.caja,
+        cajero=usuario_cajero,
+        moneda=monedas[1],
+    ).saldo == movimiento_entregado.importe
+    assert "Venta anulada" in respuesta.content.decode()
+    assert f"movimiento #{reverso_recibido.pk}" in respuesta.content.decode()
+
+    historial = client.get(reverse("cajas:historial_movimientos"))
+    assert f"Venta #{venta.pk}" in historial.content.decode()
+    assert f"Reversión del movimiento #{movimiento_recibido.pk}" in (
+        historial.content.decode()
+    )
+
+    with pytest.raises(
+        AnulacionVentaNoPermitida,
+        match="Solo se pueden anular ventas que ya fueron confirmadas",
+    ):
+        anular_venta(
+            pk=venta.pk,
+            usuario=administrador,
+            motivo="Segundo intento",
+        )
+    venta.refresh_from_db()
+    assert venta.estado == VentaDivisa.Estado.ANULADA
+    assert MovimientoCaja.objects.filter(reversion_de__isnull=False).count() == 2
+
+
+@pytest.mark.django_db
+def test_anulacion_no_modifica_la_venta_si_no_hay_efectivo_para_revertir(
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    venta, _denominaciones_entregadas, denominacion_recibida = (
+        crear_venta_confirmada(
+            usuario_cliente,
+            usuario_cajero,
+            cliente_asociado,
+            monedas,
+        )
+    )
+    registrar_movimiento(
+        caja_id=venta.movimiento_efectivo_recibido.caja_id,
+        tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
+        moneda_id=monedas[0].pk,
+        cajero_id=usuario_cajero.pk,
+        realizado_por=usuario_cajero,
+        billetes={denominacion_recibida.pk: 1},
+    )
+
+    administrador = get_user_model().objects.create_user(
+        username="admin-sin-fondo-rf059"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    with pytest.raises(AnulacionVentaNoPermitida, match="saldo suficiente"):
+        anular_venta(
+            pk=venta.pk,
+            usuario=administrador,
+            motivo="Error en la operación",
+        )
+
+    venta.refresh_from_db()
+    assert venta.estado == VentaDivisa.Estado.CONFIRMADA
+    assert not MovimientoCaja.objects.filter(reversion_de__isnull=False).exists()
+
+
+@pytest.mark.django_db
+def test_solo_administrador_puede_anular_una_venta(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    client.force_login(usuario_cliente)
+    respuesta = client.post(
+        reverse("conversiones:anular_venta", args=[1]),
+        {"motivo": "No autorizado"},
+    )
+    assert respuesta.status_code == 403
+
+
+@pytest.mark.django_db
+def test_administrador_puede_listar_ventas_y_abrir_su_comprobante(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    venta = iniciar_venta(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        monto_entregado=Decimal("100.00"),
+    )
+    administrador = get_user_model().objects.create_user(
+        username="admin-lista-ventas"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.get(reverse("conversiones:ventas_administracion"))
+
+    assert respuesta.status_code == 200
+    assert venta in respuesta.context["ventas"]
+    assert reverse(
+        "conversiones:comprobante_venta", args=[venta.pk]
+    ) in respuesta.content.decode()
+
+
+@pytest.mark.django_db
+def test_solo_administrador_puede_consultar_lista_de_ventas(
+    client, usuario_cajero
+):
+    client.force_login(usuario_cajero)
+
+    assert (
+        client.get(reverse("conversiones:ventas_administracion")).status_code
+        == 403
+    )
 
 
 @pytest.mark.django_db
@@ -597,12 +889,15 @@ def test_entrega_acepta_y_guarda_el_excedente_minimo(
         "monto_entregado": "100.00",
     })
     venta = VentaDivisa.objects.get()
-    billete_minimo = cargar_billete(
-        usuario_cajero, monedas[1], venta.monto_acreditado + Decimal("0.25")
+    datos, denominaciones, _recibido = preparar_desgloses_venta(
+        usuario_cajero,
+        venta,
+        [
+            venta.monto_acreditado + Decimal("0.25"),
+            venta.monto_acreditado + Decimal("1.00"),
+        ],
     )
-    cargar_billete(
-        usuario_cajero, monedas[1], venta.monto_acreditado + Decimal("1.00")
-    )
+    datos.pop(f"billete_entregado_{denominaciones[1].pk}")
 
     client.force_login(usuario_cajero)
     formulario = client.get(
@@ -612,14 +907,14 @@ def test_entrega_acepta_y_guarda_el_excedente_minimo(
     assert formulario.context["excedente"] == Decimal("0.25")
     respuesta = client.post(
         reverse("conversiones:confirmar_venta", args=[venta.pk]),
-        {f"billete_{billete_minimo.pk}": "1"},
+        datos,
     )
 
     venta.refresh_from_db()
     assert respuesta.status_code == 302
     assert venta.estado == VentaDivisa.Estado.CONFIRMADA
     assert venta.monto_efectivo_entregado == venta.monto_acreditado + Decimal("0.25")
-    movimiento = MovimientoCaja.objects.get(tipo=MovimientoCaja.Tipo.RETIRO)
+    movimiento = venta.movimiento_efectivo_entregado
     assert movimiento.importe == venta.monto_efectivo_entregado
 
     client.force_login(usuario_cliente)
@@ -642,24 +937,29 @@ def test_no_permite_un_excedente_mayor_que_el_minimo_posible(
         "monto_entregado": "100.00",
     })
     venta = VentaDivisa.objects.get()
-    cargar_billete(
-        usuario_cajero, monedas[1], venta.monto_acreditado + Decimal("0.25")
+    datos, denominaciones, _recibido = preparar_desgloses_venta(
+        usuario_cajero,
+        venta,
+        [
+            venta.monto_acreditado + Decimal("0.25"),
+            venta.monto_acreditado + Decimal("1.00"),
+        ],
     )
-    billete_mayor = cargar_billete(
-        usuario_cajero, monedas[1], venta.monto_acreditado + Decimal("1.00")
-    )
+    datos.pop(f"billete_entregado_{denominaciones[0].pk}")
 
     client.force_login(usuario_cajero)
     respuesta = client.post(
         reverse("conversiones:confirmar_venta", args=[venta.pk]),
-        {f"billete_{billete_mayor.pk}": "1"},
+        datos,
     )
 
     venta.refresh_from_db()
     assert respuesta.status_code == 200
     assert "supera el importe mínimo posible" in respuesta.content.decode()
     assert venta.estado == VentaDivisa.Estado.PENDIENTE
-    assert MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.RETIRO).count() == 0
+    assert MovimientoCaja.objects.filter(
+        tipo=MovimientoCaja.Tipo.RETIRO_CAJERO
+    ).count() == 0
 
 
 @pytest.mark.django_db
@@ -674,22 +974,42 @@ def test_cajero_no_confirma_venta_si_falta_efectivo_en_caja(
         "monto_entregado": "100.00",
     })
     venta = VentaDivisa.objects.get()
-    cargar_billete(usuario_cajero, monedas[1], Decimal("500.00"))
+    billete_disponible = cargar_billete(
+        usuario_cajero, monedas[1], Decimal("500.00")
+    )
+    sucursal = Sucursal.objects.get(es_unica=True)
+    caja = Caja.objects.get(sucursal=sucursal)
+    registrar_movimiento(
+        caja_id=caja.pk,
+        tipo=MovimientoCaja.Tipo.ASIGNACION,
+        moneda_id=monedas[1].pk,
+        cajero_id=usuario_cajero.pk,
+        realizado_por=usuario_cajero,
+        billetes={billete_disponible.pk: 1},
+    )
     billete_solicitado = DenominacionBillete.objects.create(
         moneda=monedas[1], valor=venta.monto_acreditado
+    )
+    billete_recibido = DenominacionBillete.objects.create(
+        moneda=monedas[0], valor=venta.monto_entregado
     )
 
     client.force_login(usuario_cajero)
     respuesta = client.post(
         reverse("conversiones:confirmar_venta", args=[venta.pk]),
-        {f"billete_{billete_solicitado.pk}": "1"},
+        {
+            f"billete_entregado_{billete_solicitado.pk}": "1",
+            f"billete_recibido_{billete_recibido.pk}": "1",
+        },
     )
 
     venta.refresh_from_db()
     assert respuesta.status_code == 200
     assert f"Faltan {venta.monto_acreditado - Decimal('500.00')}" in respuesta.content.decode()
     assert venta.estado == VentaDivisa.Estado.PENDIENTE
-    assert MovimientoCaja.objects.filter(tipo=MovimientoCaja.Tipo.RETIRO).count() == 0
+    assert MovimientoCaja.objects.filter(
+        tipo=MovimientoCaja.Tipo.RETIRO_CAJERO
+    ).count() == 0
 
 
 @pytest.mark.django_db
@@ -833,13 +1153,10 @@ def test_venta_se_cancela_sola_si_se_vencio_el_plazo_para_confirmar(
     venta.creado_en = timezone.now() - timedelta(minutes=16)
     venta.save(update_fields=["creado_en"])
 
-    billete = DenominacionBillete.objects.create(
-        moneda=monedas[1], valor=venta.monto_acreditado
-    )
     client.force_login(usuario_cajero)
     client.post(
         reverse("conversiones:confirmar_venta", args=[venta.pk]),
-        {f"billete_{billete.pk}": "1"},
+        {},
     )
 
     venta.refresh_from_db()
@@ -947,13 +1264,13 @@ def test_historial_muestra_solo_transacciones_confirmadas(
     venta_confirmada = VentaDivisa.objects.get(
         estado=VentaDivisa.Estado.PENDIENTE
     )
-    billete = cargar_billete(
-        usuario_cajero, monedas[1], venta_confirmada.monto_acreditado
+    datos_billetes, _denominaciones_entregadas, _recibida = (
+        preparar_desgloses_venta(usuario_cajero, venta_confirmada)
     )
     client.force_login(usuario_cajero)
     client.post(
         reverse("conversiones:confirmar_venta", args=[venta_confirmada.pk]),
-        {f"billete_{billete.pk}": "1"},
+        datos_billetes,
     )
     client.force_login(usuario_cliente)
 

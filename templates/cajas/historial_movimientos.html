@@ -21,7 +21,7 @@
             <tr>
               <th>Fecha y hora</th><th>Operación</th><th>Moneda</th><th>Importe</th>
               <th>Billetes y monedas</th><th>Cajero</th><th>Saldo de caja</th>
-              <th>Saldo del cajero</th><th>Registrado por</th><th>Nota</th>
+              <th>Saldo del cajero</th><th>Registrado por</th><th>Transacción</th><th>Nota</th>
             </tr>
           </thead>
           <tbody>
@@ -42,6 +42,24 @@
                 <td>{{ movimiento.saldo_caja_resultante }}</td>
                 <td>{{ movimiento.saldo_cajero_resultante|default:"—" }}</td>
                 <td>{{ movimiento.realizado_por.get_full_name|default:movimiento.realizado_por.username }}</td>
+                <td>
+                  {% if movimiento.reversion_de.venta_efectivo_recibido %}
+                    <a href="{% url 'conversiones:comprobante_venta' movimiento.reversion_de.venta_efectivo_recibido.pk %}">Venta #{{ movimiento.reversion_de.venta_efectivo_recibido.pk }}</a>
+                    <br><small>Reversión del movimiento #{{ movimiento.reversion_de_id }}</small>
+                  {% elif movimiento.reversion_de.venta_efectivo_entregado %}
+                    <a href="{% url 'conversiones:comprobante_venta' movimiento.reversion_de.venta_efectivo_entregado.pk %}">Venta #{{ movimiento.reversion_de.venta_efectivo_entregado.pk }}</a>
+                    <br><small>Reversión del movimiento #{{ movimiento.reversion_de_id }}</small>
+                  {% elif movimiento.venta_efectivo_recibido %}
+                    <a href="{% url 'conversiones:comprobante_venta' movimiento.venta_efectivo_recibido.pk %}">Venta #{{ movimiento.venta_efectivo_recibido.pk }}</a>
+                  {% elif movimiento.venta_efectivo_entregado %}
+                    <a href="{% url 'conversiones:comprobante_venta' movimiento.venta_efectivo_entregado.pk %}">Venta #{{ movimiento.venta_efectivo_entregado.pk }}</a>
+                  {% else %}
+                    —
+                  {% endif %}
+                  {% if movimiento.movimiento_reversion %}
+                    <br><small>Revertido por movimiento #{{ movimiento.movimiento_reversion_id }}</small>
+                  {% endif %}
+                </td>
                 <td>{{ movimiento.nota|default:"—" }}</td>
               </tr>
             {% endfor %}

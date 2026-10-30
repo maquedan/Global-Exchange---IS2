@@ -161,6 +161,20 @@ class VentaDivisa(models.Model):
     monto_efectivo_entregado = models.DecimalField(
         max_digits=18, decimal_places=2, null=True, blank=True
     )
+    movimiento_efectivo_recibido = models.OneToOneField(
+        "cajas.MovimientoCaja",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="venta_efectivo_recibido",
+    )
+    movimiento_efectivo_entregado = models.OneToOneField(
+        "cajas.MovimientoCaja",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="venta_efectivo_entregado",
+    )
     tasa_aplicada = models.DecimalField(max_digits=12, decimal_places=2)
     estado = models.CharField(
         max_length=12, choices=Estado.choices, default=Estado.PENDIENTE
@@ -171,6 +185,7 @@ class VentaDivisa(models.Model):
     creado_en = models.DateTimeField(auto_now_add=True)
     confirmado_en = models.DateTimeField(null=True, blank=True)
     cancelado_en = models.DateTimeField(null=True, blank=True)
+    anulado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-creado_en"]

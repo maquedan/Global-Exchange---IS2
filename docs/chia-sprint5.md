@@ -624,11 +624,13 @@ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
 
 Las pruebas cubren que el rol terminal vea solo las opciones de menú correspondientes, que acceda a la pantalla inicial, que otros roles reciban 403, que la ruta de reinicio rechace solicitudes GET y que una solicitud POST elimine correctamente los datos temporales de la sesión antes de redirigir al inicio.
 
+---
+
 ## 10. Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
 
 **Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
 
-### 10.1. «¿Qué ya existe para implementar la descarga?»
+### 9.1. «¿Qué ya existe para implementar la descarga?»
 
 **Lo que aprendimos.** La aplicación ya tenía el modelo `Factura`, el CDC
 devuelto por Factura Segura, el listado filtrable de facturas y una capa
@@ -640,7 +642,7 @@ operación de descarga y reutilizar el modelo y los servicios actuales. El
 cliente simulado genera documentos de prueba para poder validar la funcionalidad
 sin credenciales ni llamadas de red.
 
-### 10.2. «¿Cómo se controla que un cliente no descargue una factura ajena?»
+### 9.2. «¿Cómo se controla que un cliente no descargue una factura ajena?»
 
 **Lo que aprendimos.** Ocultar los botones de descarga no es una medida de
 seguridad: un usuario podría escribir directamente la URL de otra factura.
@@ -650,7 +652,7 @@ Ese queryset limita a un cliente al cliente activo de su sesión y permite al
 administrador consultar todas las facturas. Si la factura no pertenece al
 usuario, la vista responde `404`, incluso cuando se accede manualmente por URL.
 
-### 10.3. «¿Cómo se obtienen los documentos de Factura Segura?»
+### 9.3. «¿Cómo se obtienen los documentos de Factura Segura?»
 
 **Lo que aprendimos.** La API trabaja con el CDC y devuelve el contenido de
 los documentos codificado en la respuesta. La representación gráfica de la
@@ -661,7 +663,7 @@ y `dwn_xml/{dRucEm}/{CDC}` definidos en el manual, conserva el contenido
 binario recibido y lo devuelve a la vista. Las vistas agregan el tipo MIME y
 un nombre de archivo basado en el número de factura.
 
-### 10.4. «¿Cómo se exporta el historial respetando los filtros?»
+### 9.4. «¿Cómo se exporta el historial respetando los filtros?»
 
 **Lo que aprendimos.** Si la exportación arma otro queryset independiente,
 puede terminar incluyendo facturas que el usuario no ve en pantalla o perder
@@ -672,7 +674,7 @@ filtrado del listado, conservando número, rango de fechas, estado fiscal y tipo
 de transacción. El Excel se entrega como `.xls` compatible con Microsoft Excel
 sin agregar una dependencia obligatoria al proyecto.
 
-### 10.5. Cambios realizados
+### 9.5. Cambios realizados
 
 - Descarga protegida de la representación gráfica PDF y del XML por factura.
 - Exportación del historial a PDF y Excel-compatible (`.xls`).
@@ -681,11 +683,186 @@ sin agregar una dependencia obligatoria al proyecto.
 - Pruebas en `apps/facturacion/tests/test_visualizacion.py` y
   `apps/facturacion/tests/test_facturacion.py`.
 
-### 10.6. Verificaciones realizadas
+### 9.6. Verificaciones realizadas
 
 `.venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q`
 
 Resultado: **8 passed**. También se ejecutó `.venv/bin/python manage.py check`,
 sin errores. La suite completa de facturación terminó con **40 passed**.
+
+---
+
+## 11. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
+
+**Objetivo.** Completar la venta de divisas con una entrega física en caja:
+el cajero identifica la operación pendiente, prepara los billetes y confirma
+la salida del efectivo.
+
+**Decisión de flujo.** La venta conserva los estados y el vencimiento de RF051
+y el historial de transiciones de RF023. El cliente inicia la venta y puede
+cancelarla mientras siga pendiente; la confirma un cajero, no el cliente.
+La acreditación bancaria deja de ser el destino de esta modalidad.
+
+**Cambios.** Se agregó la cola de ventas pendientes para cajeros y una pantalla
+de entrega con propuesta editable por denominación para lo que el cliente paga
+y recibe. Al confirmar, el importe recibido ingresa al fondo del cajero y el
+importe entregado se descuenta de ese mismo fondo. Ambos movimientos actualizan
+saldo e inventario por denominación, y se confirman junto con la venta en una
+sola transacción. No se descuenta efectivo de la caja central al liquidar la
+venta.
+
+**Criterio para excedentes.** A pedido del usuario, se permite exceder el neto,
+pero solo por el mínimo posible con las existencias actuales: la propuesta
+busca una combinación disponible que cubra el monto con el menor total. El
+cajero puede ajustar el desglose, pero no confirmar uno que entregue más que
+ese mínimo. Si el total disponible o las combinaciones de billetes no alcanzan,
+la venta permanece pendiente y se informa el faltante.
+
+**Persistencia y trazabilidad.** Cada venta conserva relaciones formales con
+los movimientos de divisa recibida y efectivo entregado. Se pueden consultar
+desde la venta y desde el historial de caja; los movimientos guardan cajero,
+moneda, sucursal, denominaciones, cantidades, importe y fecha/hora. Una
+migración vincula también retiros históricos inequívocos a su venta.
+Migraciones: `cajas/0007_alter_movimientocaja_tipo.py`,
+`conversiones/0008_ventadivisa_movimiento_efectivo_entregado_and_more.py` y
+`conversiones/0009_vincular_retiros_legacy_de_ventas.py`.
+
+**Verificaciones.** En Docker pasaron **155 pruebas focalizadas** de
+conversiones, cajas, facturación y permisos, y **292 pruebas** en la suite
+completa de `apps`. `manage.py check` no reportó problemas,
+`makemigrations --check --dry-run` indicó que no hay cambios pendientes y las
+tres migraciones nuevas aparecen aplicadas. El detalle está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`.
+
+---
+
+## 9. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 11.1. «¿Cómo se identifica al cliente en una terminal de autoservicio?»
+
+**Lo que aprendimos.** La terminal se autentica con un usuario técnico que
+posee el rol `terminal`; por lo tanto, ese usuario no representa al cliente
+que realiza la operación. Usar directamente el mecanismo normal de cliente
+activo no era adecuado, porque dicho mecanismo exige que el usuario
+autenticado esté asociado al cliente.
+
+**Decisión.** La terminal solicita documento o RUC, busca exclusivamente
+clientes activos y guarda temporalmente el identificador encontrado en la
+sesión bajo `terminal_cliente_id`. Si no existe una coincidencia, o si el
+identificador coincide con más de un cliente, la operación no puede continuar
+y se muestra un mensaje claro. La identificación no crea usuarios ni
+asociaciones nuevas.
+
+### 11.2. «¿Cómo reutilizar compra y venta sin debilitar la seguridad normal?»
+
+**Lo que aprendimos.** Los servicios `iniciar_compra` e `iniciar_venta`
+validaban correctamente que un usuario normal opere solo por un cliente al que
+está asociado. Sin embargo, la terminal necesita iniciar operaciones para el
+cliente identificado en pantalla, mientras el usuario autenticado sigue siendo
+el usuario técnico de terminal.
+
+**Decisión.** Se incorporó el parámetro explícito `desde_terminal` a ambos
+servicios. Solo puede utilizarse cuando el usuario autenticado pertenece al
+grupo `terminal`; en cualquier otro caso se conserva la validación existente
+`cliente_habilitado_para`. Así, las vistas normales no pierden su protección y
+la excepción de terminal queda limitada al flujo guiado protegido por
+`requiere_terminal`.
+
+### 11.3. «¿Cuándo se congela la tasa y qué ocurre si cambia antes de confirmar?»
+
+**Lo que aprendimos.** La simulación no debe crear una operación definitiva:
+el cliente todavía puede volver, modificar sus datos o abandonar la terminal.
+Pero tampoco puede confirmarse con una tasa diferente de la que vio en el
+resumen.
+
+**Decisión.** Al mostrar la simulación se guarda en sesión el identificador de
+la tasa visualizada. Al confirmar, la aplicación consulta nuevamente la tasa
+vigente para el mismo par de monedas y compara ambos identificadores. Si ya no
+coinciden, no se crea ninguna compra ni venta y se informa que la cotización
+cambió. Si coincide, el servicio de conversiones crea la operación en estado
+`PENDIENTE`, guardando la tasa y comisión como fotografía histórica.
+
+Después de crearla, RF051 sigue protegiendo el momento de pago o entrega:
+si la cotización cambia mientras la operación pendiente espera al cajero, su
+confirmación posterior la cancela según la lógica existente.
+
+### 11.4. «¿La terminal debe cobrar o entregar efectivo?»
+
+**Lo que aprendimos.** El flujo guiado termina cuando el cliente acepta la
+simulación y se crea la operación pendiente. Cobrar efectivo, validar
+denominaciones, modificar existencias o entregar billetes pertenece a RF057 y
+RF058, respectivamente.
+
+**Decisión.** RF055 no registra movimientos de caja ni confirma pagos. La
+pantalla final informa el número de operación y pide acercarse al cajero para
+completar el pago o la entrega. Esto mantiene separadas la interfaz de
+autoservicio, la operación de cambio y la gestión física de efectivo.
+
+### 11.5. Cambios realizados
+
+- Identificación de cliente activo por documento o RUC.
+- Selección guiada de compra o venta.
+- Formulario de monedas y monto, con validación de monedas diferentes.
+- Simulación de tasa, comisión, importe total y resultado esperado.
+- Creación de compra o venta pendiente desde una terminal autorizada.
+- Verificación de cambio de cotización antes de crear la operación.
+- Pantalla de cierre con número de operación y derivación al cajero.
+- Limpieza completa de sesión al reiniciar o finalizar.
+- Diez pruebas unitarias del módulo terminal.
+
+No se crearon modelos ni migraciones: RF055 reutiliza `CompraDivisa`,
+`VentaDivisa`, `TasaCambio`, `ComisionCategoria` y los servicios ya existentes.
+
+### 11.6. Verificaciones realizadas
+
+Se ejecutó:
+
+```text
+docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+```
+
+**Resultado:** 10 pruebas aprobadas. Se cubrieron el acceso exclusivo del rol
+terminal, la identificación del cliente, la simulación, la creación de compra
+pendiente, la creación de venta pendiente, la tasa y comisión aplicadas, el
+rechazo por cambio de cotización y la limpieza de los datos temporales de la
+sesión. También se ejecutó python manage.py check sin errores.
+
+---
+
+## 12. Ryuto Maehara - RF059, Movimientos de Caja por Transacción en Metálico
+
+La liquidación de una venta ya registra en el fondo del cajero el efectivo
+recibido y el entregado, con sucursal/caja, cajero, divisa, denominaciones,
+cantidades, importe y fecha/hora. El historial de caja enlaza cada movimiento
+con la venta; el comprobante permite consultar ambos movimientos.
+
+La anulación posterior a la confirmación queda disponible solo para
+administradores y exige un motivo. En una transacción atómica se registran
+movimientos inversos por cada movimiento original, conservando el desglose de
+billetes y una relación directa con el movimiento revertido. La venta queda en
+estado `ANULADA` y la línea de tiempo conserva administrador, fecha y motivo.
+Las existencias del fondo del cajero se actualizan con esos asientos; no se
+modifica el saldo de la caja central.
+
+Para que el administrador encuentre la operación, el menú incluye
+**Ventas y anulaciones**, una consulta paginada de ventas con acceso directo a
+cada comprobante. Desde el comprobante de una venta confirmada se inicia la
+anulación. Se verificaron los permisos de la lista, el enlace del menú y la
+consulta desde la sesión administrativa.
+
+Si el fondo ya no tiene billetes suficientes para devolver el efectivo recibido
+en la venta, la anulación se rechaza sin cambiar el estado ni dejar movimientos
+parciales. Las cancelaciones anteriores a la liquidación no requieren asiento
+inverso porque aún no existe movimiento de efectivo. Las compras pagadas por
+pasarela no son transacciones metálicas y quedan fuera de este flujo.
+
+Migraciones: `cajas/0008_movimientocaja_reversion_de.py` y
+`conversiones/0010_ventadivisa_anulado_en.py`. Se aplicaron en Docker y
+`makemigrations --check --dry-run` no detectó cambios pendientes. En Docker
+pasaron **303 pruebas** de la suite completa de `apps`, incluida la navegación
+administrativa. `manage.py check` no reportó problemas. La evidencia está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`.
 
 ---

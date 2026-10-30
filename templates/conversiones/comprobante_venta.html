@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block titulo %}
-  {% if venta.estado == "PENDIENTE" %}Venta pendiente{% elif venta.estado == "CONFIRMADA" %}Venta confirmada{% else %}Venta cancelada{% endif %} | Global Exchange
+  {% if venta.estado == "PENDIENTE" %}Venta pendiente{% elif venta.estado == "CONFIRMADA" %}Venta confirmada{% elif venta.estado == "ANULADA" %}Venta anulada{% else %}Venta cancelada{% endif %} | Global Exchange
 {% endblock %}
 
 {% block contenido %}
@@ -14,7 +14,7 @@
   {% elif venta.estado == "CONFIRMADA" %}
     <h1>Venta confirmada</h1>
     <p>Operación #{{ venta.pk }} confirmada el {{ venta.confirmado_en|date:"d/m/Y H:i" }}.</p>
-  {% else %}
+  {% elif venta.estado == "CANCELADA" %}
     <h1>Venta cancelada</h1>
     {% if venta.motivo_cancelacion == "CAMBIO_COTIZACION" %}
       <p>La cotización cambió antes de la entrega, así que la operación
@@ -26,6 +26,10 @@
     {% else %}
       <p>Cancelaste la operación #{{ venta.pk }}. No se te entregó efectivo.</p>
     {% endif %}
+  {% else %}
+    <h1>Venta anulada</h1>
+    <p>Operación #{{ venta.pk }} anulada el {{ venta.anulado_en|date:"d/m/Y H:i" }}.
+      Los movimientos inversos están registrados en el historial de caja.</p>
   {% endif %}
 
   <h2>Detalle de la operación</h2>
@@ -47,6 +51,59 @@
     <p><strong>Importe neto a entregar: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
   {% else %}
     <p><strong>Importe neto de la venta: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+  {% endif %}
+    {% if venta.movimiento_efectivo_recibido %}
+      <h2>Movimientos del fondo del cajero</h2>
+      <p>
+        Divisa recibida:
+        movimiento #{{ venta.movimiento_efectivo_recibido_id }}
+        — {{ venta.movimiento_efectivo_recibido.importe }}
+        {{ venta.movimiento_efectivo_recibido.moneda.codigo }}
+        ({{ venta.movimiento_efectivo_recibido.creado_en|date:"d/m/Y H:i:s" }})
+        {% for detalle in venta.movimiento_efectivo_recibido.detalle_billetes.all %}
+          — {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}
+        {% endfor %}
+      </p>
+      {% if venta.movimiento_efectivo_recibido.movimiento_reversion %}
+        <p>
+          Reversión del ingreso:
+          movimiento #{{ venta.movimiento_efectivo_recibido.movimiento_reversion.pk }}
+          — {{ venta.movimiento_efectivo_recibido.movimiento_reversion.importe }}
+          {{ venta.movimiento_efectivo_recibido.movimiento_reversion.moneda.codigo }}
+          ({{ venta.movimiento_efectivo_recibido.movimiento_reversion.creado_en|date:"d/m/Y H:i:s" }})
+        </p>
+      {% endif %}
+      <p>
+        Efectivo entregado:
+        movimiento #{{ venta.movimiento_efectivo_entregado_id }}
+        — {{ venta.movimiento_efectivo_entregado.importe }}
+        {{ venta.movimiento_efectivo_entregado.moneda.codigo }}
+        ({{ venta.movimiento_efectivo_entregado.creado_en|date:"d/m/Y H:i:s" }})
+        {% for detalle in venta.movimiento_efectivo_entregado.detalle_billetes.all %}
+          — {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}
+        {% endfor %}
+      </p>
+      {% if venta.movimiento_efectivo_entregado.movimiento_reversion %}
+        <p>
+          Reversión de la entrega:
+          movimiento #{{ venta.movimiento_efectivo_entregado.movimiento_reversion.pk }}
+          — {{ venta.movimiento_efectivo_entregado.movimiento_reversion.importe }}
+          {{ venta.movimiento_efectivo_entregado.movimiento_reversion.moneda.codigo }}
+          ({{ venta.movimiento_efectivo_entregado.movimiento_reversion.creado_en|date:"d/m/Y H:i:s" }})
+        </p>
+      {% endif %}
+    {% endif %}
+
+  {% if venta.estado == "CONFIRMADA" and es_administrador %}
+    <h2>Anular venta</h2>
+    <p>La anulación intenta revertir ambos movimientos. Debe haber suficiente
+      efectivo en el fondo del cajero para devolver la divisa recibida.</p>
+    <form method="post" action="{% url 'conversiones:anular_venta' venta.pk %}">
+      {% csrf_token %}
+      <label for="motivo-anulacion">Motivo de anulación</label>
+      <textarea id="motivo-anulacion" name="motivo" rows="3" maxlength="255" required></textarea>
+      <button class="boton boton-secundario" type="submit">Anular venta</button>
+    </form>
   {% endif %}
 
   {% if venta.estado == "PENDIENTE" %}

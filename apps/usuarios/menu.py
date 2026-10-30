@@ -71,6 +71,11 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        "texto": "Ventas y anulaciones",
+        "url": "conversiones:ventas_administracion",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Arqueo de caja",
         "url": "cajas:arqueo",
         "roles": ["cajero"],
