@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block titulo %}Ventas y anulaciones | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Ventas y anulaciones</h1>
+  <p>Consultá las ventas y abrí el comprobante para revisar su trazabilidad.
+    Las ventas confirmadas pueden anularse desde su comprobante.</p>
+
+  {% if ventas %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Venta</th>
+            <th>Cliente</th>
+            <th>Recibido</th>
+            <th>Entregado</th>
+            <th>Estado</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for venta in ventas %}
+            <tr>
+              <td>{{ venta.creado_en|date:"d/m/Y H:i" }}</td>
+              <td>#{{ venta.pk }}</td>
+              <td>{{ venta.cliente }}</td>
+              <td>{{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }}</td>
+              <td>
+                {% if venta.monto_efectivo_entregado %}
+                  {{ venta.monto_efectivo_entregado }}
+                {% else %}
+                  {{ venta.monto_acreditado }}
+                {% endif %}
+                {{ venta.moneda_acreditada.codigo }}
+              </td>
+              <td>{{ venta.get_estado_display }}</td>
+              <td>
+                <a href="{% url 'conversiones:comprobante_venta' venta.pk %}">
+                  Ver comprobante{% if venta.estado == "CONFIRMADA" %} / anular{% endif %}
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay ventas registradas.</p>
+  {% endif %}
+
+  {% if ventas_page_obj.paginator.num_pages > 1 %}
+    <nav class="mt-4 flex items-center gap-4" aria-label="Páginas de ventas">
+      {% if ventas_page_obj.has_previous %}
+        <a href="?page={{ ventas_page_obj.previous_page_number }}">Anterior</a>
+      {% endif %}
+      <span>Página {{ ventas_page_obj.number }} de {{ ventas_page_obj.paginator.num_pages }}</span>
+      {% if ventas_page_obj.has_next %}
+        <a href="?page={{ ventas_page_obj.next_page_number }}">Siguiente</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+</div>
+{% endblock %}

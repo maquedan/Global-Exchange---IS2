@@ -193,6 +193,8 @@ class MovimientoCaja(models.Model):
         RETIRO = "RETIRO", "Retiro de caja"
         ASIGNACION = "ASIGNACION", "Asignación a cajero"
         DEVOLUCION = "DEVOLUCION", "Devolución de cajero"
+        INGRESO_CAJERO = "INGRESO_CAJERO", "Ingreso a fondo de cajero"
+        RETIRO_CAJERO = "RETIRO_CAJERO", "Retiro de fondo de cajero"
         AJUSTE_INGRESO = "AJUSTE_INGRESO", "Ajuste de ingreso autorizado"
         AJUSTE_EGRESO = "AJUSTE_EGRESO", "Ajuste de egreso autorizado"
 
@@ -209,11 +211,18 @@ class MovimientoCaja(models.Model):
         blank=True,
     )
     diferencia = models.OneToOneField(
-    "DiferenciaCaja",
-    on_delete=models.PROTECT,
-    related_name="movimiento_ajuste",
-    null=True,
-    blank=True,
+        "DiferenciaCaja",
+        on_delete=models.PROTECT,
+        related_name="movimiento_ajuste",
+        null=True,
+        blank=True,
+    )
+    reversion_de = models.OneToOneField(
+        "self",
+        on_delete=models.PROTECT,
+        related_name="movimiento_reversion",
+        null=True,
+        blank=True,
     )
     importe = models.DecimalField(
         max_digits=18,

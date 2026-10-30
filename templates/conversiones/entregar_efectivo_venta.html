@@ -10,15 +10,15 @@
   <p>Divisa recibida: {{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }}</p>
   <p>Importe neto a entregar: <strong>{{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
   <p>Tasa aceptada: {{ venta.tasa_aplicada }} · Comisión: {{ venta.monto_comision }} {{ venta.moneda_acreditada.codigo }}</p>
-  <p>La cotización debe seguir vigente al confirmar. La caja descuenta los billetes y registra el retiro junto con el cambio de estado de la venta.</p>
+  <p>La cotización debe seguir vigente al confirmar. La divisa que recibís se suma a tu fondo y los billetes que entregás se descuentan de él.</p>
 
   {% if caja %}
-    <p>Disponible en caja: {{ disponible }} {{ venta.moneda_acreditada.codigo }}</p>
+    <p>Disponible en tu fondo: {{ disponible }} {{ venta.moneda_acreditada.codigo }}</p>
   {% else %}
     <p class="mensaje error">No hay una caja activa configurada.</p>
   {% endif %}
   {% if faltante > 0 %}
-    <p class="mensaje error">Faltan {{ faltante }} {{ venta.moneda_acreditada.codigo }} para cubrir el importe.</p>
+    <p class="mensaje error">Faltan {{ faltante }} {{ venta.moneda_acreditada.codigo }} en tu fondo para cubrir el importe.</p>
   {% elif excedente > 0 %}
     <p class="mensaje">El menor excedente posible es {{ excedente }} {{ venta.moneda_acreditada.codigo }}. El desglose debe mantener ese total.</p>
   {% endif %}
@@ -29,8 +29,20 @@
       <p class="mensaje error">{{ error }}</p>
     {% endfor %}
     <fieldset>
-      <legend>Billetes a entregar (podés ajustar la propuesta)</legend>
-      {% for item in formulario.campos_billetes %}
+      <legend>Billetes recibidos del cliente — {{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }}</legend>
+      {% for item in formulario.campos_billetes_recibidos %}
+        <p>
+          <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
+          {{ item.campo }}
+          {% for error in item.campo.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+        </p>
+      {% empty %}
+        <p>No hay denominaciones configuradas para la moneda recibida.</p>
+      {% endfor %}
+    </fieldset>
+    <fieldset>
+      <legend>Billetes a entregar — {{ importe_entrega|default:venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</legend>
+      {% for item in formulario.campos_billetes_entregados %}
         <p>
           <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
           {{ item.campo }}
@@ -40,7 +52,7 @@
         <p>No hay denominaciones configuradas para esta moneda.</p>
       {% endfor %}
     </fieldset>
-    <button class="boton" type="submit" {% if not caja or faltante > 0 %}disabled{% endif %}>
+    <button class="boton" type="submit" {% if not caja or faltante > 0 or not importe_entrega %}disabled{% endif %}>
       Entregar efectivo y confirmar venta
     </button>
   </form>

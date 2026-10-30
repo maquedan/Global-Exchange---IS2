@@ -298,6 +298,10 @@ class VentaNoConfirmable(Exception):
     """La venta pendiente no puede confirmarse ni cancelarse por acción del cliente."""
 
 
+class AnulacionVentaNoPermitida(Exception):
+    """La venta confirmada no puede anularse de forma segura."""
+
+
 @transaction.atomic
 def iniciar_venta(
     *, usuario, cliente_id, moneda_entregada, moneda_acreditada,
@@ -398,13 +402,16 @@ def expirar_venta_si_corresponde(venta):
 
 
 @transaction.atomic
-def confirmar_pago_venta(*, pk, usuario, billetes):
+def confirmar_pago_venta(
+    *, pk, usuario, billetes_recibidos, billetes_entregados
+):
     """Confirma una venta pendiente y entrega el neto en efectivo (RF058).
 
     Misma protección que `confirmar_pago_compra`: si la tasa activa para el
     par ya cambió respecto a la congelada al iniciar la venta, se cancela sola
     en vez de entregar un importe calculado con una tasa distinta (RF051).
-    La entrega se registra como retiro de caja en la misma transacción.
+    La divisa del cliente ingresa y el efectivo entregado sale del fondo del
+    cajero, con ambos movimientos vinculados a la venta en la misma transacción.
     """
     if not usuario or not usuario.is_authenticated or not usuario.groups.filter(
         name="cajero"
@@ -451,10 +458,6 @@ def confirmar_pago_venta(*, pk, usuario, billetes):
         )
         return venta
 
-    cantidades = billetes
-    if not isinstance(cantidades, dict) or not cantidades:
-        raise VentaNoDisponible("Ingresá el desglose de billetes para la entrega.")
-
     caja = (
         Caja.objects.select_for_update()
         .filter(sucursal__activa=True)
@@ -464,42 +467,47 @@ def confirmar_pago_venta(*, pk, usuario, billetes):
     if caja is None:
         raise VentaNoDisponible("No hay una caja activa configurada para la entrega.")
 
-    saldo_caja = SaldoCaja.objects.select_for_update().filter(
-        caja=caja, moneda=venta.moneda_acreditada
-    ).first()
-    disponible = saldo_caja.saldo if saldo_caja is not None else Decimal("0.00")
-    if disponible < venta.monto_acreditado:
-        faltante = venta.monto_acreditado - disponible
-        raise VentaNoDisponible(
-            f"Faltan {faltante:.2f} {venta.moneda_acreditada.codigo} en la caja "
-            "para cubrir la entrega."
-        )
-
     propuesta = proponer_billetes_entrega(
         caja=caja,
         moneda=venta.moneda_acreditada,
         importe=venta.monto_acreditado,
+        cajero=usuario,
     )
     importe_minimo = propuesta["importe_entrega"]
     if importe_minimo is None:
         raise VentaNoDisponible(
             f"Faltan {propuesta['faltante']:.2f} {venta.moneda_acreditada.codigo} "
-            "en billetes para cubrir la entrega."
+            "en el fondo del cajero para cubrir la entrega."
         )
 
     try:
-        movimiento = registrar_movimiento(
+        movimiento_recibido = registrar_movimiento(
             caja_id=caja.pk,
-            tipo=MovimientoCaja.Tipo.RETIRO,
+            tipo=MovimientoCaja.Tipo.INGRESO_CAJERO,
+            moneda_id=venta.moneda_entregada_id,
+            realizado_por=usuario,
+            cajero_id=usuario.pk,
+            nota=f"Divisa recibida del cliente por venta #{venta.pk}",
+            billetes=billetes_recibidos,
+        )
+        movimiento_entregado = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
             moneda_id=venta.moneda_acreditada_id,
             realizado_por=usuario,
-            nota=f"Entrega de efectivo por venta #{venta.pk}",
-            billetes=cantidades,
+            cajero_id=usuario.pk,
+            nota=f"Efectivo entregado al cliente por venta #{venta.pk}",
+            billetes=billetes_entregados,
         )
     except MovimientoNoPermitido as error:
         raise VentaNoDisponible(str(error)) from error
 
-    if movimiento.importe != importe_minimo:
+    if movimiento_recibido.importe != venta.monto_entregado:
+        raise VentaNoDisponible(
+            f"El desglose recibido debe sumar exactamente "
+            f"{venta.monto_entregado:.2f} {venta.moneda_entregada.codigo}."
+        )
+    if movimiento_entregado.importe != importe_minimo:
         raise VentaNoDisponible(
             f"El desglose debe sumar el importe mínimo posible de "
             f"{importe_minimo:.2f} {venta.moneda_acreditada.codigo}."
@@ -508,9 +516,17 @@ def confirmar_pago_venta(*, pk, usuario, billetes):
     estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CONFIRMADA
     venta.confirmado_en = timezone.now()
-    venta.monto_efectivo_entregado = movimiento.importe
+    venta.monto_efectivo_entregado = movimiento_entregado.importe
+    venta.movimiento_efectivo_recibido = movimiento_recibido
+    venta.movimiento_efectivo_entregado = movimiento_entregado
     venta.save(
-        update_fields=["estado", "confirmado_en", "monto_efectivo_entregado"]
+        update_fields=[
+            "estado",
+            "confirmado_en",
+            "monto_efectivo_entregado",
+            "movimiento_efectivo_recibido",
+            "movimiento_efectivo_entregado",
+        ]
     )
     registrar_cambio_estado(venta, estado_anterior, venta.estado, usuario=usuario)
     _facturar(venta)
@@ -547,5 +563,113 @@ def cancelar_venta(*, pk, usuario):
     registrar_cambio_estado(
         venta, estado_anterior, venta.estado,
         motivo="Cancelada por el cliente.", usuario=usuario,
+    )
+    return venta
+
+
+@transaction.atomic
+def anular_venta(*, pk, usuario, motivo):
+    """Anula una venta confirmada y registra los movimientos inversos (RF059)."""
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="administrador").exists()
+    ):
+        raise AnulacionVentaNoPermitida(
+            "Solo un administrador puede anular una venta confirmada."
+        )
+
+    motivo = (motivo or "").strip()
+    if not motivo or len(motivo) > 255:
+        raise AnulacionVentaNoPermitida(
+            "Indicá un motivo de anulación de hasta 255 caracteres."
+        )
+
+    venta = VentaDivisa.objects.select_for_update().filter(pk=pk).first()
+    if venta is None:
+        raise AnulacionVentaNoPermitida("La venta no existe.")
+    if venta.estado != VentaDivisa.Estado.CONFIRMADA:
+        raise AnulacionVentaNoPermitida(
+            "Solo se pueden anular ventas que ya fueron confirmadas."
+        )
+    if not venta.movimiento_efectivo_recibido_id or not venta.movimiento_efectivo_entregado_id:
+        raise AnulacionVentaNoPermitida(
+            "La venta no tiene ambos movimientos de efectivo vinculados; "
+            "no se puede revertir automáticamente."
+        )
+
+    movimientos = (
+        MovimientoCaja.objects.select_for_update()
+        .filter(
+            pk__in=[
+                venta.movimiento_efectivo_recibido_id,
+                venta.movimiento_efectivo_entregado_id,
+            ]
+        )
+        .prefetch_related("detalle_billetes")
+    )
+    movimientos_por_id = {movimiento.pk: movimiento for movimiento in movimientos}
+    movimiento_recibido = movimientos_por_id.get(
+        venta.movimiento_efectivo_recibido_id
+    )
+    movimiento_entregado = movimientos_por_id.get(
+        venta.movimiento_efectivo_entregado_id
+    )
+    if movimiento_recibido is None or movimiento_entregado is None:
+        raise AnulacionVentaNoPermitida(
+            "No se encuentran los movimientos originales de la venta."
+        )
+    if (
+        movimiento_recibido.tipo != MovimientoCaja.Tipo.INGRESO_CAJERO
+        or movimiento_entregado.tipo != MovimientoCaja.Tipo.RETIRO_CAJERO
+        or movimiento_recibido.caja_id != movimiento_entregado.caja_id
+        or movimiento_recibido.cajero_id != movimiento_entregado.cajero_id
+    ):
+        raise AnulacionVentaNoPermitida(
+            "Los movimientos originales no corresponden a una liquidación "
+            "de efectivo válida."
+        )
+
+    movimientos_inversos = (
+        (movimiento_recibido, MovimientoCaja.Tipo.RETIRO_CAJERO),
+        (movimiento_entregado, MovimientoCaja.Tipo.INGRESO_CAJERO),
+    )
+    for original, tipo_inverso in movimientos_inversos:
+        billetes = dict(
+            original.detalle_billetes.values_list("denominacion_id", "cantidad")
+        )
+        if not billetes:
+            raise AnulacionVentaNoPermitida(
+                "Falta el desglose de billetes de un movimiento original."
+            )
+        try:
+            registrar_movimiento(
+                caja_id=original.caja_id,
+                tipo=tipo_inverso,
+                moneda_id=original.moneda_id,
+                realizado_por=usuario,
+                cajero_id=original.cajero_id,
+                nota=(
+                    f"Anulación de venta #{venta.pk}; reversión del movimiento "
+                    f"#{original.pk}: {motivo}"
+                ),
+                billetes=billetes,
+                reversion_de=original,
+            )
+        except MovimientoNoPermitido as error:
+            raise AnulacionVentaNoPermitida(
+                f"No se puede completar la reversión: {error}"
+            ) from error
+
+    estado_anterior = venta.estado
+    venta.estado = VentaDivisa.Estado.ANULADA
+    venta.anulado_en = timezone.now()
+    venta.save(update_fields=["estado", "anulado_en"])
+    registrar_cambio_estado(
+        venta,
+        estado_anterior,
+        venta.estado,
+        motivo=f"Anulada por administrador: {motivo}",
+        usuario=usuario,
     )
     return venta

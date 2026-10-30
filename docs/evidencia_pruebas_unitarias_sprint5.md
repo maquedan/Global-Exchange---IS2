@@ -371,48 +371,44 @@ Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú re
 
 ---
 
-## Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
+## RF059 – Movimientos de Caja por Transacción en Metálico
 
-| Campo | Valor |
+| Campo | Resultado |
 |---|---|
-| **Fecha y hora** | viernes 30 de octubre de 2026, 14:44:50 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/terminal/tests/test_terminal.py` |
-| **Comando** | `docker compose exec web pytest apps/terminal/tests/test_terminal.py -v` |
-| **Resultado** | **10 passed** en 9.05s |
+| **Fecha** | viernes 30 de octubre de 2026 |
+| **Ambiente** | Docker Compose, servicio `web` con PostgreSQL |
+| **Pruebas focalizadas** | 158 passed, 1 warning |
+| **Suite completa de `apps`** | 303 passed, 1 warning |
+
+Pruebas focalizadas:
 
 ```text
-$ date
-Fri Oct 30 14:44:50 -03 2026
-
-$ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
-============================================== test session starts ==============================================
-platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
-django: version: 6.1.2, settings: config.settings.dev (from env)
-rootdir: /app
-configfile: pytest.ini
-plugins: django-4.14.0
-collected 10 items
-
-apps/terminal/tests/test_terminal.py ..........                                                           [100%]
-
-=============================================== warnings summary ================================================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-========================================= 10 passed, 1 warning in 9.05s =========================================
-
+$ docker compose exec -T web pytest apps/conversiones/tests/test_conversiones.py apps/cajas/tests/test_cajas.py apps/facturacion/tests/test_facturacion.py apps/usuarios/tests/test_restriccion_operaciones.py --tb=short
+158 passed, 1 warning in 23.16s
 ```
 
-Las diez pruebas cubren el comportamiento previo de RF054 y el flujo guiado
-incorporado por RF055. Se verifica la identificación de un cliente activo por
-documento, la simulación con tasa y comisión vigentes, la creación de compras
-y ventas en estado PENDIENTE, el almacenamiento del identificador de la
-operación en la sesión y el rechazo de la confirmación cuando la cotización
-cambia entre la simulación y el clic de confirmación.
-También se verifica que el reinicio de la terminal elimine todo el contexto
-temporal: cliente, tipo de operación, identificadores de compra o venta,
-monedas seleccionadas, monto y tasa visualizada.
+Suite completa:
 
----
+```text
+$ docker compose exec -T web pytest apps --tb=short
+303 passed, 1 warning in 43.31s
+```
+
+La cobertura comprueba que un administrador pueda anular una venta confirmada
+con motivo, que se creen los movimientos inversos asociados a los originales y
+que el detalle de caja enlace los asientos con la venta. Verifica que la
+reversión restaure inventarios del cajero sin modificar los saldos de la caja
+central, que no se permita una segunda anulación y que, si falta efectivo para
+revertir, la venta y los movimientos permanezcan sin cambios. También se
+comprueba que un usuario sin rol administrador no pueda ejecutar la anulación.
+La suite completa incluye pruebas del enlace **Ventas y anulaciones** en el
+menú, acceso a la consulta administrativa de ventas y denegación para el
+cajero.
+
+**Migraciones y chequeos.** En Docker se aplicaron
+`cajas.0008_movimientocaja_reversion_de` y
+`conversiones.0010_ventadivisa_anulado_en`. `python manage.py check` respondió
+`System check identified no issues (0 silenced)` y
+`python manage.py makemigrations --check --dry-run` respondió `No changes
+detected`. El único warning fue la deprecación futura de `EMAIL_BACKEND`
+reportada por `pytest-django`.

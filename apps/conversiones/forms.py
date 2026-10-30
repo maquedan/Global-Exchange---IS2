@@ -142,57 +142,112 @@ class VentaDivisaForm(forms.Form):
 
 
 class EntregaEfectivoVentaForm(forms.Form):
-    """Desglose editable con el menor total de billetes que cubre la venta."""
+    """Desgloses de billetes recibidos y entregados al liquidar la venta."""
 
-    def __init__(self, *args, moneda, importe, billetes_iniciales=None, **kwargs):
+    def __init__(
+        self,
+        *args,
+        moneda_recibida,
+        importe_recibido,
+        moneda_entregada,
+        importe_entregado,
+        billetes_entregados_iniciales=None,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
-        self.moneda = moneda
-        self.importe = importe
-        self.denominaciones = list(
-            DenominacionBillete.objects.filter(
-                moneda=moneda, moneda__activo=True
-            ).order_by("-valor")
+        self.moneda_recibida = moneda_recibida
+        self.importe_recibido = importe_recibido
+        self.moneda_entregada = moneda_entregada
+        self.importe_entregado = importe_entregado
+        self.campos_billetes_recibidos = self._agregar_campos_billetes(
+            prefijo="recibido",
+            moneda=moneda_recibida,
+            iniciales={},
         )
-        self.campos_billetes = []
-        billetes_iniciales = billetes_iniciales or {}
-        for denominacion in self.denominaciones:
-            nombre = f"billete_{denominacion.pk}"
+        self.campos_billetes_entregados = self._agregar_campos_billetes(
+            prefijo="entregado",
+            moneda=moneda_entregada,
+            iniciales=billetes_entregados_iniciales or {},
+        )
+
+    def _agregar_campos_billetes(self, *, prefijo, moneda, iniciales):
+        campos = []
+        denominaciones = DenominacionBillete.objects.filter(
+            moneda=moneda, moneda__activo=True
+        ).order_by("-valor")
+        for denominacion in denominaciones:
+            nombre = f"billete_{prefijo}_{denominacion.pk}"
             self.fields[nombre] = forms.IntegerField(
                 label=f"{moneda.codigo} {denominacion.valor}",
                 min_value=0,
                 required=False,
-                initial=billetes_iniciales.get(denominacion.pk, 0),
+                initial=iniciales.get(denominacion.pk, 0),
                 widget=forms.NumberInput(attrs={"min": "0", "step": "1"}),
             )
-            self.campos_billetes.append(
+            campos.append(
                 {
                     "denominacion": denominacion,
                     "campo": self[nombre],
                 }
             )
+        return campos
 
     def clean(self):
         datos = super().clean()
+        datos["billetes_recibidos"] = self._limpiar_desglose(
+            datos,
+            prefijo="recibido",
+            campos=self.campos_billetes_recibidos,
+            moneda=self.moneda_recibida,
+            importe_esperado=self.importe_recibido,
+            etiqueta="recibir del cliente",
+        )
+        datos["billetes_entregados"] = self._limpiar_desglose(
+            datos,
+            prefijo="entregado",
+            campos=self.campos_billetes_entregados,
+            moneda=self.moneda_entregada,
+            importe_esperado=self.importe_entregado,
+            etiqueta="entregar al cliente",
+        )
+        return datos
+
+    def _limpiar_desglose(
+        self, datos, *, prefijo, campos, moneda, importe_esperado, etiqueta
+    ):
         cantidades = {}
         total = Decimal("0.00")
-        for denominacion in self.denominaciones:
-            cantidad = datos.get(f"billete_{denominacion.pk}") or 0
+        for item in campos:
+            denominacion = item["denominacion"]
+            cantidad = datos.get(f"billete_{prefijo}_{denominacion.pk}") or 0
             if cantidad:
                 cantidades[denominacion.pk] = cantidad
                 total += denominacion.valor * cantidad
 
-        if total != self.importe:
-            diferencia = abs(self.importe - total)
-            mensaje = (
-                f"Faltan {diferencia:.2f} {self.moneda.codigo} para alcanzar "
-                "el importe mínimo posible."
-                if total < self.importe
-                else f"El desglose supera el importe mínimo posible por "
-                f"{diferencia:.2f} {self.moneda.codigo}."
-            )
-            self.add_error(
-                None,
-                mensaje,
-            )
-        datos["billetes"] = cantidades
-        return datos
+        if total != importe_esperado:
+            diferencia = abs(importe_esperado - total)
+            if prefijo == "entregado":
+                detalle = (
+                    f"Faltan {diferencia:.2f} {moneda.codigo} para alcanzar "
+                    "el importe mínimo posible."
+                    if total < importe_esperado
+                    else f"El desglose supera el importe mínimo posible por "
+                    f"{diferencia:.2f} {moneda.codigo}."
+                )
+            else:
+                detalle = (
+                    f"El desglose para {etiqueta} difiere por {diferencia:.2f} "
+                    f"{moneda.codigo}; debe sumar exactamente "
+                    f"{importe_esperado:.2f} {moneda.codigo}."
+                )
+            self.add_error(None, detalle)
+        return cantidades
+
+
+class AnularVentaForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de anulación",
+        max_length=255,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )

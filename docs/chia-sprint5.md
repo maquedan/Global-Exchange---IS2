@@ -626,6 +626,47 @@ Las pruebas cubren que el rol terminal vea solo las opciones de menú correspond
 
 ---
 
+## 9. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
+
+**Objetivo.** Completar la venta de divisas con una entrega física en caja:
+el cajero identifica la operación pendiente, prepara los billetes y confirma
+la salida del efectivo.
+
+**Decisión de flujo.** La venta conserva los estados y el vencimiento de RF051
+y el historial de transiciones de RF023. El cliente inicia la venta y puede
+cancelarla mientras siga pendiente; la confirma un cajero, no el cliente.
+La acreditación bancaria deja de ser el destino de esta modalidad.
+
+**Cambios.** Se agregó la cola de ventas pendientes para cajeros y una pantalla
+de entrega con propuesta editable por denominación para lo que el cliente paga
+y recibe. Al confirmar, el importe recibido ingresa al fondo del cajero y el
+importe entregado se descuenta de ese mismo fondo. Ambos movimientos actualizan
+saldo e inventario por denominación, y se confirman junto con la venta en una
+sola transacción. No se descuenta efectivo de la caja central al liquidar la
+venta.
+
+**Criterio para excedentes.** A pedido del usuario, se permite exceder el neto,
+pero solo por el mínimo posible con las existencias actuales: la propuesta
+busca una combinación disponible que cubra el monto con el menor total. El
+cajero puede ajustar el desglose, pero no confirmar uno que entregue más que
+ese mínimo. Si el total disponible o las combinaciones de billetes no alcanzan,
+la venta permanece pendiente y se informa el faltante.
+
+**Persistencia y trazabilidad.** Cada venta conserva relaciones formales con
+los movimientos de divisa recibida y efectivo entregado. Se pueden consultar
+desde la venta y desde el historial de caja; los movimientos guardan cajero,
+moneda, sucursal, denominaciones, cantidades, importe y fecha/hora. Una
+migración vincula también retiros históricos inequívocos a su venta.
+Migraciones: `cajas/0007_alter_movimientocaja_tipo.py`,
+`conversiones/0008_ventadivisa_movimiento_efectivo_entregado_and_more.py` y
+`conversiones/0009_vincular_retiros_legacy_de_ventas.py`.
+
+**Verificaciones.** En Docker pasaron **155 pruebas focalizadas** de
+conversiones, cajas, facturación y permisos, y **292 pruebas** en la suite
+completa de `apps`. `manage.py check` no reportó problemas,
+`makemigrations --check --dry-run` indicó que no hay cambios pendientes y las
+tres migraciones nuevas aparecen aplicadas. El detalle está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`.
 ## 9. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
 
 **Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
@@ -720,3 +761,37 @@ rechazo por cambio de cotización y la limpieza de los datos temporales de la
 sesión. También se ejecutó python manage.py check sin errores.
 
 ---
+
+## Ryuto Maehara - RF059, Movimientos de Caja por Transacción en Metálico
+
+La liquidación de una venta ya registra en el fondo del cajero el efectivo
+recibido y el entregado, con sucursal/caja, cajero, divisa, denominaciones,
+cantidades, importe y fecha/hora. El historial de caja enlaza cada movimiento
+con la venta; el comprobante permite consultar ambos movimientos.
+
+La anulación posterior a la confirmación queda disponible solo para
+administradores y exige un motivo. En una transacción atómica se registran
+movimientos inversos por cada movimiento original, conservando el desglose de
+billetes y una relación directa con el movimiento revertido. La venta queda en
+estado `ANULADA` y la línea de tiempo conserva administrador, fecha y motivo.
+Las existencias del fondo del cajero se actualizan con esos asientos; no se
+modifica el saldo de la caja central.
+
+Para que el administrador encuentre la operación, el menú incluye
+**Ventas y anulaciones**, una consulta paginada de ventas con acceso directo a
+cada comprobante. Desde el comprobante de una venta confirmada se inicia la
+anulación. Se verificaron los permisos de la lista, el enlace del menú y la
+consulta desde la sesión administrativa.
+
+Si el fondo ya no tiene billetes suficientes para devolver el efectivo recibido
+en la venta, la anulación se rechaza sin cambiar el estado ni dejar movimientos
+parciales. Las cancelaciones anteriores a la liquidación no requieren asiento
+inverso porque aún no existe movimiento de efectivo. Las compras pagadas por
+pasarela no son transacciones metálicas y quedan fuera de este flujo.
+
+Migraciones: `cajas/0008_movimientocaja_reversion_de.py` y
+`conversiones/0010_ventadivisa_anulado_en.py`. Se aplicaron en Docker y
+`makemigrations --check --dry-run` no detectó cambios pendientes. En Docker
+pasaron **303 pruebas** de la suite completa de `apps`, incluida la navegación
+administrativa. `manage.py check` no reportó problemas. La evidencia está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`.
