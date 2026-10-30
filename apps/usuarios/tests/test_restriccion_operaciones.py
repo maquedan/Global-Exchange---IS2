@@ -40,7 +40,6 @@ URLS_DE_OPERACION = [
     ("conversiones:vender", [], "POST"),
     ("conversiones:confirmar_compra", [1], "POST"),
     ("conversiones:cancelar_compra", [1], "POST"),
-    ("conversiones:confirmar_venta", [1], "POST"),
     ("conversiones:cancelar_venta", [1], "POST"),
     ("cuentas:crear", [], "GET"),
     ("cuentas:crear", [], "POST"),

@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block titulo %}Entregar efectivo — Venta #{{ venta.pk }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p><a href="{% url 'conversiones:ventas_pendientes' %}">Volver a ventas pendientes</a></p>
+  <h1>Entrega de efectivo — Venta #{{ venta.pk }}</h1>
+  <p>Cliente: {{ venta.cliente }}</p>
+  <p>Divisa recibida: {{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }}</p>
+  <p>Importe neto a entregar: <strong>{{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+  <p>Tasa aceptada: {{ venta.tasa_aplicada }} · Comisión: {{ venta.monto_comision }} {{ venta.moneda_acreditada.codigo }}</p>
+  <p>La cotización debe seguir vigente al confirmar. La caja descuenta los billetes y registra el retiro junto con el cambio de estado de la venta.</p>
+
+  {% if caja %}
+    <p>Disponible en caja: {{ disponible }} {{ venta.moneda_acreditada.codigo }}</p>
+  {% else %}
+    <p class="mensaje error">No hay una caja activa configurada.</p>
+  {% endif %}
+  {% if faltante > 0 %}
+    <p class="mensaje error">Faltan {{ faltante }} {{ venta.moneda_acreditada.codigo }} para cubrir el importe.</p>
+  {% elif excedente > 0 %}
+    <p class="mensaje">El menor excedente posible es {{ excedente }} {{ venta.moneda_acreditada.codigo }}. El desglose debe mantener ese total.</p>
+  {% endif %}
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+    {% for error in formulario.non_field_errors %}
+      <p class="mensaje error">{{ error }}</p>
+    {% endfor %}
+    <fieldset>
+      <legend>Billetes a entregar (podés ajustar la propuesta)</legend>
+      {% for item in formulario.campos_billetes %}
+        <p>
+          <label for="{{ item.campo.id_for_label }}">{{ item.campo.label }}</label><br>
+          {{ item.campo }}
+          {% for error in item.campo.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}
+        </p>
+      {% empty %}
+        <p>No hay denominaciones configuradas para esta moneda.</p>
+      {% endfor %}
+    </fieldset>
+    <button class="boton" type="submit" {% if not caja or faltante > 0 %}disabled{% endif %}>
+      Entregar efectivo y confirmar venta
+    </button>
+  </form>
+</div>
+{% endblock %}

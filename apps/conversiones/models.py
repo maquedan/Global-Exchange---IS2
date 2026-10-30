@@ -105,10 +105,10 @@ class CompraDivisa(models.Model):
 
 
 class VentaDivisa(models.Model):
-    """Venta de divisas con el importe neto y cuenta destino como histórico.
+    """Venta de divisas con el importe neto a entregar en efectivo.
 
-    Igual que `CompraDivisa`, queda PENDIENTE hasta que el cliente confirma el
-    pago; si la cotización cambió para entonces, se cancela sola (RF051).
+    Queda PENDIENTE hasta que un cajero entrega el efectivo (RF058); si la
+    cotización cambió para entonces, se cancela sola (RF051).
     """
 
     class Estado(models.TextChoices):
@@ -146,6 +146,8 @@ class VentaDivisa(models.Model):
         CuentaPago,
         on_delete=models.PROTECT,
         related_name="ventas_divisas",
+        null=True,
+        blank=True,
     )
     monto_entregado = models.DecimalField(
         max_digits=16,
@@ -156,6 +158,9 @@ class VentaDivisa(models.Model):
     monto_comision = models.DecimalField(max_digits=18, decimal_places=2)
     monto_convertido = models.DecimalField(max_digits=18, decimal_places=2)
     monto_acreditado = models.DecimalField(max_digits=18, decimal_places=2)
+    monto_efectivo_entregado = models.DecimalField(
+        max_digits=18, decimal_places=2, null=True, blank=True
+    )
     tasa_aplicada = models.DecimalField(max_digits=12, decimal_places=2)
     estado = models.CharField(
         max_length=12, choices=Estado.choices, default=Estado.PENDIENTE
@@ -197,6 +202,15 @@ class VentaDivisa(models.Model):
 
     def __str__(self):
         return f"Venta #{self.pk} — {self.cliente}"
+
+    @property
+    def excedente_efectivo(self):
+        if (
+            self.monto_efectivo_entregado is not None
+            and self.monto_efectivo_entregado > self.monto_acreditado
+        ):
+            return self.monto_efectivo_entregado - self.monto_acreditado
+        return Decimal("0.00")
 
 
 class CambioEstado(models.Model):

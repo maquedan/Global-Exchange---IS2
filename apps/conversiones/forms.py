@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django import forms
 
-from apps.cuentas.models import CuentaPago
+from apps.cajas.models import DenominacionBillete
 from apps.monedas.models import Moneda
 
 from .services import calcular_conversion
@@ -105,10 +105,10 @@ class CompraDivisaForm(forms.Form):
 
 
 class VentaDivisaForm(forms.Form):
-    """Datos de una venta y la cuenta del cliente donde acreditar el neto.
+    """Datos de una venta que el cajero liquidará en efectivo.
 
     Igual que la compra, opera en nombre del cliente activo de la sesión
-    (RF008): por eso recibe ese cliente, para ofrecer solo SUS cuentas.
+    (RF008). El neto se entrega en efectivo al confirmar la venta (RF058).
     """
 
     moneda_entregada = forms.ModelChoiceField(
@@ -116,9 +116,6 @@ class VentaDivisaForm(forms.Form):
     )
     moneda_acreditada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True), label="Moneda a acreditar"
-    )
-    cuenta_destino = forms.ModelChoiceField(
-        queryset=CuentaPago.objects.none(), label="Cuenta o billetera de destino"
     )
     monto_entregado = forms.DecimalField(
         label="Monto de la divisa que vendés",
@@ -128,13 +125,8 @@ class VentaDivisaForm(forms.Form):
         widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
 
-    def __init__(self, *args, cliente=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if cliente is not None:
-            self.fields["cuenta_destino"].queryset = CuentaPago.objects.filter(
-                cliente=cliente,
-                activa=True,
-            )
 
     def clean(self):
         datos = super().clean()
@@ -146,4 +138,61 @@ class VentaDivisaForm(forms.Form):
                 "moneda_acreditada",
                 "La moneda acreditada debe ser diferente de la que vendés.",
             )
+        return datos
+
+
+class EntregaEfectivoVentaForm(forms.Form):
+    """Desglose editable con el menor total de billetes que cubre la venta."""
+
+    def __init__(self, *args, moneda, importe, billetes_iniciales=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.moneda = moneda
+        self.importe = importe
+        self.denominaciones = list(
+            DenominacionBillete.objects.filter(
+                moneda=moneda, moneda__activo=True
+            ).order_by("-valor")
+        )
+        self.campos_billetes = []
+        billetes_iniciales = billetes_iniciales or {}
+        for denominacion in self.denominaciones:
+            nombre = f"billete_{denominacion.pk}"
+            self.fields[nombre] = forms.IntegerField(
+                label=f"{moneda.codigo} {denominacion.valor}",
+                min_value=0,
+                required=False,
+                initial=billetes_iniciales.get(denominacion.pk, 0),
+                widget=forms.NumberInput(attrs={"min": "0", "step": "1"}),
+            )
+            self.campos_billetes.append(
+                {
+                    "denominacion": denominacion,
+                    "campo": self[nombre],
+                }
+            )
+
+    def clean(self):
+        datos = super().clean()
+        cantidades = {}
+        total = Decimal("0.00")
+        for denominacion in self.denominaciones:
+            cantidad = datos.get(f"billete_{denominacion.pk}") or 0
+            if cantidad:
+                cantidades[denominacion.pk] = cantidad
+                total += denominacion.valor * cantidad
+
+        if total != self.importe:
+            diferencia = abs(self.importe - total)
+            mensaje = (
+                f"Faltan {diferencia:.2f} {self.moneda.codigo} para alcanzar "
+                "el importe mínimo posible."
+                if total < self.importe
+                else f"El desglose supera el importe mínimo posible por "
+                f"{diferencia:.2f} {self.moneda.codigo}."
+            )
+            self.add_error(
+                None,
+                mensaje,
+            )
+        datos["billetes"] = cantidades
         return datos

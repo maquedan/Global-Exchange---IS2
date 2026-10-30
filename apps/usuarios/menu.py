@@ -76,6 +76,11 @@ MENU_PRINCIPAL = [
         "roles": ["cajero"],
     },
     {
+        "texto": "Ventas pendientes",
+        "url": "conversiones:ventas_pendientes",
+        "roles": ["cajero"],
+    },
+    {
         "texto": "Diferencias de caja",
         "url": "cajas:diferencias",
         "roles": ["administrador"],

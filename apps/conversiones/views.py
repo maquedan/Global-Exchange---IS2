@@ -5,12 +5,15 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404, redirect, render
 
+from apps.cajas.models import Caja
+from apps.cajas.services import proponer_billetes_entrega
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
 from apps.usuarios.services import requiere_cliente_activo
 
 from .forms import (
     CompraDivisaForm,
+    EntregaEfectivoVentaForm,
     SimulacionConversionForm,
     VentaDivisaForm,
     construir_resultado,
@@ -37,6 +40,16 @@ def requiere_cliente(vista):
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_cajero(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "cajero"):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
@@ -167,7 +180,7 @@ def cancelar_compra_view(request, pk):
 @requiere_cliente
 @requiere_cliente_activo
 def vender(request):
-    """Inicia una venta con la cuenta de acreditación elegida.
+    """Inicia una venta que queda pendiente de entrega en efectivo.
 
     Queda pendiente de confirmación (RF051), igual que una compra.
 
@@ -175,7 +188,7 @@ def vender(request):
     una venta cancelada), se usan para pre-llenar el formulario.
     """
     formulario = VentaDivisaForm(
-        request.POST or None, cliente=request.cliente_activo, initial=request.GET or None
+        request.POST or None, initial=request.GET or None
     )
     if request.method == "POST" and formulario.is_valid():
         datos = formulario.cleaned_data
@@ -185,7 +198,6 @@ def vender(request):
                 cliente_id=request.cliente_activo.pk,
                 moneda_entregada=datos["moneda_entregada"],
                 moneda_acreditada=datos["moneda_acreditada"],
-                cuenta_destino=datos["cuenta_destino"],
                 monto_entregado=datos["monto_entregado"],
             )
         except VentaNoDisponible as error:
@@ -197,47 +209,119 @@ def vender(request):
 
 
 @login_required
-@requiere_cliente
 def comprobante_venta(request, pk):
     """Muestra el estado de la venta (pendiente, confirmada o cancelada)."""
+    es_cajero = tiene_rol(request.user, "cajero", "administrador")
+    filtros = {"pk": pk}
+    if not es_cajero:
+        if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        filtros["cliente__asociaciones_usuarios__usuario"] = request.user
+
     venta = get_object_or_404(
         VentaDivisa.objects.select_related(
             "cliente", "moneda_entregada", "moneda_acreditada", "cuenta_destino"
         ),
-        pk=pk,
-        cliente__asociaciones_usuarios__usuario=request.user,
+        **filtros,
     )
     venta = expirar_venta_si_corresponde(venta)
     return render(
         request,
         "conversiones/comprobante_venta.html",
-        {"venta": venta, "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE},
+        {
+            "venta": venta,
+            "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE,
+            "es_cajero": es_cajero,
+        },
     )
 
 
 @login_required
-@requiere_cliente
-@requiere_cliente_activo
+@requiere_cajero
+def ventas_pendientes_view(request):
+    ventas = (
+        VentaDivisa.objects.filter(estado=VentaDivisa.Estado.PENDIENTE)
+        .select_related("cliente", "moneda_entregada", "moneda_acreditada")
+        .order_by("creado_en", "pk")
+    )
+    return render(request, "conversiones/ventas_pendientes.html", {"ventas": ventas})
+
+
+@login_required
+@requiere_cajero
 def confirmar_venta_view(request, pk):
-    """Confirma el pago de una venta pendiente (RF051 — GEG9-51)."""
-    if request.method != "POST":
-        return redirect("conversiones:comprobante_venta", pk=pk)
+    """Permite al cajero revisar el desglose y confirmar la entrega (RF058)."""
+    venta = get_object_or_404(
+        VentaDivisa.objects.select_related(
+            "cliente", "moneda_entregada", "moneda_acreditada", "cuenta_destino"
+        ),
+        pk=pk,
+    )
+    venta = expirar_venta_si_corresponde(venta)
+    if venta.estado != VentaDivisa.Estado.PENDIENTE:
+        return redirect("conversiones:comprobante_venta", pk=venta.pk)
 
-    try:
-        venta = confirmar_pago_venta(pk=pk, usuario=request.user)
-    except VentaNoConfirmable as error:
-        raise PermissionDenied from error
-
-    if venta.estado == VentaDivisa.Estado.CANCELADA:
-        messages.error(
-            request,
-            "La cotización cambió mientras revisabas la operación, así que se "
-            "canceló: no se te acreditó con una tasa distinta a la que aceptaste.",
+    caja = Caja.objects.filter(sucursal__activa=True).first()
+    propuesta = (
+        proponer_billetes_entrega(
+            caja=caja,
+            moneda=venta.moneda_acreditada,
+            importe=venta.monto_acreditado,
         )
-    else:
-        messages.success(request, "La venta de divisas fue confirmada correctamente.")
+        if caja is not None
+        else {
+            "billetes": {},
+            "disponible": venta.monto_acreditado * 0,
+            "faltante": venta.monto_acreditado,
+            "importe_entrega": None,
+            "excedente": None,
+        }
+    )
+    formulario = EntregaEfectivoVentaForm(
+        request.POST if request.method == "POST" else None,
+        moneda=venta.moneda_acreditada,
+        importe=propuesta["importe_entrega"] or venta.monto_acreditado,
+        billetes_iniciales=propuesta["billetes"],
+    )
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            venta = confirmar_pago_venta(
+                pk=venta.pk,
+                usuario=request.user,
+                billetes=formulario.cleaned_data["billetes"],
+            )
+        except VentaNoConfirmable as error:
+            raise PermissionDenied from error
+        except VentaNoDisponible as error:
+            formulario.add_error(None, str(error))
+        else:
+            if venta.estado == VentaDivisa.Estado.CANCELADA:
+                messages.error(
+                    request,
+                    "La cotización cambió o venció mientras se preparaba la "
+                    "entrega; la venta se canceló y no se retiró efectivo.",
+                )
+            else:
+                messages.success(
+                    request,
+                    "La venta fue confirmada y el efectivo quedó registrado como "
+                    "retiro de caja.",
+                )
+            return redirect("conversiones:comprobante_venta", pk=venta.pk)
 
-    return redirect("conversiones:comprobante_venta", pk=venta.pk)
+    return render(
+        request,
+        "conversiones/entregar_efectivo_venta.html",
+        {
+            "venta": venta,
+            "caja": caja,
+            "formulario": formulario,
+            "disponible": propuesta["disponible"],
+            "faltante": propuesta["faltante"],
+            "importe_entrega": propuesta["importe_entrega"],
+            "excedente": propuesta["excedente"],
+        },
+    )
 
 
 @login_required

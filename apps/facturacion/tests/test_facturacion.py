@@ -14,6 +14,13 @@ from django.contrib.auth.models import Group
 from django.db import IntegrityError
 from django.utils import timezone
 
+from apps.cajas.models import (
+    Caja,
+    DenominacionBillete,
+    MovimientoCaja,
+    Sucursal,
+)
+from apps.cajas.services import registrar_movimiento
 from apps.clientes.models import AsociacionUsuarioCliente, Cliente
 from apps.comisiones.models import ComisionCategoria
 from apps.conversiones.models import CompraDivisa, VentaDivisa
@@ -230,12 +237,33 @@ def test_confirmar_una_compra_genera_la_factura(
 def test_confirmar_una_venta_genera_la_factura(
     cliente_y_usuario, venta_pendiente, django_capture_on_commit_callbacks
 ):
-    _cliente, usuario = cliente_y_usuario
+    _cliente, _usuario = cliente_y_usuario
+    cajero = _usuario_con_rol("cajero-facturacion", "cajero")
+    sucursal, _ = Sucursal.objects.get_or_create(
+        es_unica=True,
+        defaults={"nombre": "Centro", "direccion": "Centro"},
+    )
+    caja, _ = Caja.objects.get_or_create(sucursal=sucursal)
+    denominacion = DenominacionBillete.objects.create(
+        moneda=venta_pendiente.moneda_acreditada,
+        valor=venta_pendiente.monto_acreditado,
+    )
+    registrar_movimiento(
+        caja_id=caja.pk,
+        tipo=MovimientoCaja.Tipo.INGRESO,
+        moneda_id=venta_pendiente.moneda_acreditada_id,
+        realizado_por=cajero,
+        billetes={denominacion.pk: 1},
+    )
     falso = ClienteFalso()
 
     with _con_cliente_falso(falso):
         with django_capture_on_commit_callbacks(execute=True):
-            confirmar_pago_venta(pk=venta_pendiente.pk, usuario=usuario)
+            confirmar_pago_venta(
+                pk=venta_pendiente.pk,
+                usuario=cajero,
+                billetes={denominacion.pk: 1},
+            )
 
     venta_pendiente.refresh_from_db()
     factura = Factura.objects.get(venta=venta_pendiente)

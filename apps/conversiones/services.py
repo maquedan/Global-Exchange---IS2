@@ -4,6 +4,12 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.utils import timezone
 
+from apps.cajas.models import Caja, MovimientoCaja, SaldoCaja
+from apps.cajas.services import (
+    MovimientoNoPermitido,
+    proponer_billetes_entrega,
+    registrar_movimiento,
+)
 from apps.clientes.models import Cliente
 from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
@@ -279,10 +285,10 @@ class VentaNoConfirmable(Exception):
 
 @transaction.atomic
 def iniciar_venta(
-    *, usuario, cliente_id, moneda_entregada, moneda_acreditada, cuenta_destino,
-    monto_entregado
+    *, usuario, cliente_id, moneda_entregada, moneda_acreditada,
+    monto_entregado, cuenta_destino=None,
 ):
-    """Congela la tasa y comisión vigentes y deja la venta en estado PENDIENTE.
+    """Congela la tasa y comisión y deja la venta PENDIENTE de entrega en efectivo.
 
     `usuario` es obligatorio desde RF010 (GEG9-20), igual que en
     `iniciar_compra`.
@@ -295,13 +301,17 @@ def iniciar_venta(
     if moneda_entregada == moneda_acreditada:
         raise VentaNoDisponible("Las monedas deben ser diferentes.")
 
-    cuenta = (
-        CuentaPago.objects.select_for_update()
-        .filter(pk=cuenta_destino.pk, cliente=cliente, activa=True)
-        .first()
-    )
-    if cuenta is None:
-        raise VentaNoDisponible("La cuenta de destino no está activa o no pertenece al cliente.")
+    cuenta = None
+    if cuenta_destino is not None:
+        cuenta = (
+            CuentaPago.objects.select_for_update()
+            .filter(pk=cuenta_destino.pk, cliente=cliente, activa=True)
+            .first()
+        )
+        if cuenta is None:
+            raise VentaNoDisponible(
+                "La cuenta de destino no está activa o no pertenece al cliente."
+            )
 
     tasa = (
         TasaCambio.objects.select_for_update()
@@ -367,19 +377,23 @@ def expirar_venta_si_corresponde(venta):
 
 
 @transaction.atomic
-def confirmar_pago_venta(*, pk, usuario):
-    """Confirma el pago de una venta pendiente, si la cotización no cambió.
+def confirmar_pago_venta(*, pk, usuario, billetes):
+    """Confirma una venta pendiente y entrega el neto en efectivo (RF058).
 
     Misma protección que `confirmar_pago_compra`: si la tasa activa para el
     par ya cambió respecto a la congelada al iniciar la venta, se cancela sola
-    en vez de acreditar un importe calculado con una tasa distinta (RF051).
+    en vez de entregar un importe calculado con una tasa distinta (RF051).
+    La entrega se registra como retiro de caja en la misma transacción.
     """
+    if not usuario or not usuario.is_authenticated or not usuario.groups.filter(
+        name="cajero"
+    ).exists():
+        raise VentaNoConfirmable("Solo un cajero puede entregar efectivo de una venta.")
+
     venta = (
         VentaDivisa.objects.select_for_update()
-        # Ver el comentario en confirmar_pago_compra (RF010 — GEG9-20).
         .filter(
             pk=pk,
-            cliente__asociaciones_usuarios__usuario=usuario,
             cliente__activo=True,
         )
         .first()
@@ -416,10 +430,67 @@ def confirmar_pago_venta(*, pk, usuario):
         )
         return venta
 
+    cantidades = billetes
+    if not isinstance(cantidades, dict) or not cantidades:
+        raise VentaNoDisponible("Ingresá el desglose de billetes para la entrega.")
+
+    caja = (
+        Caja.objects.select_for_update()
+        .filter(sucursal__activa=True)
+        .select_related("sucursal")
+        .first()
+    )
+    if caja is None:
+        raise VentaNoDisponible("No hay una caja activa configurada para la entrega.")
+
+    saldo_caja = SaldoCaja.objects.select_for_update().filter(
+        caja=caja, moneda=venta.moneda_acreditada
+    ).first()
+    disponible = saldo_caja.saldo if saldo_caja is not None else Decimal("0.00")
+    if disponible < venta.monto_acreditado:
+        faltante = venta.monto_acreditado - disponible
+        raise VentaNoDisponible(
+            f"Faltan {faltante:.2f} {venta.moneda_acreditada.codigo} en la caja "
+            "para cubrir la entrega."
+        )
+
+    propuesta = proponer_billetes_entrega(
+        caja=caja,
+        moneda=venta.moneda_acreditada,
+        importe=venta.monto_acreditado,
+    )
+    importe_minimo = propuesta["importe_entrega"]
+    if importe_minimo is None:
+        raise VentaNoDisponible(
+            f"Faltan {propuesta['faltante']:.2f} {venta.moneda_acreditada.codigo} "
+            "en billetes para cubrir la entrega."
+        )
+
+    try:
+        movimiento = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.RETIRO,
+            moneda_id=venta.moneda_acreditada_id,
+            realizado_por=usuario,
+            nota=f"Entrega de efectivo por venta #{venta.pk}",
+            billetes=cantidades,
+        )
+    except MovimientoNoPermitido as error:
+        raise VentaNoDisponible(str(error)) from error
+
+    if movimiento.importe != importe_minimo:
+        raise VentaNoDisponible(
+            f"El desglose debe sumar el importe mínimo posible de "
+            f"{importe_minimo:.2f} {venta.moneda_acreditada.codigo}."
+        )
+
     estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CONFIRMADA
     venta.confirmado_en = timezone.now()
-    venta.save(update_fields=["estado", "confirmado_en"])
+    venta.monto_efectivo_entregado = movimiento.importe
+    venta.save(
+        update_fields=["estado", "confirmado_en", "monto_efectivo_entregado"]
+    )
     registrar_cambio_estado(venta, estado_anterior, venta.estado, usuario=usuario)
     _facturar(venta)
     return venta

@@ -81,6 +81,120 @@ def _importe_inventario(queryset, moneda):
     return total
 
 
+def proponer_billetes_entrega(*, caja, moneda, importe):
+    """Propone el menor importe posible que cubra la entrega con el inventario."""
+    existencias = list(
+        InventarioBilleteCaja.objects.filter(
+            caja=caja, denominacion__moneda=moneda
+        )
+        .select_related("denominacion")
+        .order_by("-denominacion__valor")
+    )
+    disponible = sum(
+        (
+            existencia.denominacion.valor * existencia.cantidad
+            for existencia in existencias
+        ),
+        Decimal("0.00"),
+    )
+
+    importe = Decimal(importe).quantize(Decimal("0.01"))
+    if disponible < importe:
+        return {
+            "billetes": {},
+            "disponible": disponible,
+            "faltante": importe - disponible,
+            "importe_entrega": None,
+            "excedente": None,
+        }
+
+    objetivo_centavos = int(importe * 100)
+    cantidades_disponibles = [
+        (
+            existencia.denominacion_id,
+            int(existencia.denominacion.valor * 100),
+            existencia.cantidad,
+        )
+        for existencia in existencias
+    ]
+
+    # Greedy provides an initial upper bound; bounded search proves that no
+    # available combination reaches the target with a smaller total.
+    restante = objetivo_centavos
+    mejor_total = 0
+    mejor_billetes = {}
+    for denominacion_id, valor, cantidad_disponible in cantidades_disponibles:
+        cantidad = min(cantidad_disponible, (restante + valor - 1) // valor)
+        if cantidad:
+            mejor_billetes[denominacion_id] = cantidad
+            mejor_total += cantidad * valor
+            restante -= cantidad * valor
+        if restante <= 0:
+            break
+
+    sufijos_disponibles = [0] * (len(cantidades_disponibles) + 1)
+    for indice in range(len(cantidades_disponibles) - 1, -1, -1):
+        _, valor, cantidad = cantidades_disponibles[indice]
+        sufijos_disponibles[indice] = (
+            sufijos_disponibles[indice + 1] + valor * cantidad
+        )
+
+    elegidos = {}
+
+    def buscar(indice, subtotal):
+        nonlocal mejor_total, mejor_billetes
+        if subtotal >= objetivo_centavos:
+            if subtotal < mejor_total:
+                mejor_total = subtotal
+                mejor_billetes = elegidos.copy()
+            return
+        if (
+            indice == len(cantidades_disponibles)
+            or subtotal + sufijos_disponibles[indice] < objetivo_centavos
+        ):
+            return
+
+        denominacion_id, valor, cantidad_disponible = cantidades_disponibles[indice]
+        cantidad_minima = max(
+            0,
+            (
+                objetivo_centavos
+                - subtotal
+                - sufijos_disponibles[indice + 1]
+                + valor
+                - 1
+            )
+            // valor,
+        )
+        cantidad_maxima = min(
+            cantidad_disponible,
+            (mejor_total - 1 - subtotal) // valor,
+        )
+        if cantidad_minima > cantidad_maxima:
+            return
+
+        for cantidad in range(cantidad_maxima, cantidad_minima - 1, -1):
+            nuevo_subtotal = subtotal + cantidad * valor
+            if cantidad:
+                elegidos[denominacion_id] = cantidad
+            else:
+                elegidos.pop(denominacion_id, None)
+            buscar(indice + 1, nuevo_subtotal)
+        elegidos.pop(denominacion_id, None)
+
+    buscar(0, 0)
+    importe_entrega = Decimal(mejor_total) / 100
+    billetes = mejor_billetes
+
+    return {
+        "billetes": billetes,
+        "disponible": disponible,
+        "faltante": Decimal("0.00"),
+        "importe_entrega": importe_entrega,
+        "excedente": importe_entrega - importe,
+    }
+
+
 def _verificar_inventario(queryset, moneda, saldo):
     if _importe_inventario(queryset, moneda) != saldo:
         raise MovimientoNoPermitido(
