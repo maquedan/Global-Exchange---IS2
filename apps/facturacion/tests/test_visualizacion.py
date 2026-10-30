@@ -1,5 +1,6 @@
 """Pruebas de consulta de facturas (RF053 — GEG9-54)."""
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -9,6 +10,7 @@ from django.utils import timezone
 from apps.clientes.models import AsociacionUsuarioCliente, Cliente
 from apps.conversiones.models import CompraDivisa
 from apps.facturacion.models import Factura
+from apps.facturacion.documentos import crear_pdf_texto
 from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
 
@@ -164,3 +166,65 @@ def test_menu_muestra_facturas_segun_el_rol(client, datos_facturacion):
     admin = usuario_con_rol("admin-facturas", "administrador")
     client.force_login(admin)
     assert "Facturas" in client.get("/panel/").content.decode()
+
+
+@pytest.mark.django_db
+def test_cliente_descarga_solo_su_pdf_y_xml(client, datos_facturacion):
+    ana = cliente("Ana", "111")
+    bea = cliente("Bea", "222")
+    usuario = usuario_con_rol("ana-descargas", "usuario_cliente")
+    AsociacionUsuarioCliente.objects.create(usuario=usuario, cliente=ana)
+    propia = crear_factura(ana, datos_facturacion, "0000005")
+    propia.cdc = "1" * 44
+    propia.save(update_fields=["cdc"])
+    ajena = crear_factura(bea, datos_facturacion, "0000006")
+    ajena.cdc = "2" * 44
+    ajena.save(update_fields=["cdc"])
+    client.force_login(usuario)
+
+    with patch("apps.facturacion.views.cliente_configurado") as configurado:
+        proveedor = configurado.return_value[1]
+        configurado.return_value = ("simulado", proveedor)
+        proveedor.descargar_documento.side_effect = lambda cdc, formato: (
+            crear_pdf_texto(f"Factura {cdc}") if formato == "pdf" else b"<xml />"
+        )
+        respuesta_pdf = client.get(f"/facturas/{propia.pk}/descargar/pdf/")
+        respuesta_xml = client.get(f"/facturas/{propia.pk}/descargar/xml/")
+
+    assert respuesta_pdf.status_code == 200
+    assert respuesta_pdf["Content-Type"] == "application/pdf"
+    assert b"xref" in respuesta_pdf.content
+    assert b"%%EOF" in respuesta_pdf.content
+    assert respuesta_pdf["Content-Disposition"].endswith(".pdf\"")
+    assert respuesta_xml.status_code == 200
+    assert respuesta_xml["Content-Type"] == "application/xml"
+    assert client.get(f"/facturas/{ajena.pk}/descargar/pdf/").status_code == 404
+    proveedor.descargar_documento.assert_any_call("1" * 44, "pdf")
+    proveedor.descargar_documento.assert_any_call("1" * 44, "xml")
+
+
+@pytest.mark.django_db
+def test_exportacion_respeta_filtros_y_admin_ve_todo(client, datos_facturacion):
+    ana = cliente("Ana", "111")
+    usuario = usuario_con_rol("ana-exporta", "usuario_cliente")
+    AsociacionUsuarioCliente.objects.create(usuario=usuario, cliente=ana)
+    incluida = crear_factura(ana, datos_facturacion, "0000007", "APROBADA")
+    excluida = crear_factura(ana, datos_facturacion, "0000008", "RECHAZADA")
+    client.force_login(usuario)
+
+    respuesta = client.get("/facturas/exportar/excel/?estado_fiscal=APROBADA")
+    cuerpo = respuesta.content.decode()
+    assert respuesta.status_code == 200
+    assert respuesta["Content-Type"] == "application/vnd.ms-excel"
+    assert incluida.numero_completo in cuerpo
+    assert excluida.numero_completo not in cuerpo
+
+    admin = usuario_con_rol("admin-exporta", "administrador")
+    client.force_login(admin)
+    respuesta_pdf = client.get("/facturas/exportar/pdf/")
+    assert respuesta_pdf.status_code == 200
+    assert respuesta_pdf.content.startswith(b"%PDF-1.4")
+    assert b"xref" in respuesta_pdf.content
+    assert b"%%EOF" in respuesta_pdf.content
+    assert incluida.numero_completo.encode() in respuesta_pdf.content
+    assert excluida.numero_completo.encode() in respuesta_pdf.content

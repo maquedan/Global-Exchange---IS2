@@ -171,11 +171,15 @@ class FacturaSeguraCliente(ClienteFacturacion):
         return {"cdc": cdc, "operation_id": operation_id, "respuesta": datos}
 
     def consultar_estado(self, cdc):
-        datos = self._ejecutar("consultar_estado", {"CDC": cdc})
+        datos = self._ejecutar(
+            "get_estado_sifen",
+            {"CDC": cdc, "dRucEm": settings.FACTURACION_EMISOR_RUC},
+        )
         resultados = datos.get("results") or []
         resultado = resultados[0] if resultados and isinstance(resultados[0], dict) else {}
         estado = (
-            resultado.get("estado_fiscal")
+            resultado.get("estado_sifen")
+            or resultado.get("estado_fiscal")
             or resultado.get("estado")
             or resultado.get("status")
             or datos.get("estado_fiscal")
@@ -189,7 +193,39 @@ class FacturaSeguraCliente(ClienteFacturacion):
             )
         return {
             "estado_fiscal": str(estado).upper(),
-            "motivo": resultado.get("motivo") or resultado.get("description") or datos.get("description", ""),
+            "motivo": (
+                resultado.get("desc_sifen")
+                or resultado.get("motivo")
+                or resultado.get("description")
+                or datos.get("description", "")
+            ),
             "operation_id": (datos.get("operation_info") or {}).get("id", ""),
             "respuesta": datos,
         }
+
+    def descargar_documento(self, cdc, formato):
+        operaciones = {"pdf": "dwn_kude", "xml": "dwn_xml"}
+        if formato not in operaciones:
+            raise ValueError("Formato de descarga no soportado.")
+        url = f"{self.base_url}/{operaciones[formato]}/{settings.FACTURACION_EMISOR_RUC}/{cdc}"
+        try:
+            respuesta = requests.get(
+                url,
+                headers={
+                    "Accept": "application/pdf" if formato == "pdf" else "application/xml",
+                    "Authentication-Token": _token(),
+                },
+                timeout=TIMEOUT_SEGUNDOS,
+            )
+        except requests.RequestException as error:
+            raise EmisionSinConfirmar(str(error)) from error
+        if respuesta.status_code >= 400:
+            detalle = respuesta.text[:500] if respuesta.text else "sin detalle"
+            raise FacturaRechazada(
+                f"Factura Segura rechazó la descarga ({respuesta.status_code}): {detalle}",
+                respuesta={"http_status": respuesta.status_code, "detail": detalle},
+            )
+        contenido = respuesta.content
+        if not contenido:
+            raise FacturaRechazada("La descarga no devolvió contenido.")
+        return contenido

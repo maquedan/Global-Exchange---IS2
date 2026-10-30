@@ -17,6 +17,13 @@
   </div>
   {% endif %}
 
+  {% if factura.cdc %}
+  <div class="mt-4 flex flex-wrap gap-3">
+    <a class="boton" href="{% url 'facturacion:descargar_pdf' factura.pk %}">Descargar representación gráfica (PDF)</a>
+    <a class="boton boton-secundario" href="{% url 'facturacion:descargar_xml' factura.pk %}">Descargar XML</a>
+  </div>
+  {% endif %}
+
   {% if factura.estado_fiscal == "RECHAZADA" %}<div class="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800"><strong>Motivo del rechazo:</strong> {{ factura.motivo_rechazo|default:"No informado por SIFEN" }}</div>{% endif %}
 
   <dl class="mt-6 grid gap-x-8 gap-y-5 sm:grid-cols-2">

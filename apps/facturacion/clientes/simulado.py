@@ -13,6 +13,7 @@ de documento (``01`` para una factura).
 import uuid
 
 from .base import ClienteFacturacion
+from ..documentos import crear_pdf_texto
 
 PREFIJO_CDC_SIMULADO = "99"
 
@@ -42,8 +43,19 @@ class FacturaSimuladaCliente(ClienteFacturacion):
             "respuesta": {"code": 0, "estado": "EMITIDA", "CDC": cdc, "simulado": True},
         }
 
+    def descargar_documento(self, cdc, formato):
+        if formato == "xml":
+            return f'<FacturaSimulada CDC="{cdc}" />'.encode()
+        if formato == "pdf":
+            return _pdf_simulado(cdc)
+        raise ValueError("Formato de descarga no soportado.")
+
 
 def _cdc_simulado():
     """CDC de 44 dígitos, con el prefijo que lo delata como simulado."""
     relleno = f"{uuid.uuid4().int:042d}"[-42:]
     return PREFIJO_CDC_SIMULADO + relleno
+
+
+def _pdf_simulado(cdc):
+    return crear_pdf_texto(f"Factura simulada - CDC {cdc}")

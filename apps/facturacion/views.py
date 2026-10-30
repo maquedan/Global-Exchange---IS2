@@ -7,12 +7,14 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 
 from apps.usuarios.menu import tiene_rol
 
 from .models import Factura
-from .services import consultar_estado_fiscal, reintentar_factura
+from .documentos import crear_pdf_texto
+from .services import cliente_configurado, consultar_estado_fiscal, reintentar_factura
 
 
 def requiere_consulta_facturas(vista):
@@ -84,11 +86,8 @@ def _fecha(valor, nombre, request):
         return None
 
 
-@login_required
-@requiere_consulta_facturas
-@requiere_cliente_activo_si_no_es_administrador
-def lista(request):
-    """Listado filtrable de facturas visibles para el rol actual."""
+def facturas_filtradas(request):
+    """Aplica los filtros del listado a las facturas autorizadas."""
     facturas = facturas_visibles_para(request)
     numero = request.GET.get("numero", "").strip()
     estado_fiscal = request.GET.get("estado_fiscal", "")
@@ -111,22 +110,93 @@ def lista(request):
     if fecha_hasta:
         facturas = facturas.filter(creada_en__date__lte=fecha_hasta)
 
+    return facturas
+
+
+def _filtros_contexto(facturas, request):
     estados_fiscales = (
         facturas.exclude(estado_fiscal="")
         .order_by("estado_fiscal")
         .values_list("estado_fiscal", flat=True)
         .distinct()
     )
+    return {
+        "facturas": facturas,
+        "estados_fiscales": estados_fiscales,
+        "filtros": request.GET,
+        "es_administrador": tiene_rol(request.user, "administrador"),
+    }
+
+
+@login_required
+@requiere_consulta_facturas
+@requiere_cliente_activo_si_no_es_administrador
+def lista(request):
+    """Listado filtrable de facturas visibles para el rol actual."""
     return render(
         request,
         "facturacion/lista.html",
-        {
-            "facturas": facturas,
-            "estados_fiscales": estados_fiscales,
-            "filtros": request.GET,
-            "es_administrador": tiene_rol(request.user, "administrador"),
-        },
+        _filtros_contexto(facturas_filtradas(request), request),
     )
+
+
+def _descargar_factura(request, pk, formato):
+    factura = get_object_or_404(facturas_visibles_para(request), pk=pk)
+    if not factura.cdc:
+        return HttpResponse("La factura todavía no tiene CDC.", status=409)
+    _, cliente = cliente_configurado()
+    contenido = cliente.descargar_documento(factura.cdc, formato)
+    tipo = "application/pdf" if formato == "pdf" else "application/xml"
+    extension = "pdf" if formato == "pdf" else "xml"
+    respuesta = HttpResponse(contenido, content_type=tipo)
+    respuesta["Content-Disposition"] = f'attachment; filename="factura-{factura.numero_completo}.{extension}"'
+    return respuesta
+
+
+@login_required
+@requiere_consulta_facturas
+@requiere_cliente_activo_si_no_es_administrador
+def descargar_pdf(request, pk):
+    return _descargar_factura(request, pk, "pdf")
+
+
+@login_required
+@requiere_consulta_facturas
+@requiere_cliente_activo_si_no_es_administrador
+def descargar_xml(request, pk):
+    return _descargar_factura(request, pk, "xml")
+
+
+def _filas_exportacion(facturas):
+    return [[f.numero_completo, f.generada_en or f.creada_en, f.operacion.cliente,
+             f.monto, f.moneda, f.estado_fiscal or "Sin consultar"] for f in facturas]
+
+
+@login_required
+@requiere_consulta_facturas
+@requiere_cliente_activo_si_no_es_administrador
+def exportar_historial(request, formato):
+    facturas = facturas_filtradas(request)
+    filas = _filas_exportacion(facturas)
+    encabezados = ["Factura", "Fecha", "Cliente", "Monto", "Moneda", "Estado fiscal"]
+    if formato == "excel":
+        import html
+        filas_html = "".join("<Row>" + "".join(f"<Cell><Data ss:Type=\"String\">{html.escape(str(v))}</Data></Cell>" for v in fila) + "</Row>" for fila in filas)
+        cuerpo = "<?xml version=\"1.0\"?><Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\" xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\"><Worksheet ss:Name=\"Facturación\"><Table><Row>" + "".join(f"<Cell><Data ss:Type=\"String\">{h}</Data></Cell>" for h in encabezados) + "</Row>" + filas_html + "</Table></Worksheet></Workbook>"
+        respuesta = HttpResponse(cuerpo, content_type="application/vnd.ms-excel")
+        respuesta["Content-Disposition"] = 'attachment; filename="historial-facturacion.xls"'
+        return respuesta
+    if formato == "pdf":
+        texto = "Historial de facturación\n" + "\n".join(" | ".join(str(v) for v in fila) for fila in filas)
+        contenido = _pdf_texto(texto)
+        respuesta = HttpResponse(contenido, content_type="application/pdf")
+        respuesta["Content-Disposition"] = 'attachment; filename="historial-facturacion.pdf"'
+        return respuesta
+    return HttpResponse("Formato no soportado.", status=404)
+
+
+def _pdf_texto(texto):
+    return crear_pdf_texto(texto)
 
 
 @login_required

@@ -480,7 +480,7 @@ resultado.
 ### 5.1. «¿Cómo consultar sin duplicar una factura?»
 
 Una factura puede tener CDC aunque la respuesta de la emisión se haya perdido.
-Por eso `emitir_factura()` consulta primero `consultar_estado` cuando existe
+Por eso `emitir_factura()` consulta primero `get_estado_sifen` cuando existe
 CDC y solo vuelve a generar si el resultado es `RECHAZADA`. Si la API devuelve
 `EMITIDA` o `APROBADA`, no se reenvía el documento.
 
@@ -622,5 +622,69 @@ Se ejecutaron las pruebas específicas del módulo:
 docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
 ```
 Las pruebas cubren que el rol terminal vea solo las opciones de menú correspondientes, que acceda a la pantalla inicial, que otros roles reciban 403, que la ruta de reinicio rechace solicitudes GET y que una solicitud POST elimine correctamente los datos temporales de la sesión antes de redirigir al inicio.
+
+## 10. Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 10.1. «¿Qué ya existe para implementar la descarga?»
+
+**Lo que aprendimos.** La aplicación ya tenía el modelo `Factura`, el CDC
+devuelto por Factura Segura, el listado filtrable de facturas y una capa
+adaptadora para separar la API real del cliente simulado. No era necesario
+crear otra entidad para guardar descargas ni duplicar la lógica de facturación.
+
+**Decisión.** Extender la interfaz existente de `ClienteFacturacion` con una
+operación de descarga y reutilizar el modelo y los servicios actuales. El
+cliente simulado genera documentos de prueba para poder validar la funcionalidad
+sin credenciales ni llamadas de red.
+
+### 10.2. «¿Cómo se controla que un cliente no descargue una factura ajena?»
+
+**Lo que aprendimos.** Ocultar los botones de descarga no es una medida de
+seguridad: un usuario podría escribir directamente la URL de otra factura.
+
+**Decisión.** Cada vista de descarga consulta `facturas_visibles_para(request)`.
+Ese queryset limita a un cliente al cliente activo de su sesión y permite al
+administrador consultar todas las facturas. Si la factura no pertenece al
+usuario, la vista responde `404`, incluso cuando se accede manualmente por URL.
+
+### 10.3. «¿Cómo se obtienen los documentos de Factura Segura?»
+
+**Lo que aprendimos.** La API trabaja con el CDC y devuelve el contenido de
+los documentos codificado en la respuesta. La representación gráfica de la
+factura corresponde al KuDE en PDF y el documento fiscal descargable es el XML.
+
+**Decisión.** El adaptador real usa los endpoints GET `dwn_kude/{dRucEm}/{CDC}`
+y `dwn_xml/{dRucEm}/{CDC}` definidos en el manual, conserva el contenido
+binario recibido y lo devuelve a la vista. Las vistas agregan el tipo MIME y
+un nombre de archivo basado en el número de factura.
+
+### 10.4. «¿Cómo se exporta el historial respetando los filtros?»
+
+**Lo que aprendimos.** Si la exportación arma otro queryset independiente,
+puede terminar incluyendo facturas que el usuario no ve en pantalla o perder
+los filtros aplicados.
+
+**Decisión.** El PDF y el Excel-compatible se generan usando el mismo queryset
+filtrado del listado, conservando número, rango de fechas, estado fiscal y tipo
+de transacción. El Excel se entrega como `.xls` compatible con Microsoft Excel
+sin agregar una dependencia obligatoria al proyecto.
+
+### 10.5. Cambios realizados
+
+- Descarga protegida de la representación gráfica PDF y del XML por factura.
+- Exportación del historial a PDF y Excel-compatible (`.xls`).
+- Enlaces de descarga en el detalle y de exportación en el listado.
+- Métodos nuevos en los clientes real y simulado de Factura Segura.
+- Pruebas en `apps/facturacion/tests/test_visualizacion.py` y
+  `apps/facturacion/tests/test_facturacion.py`.
+
+### 10.6. Verificaciones realizadas
+
+`.venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q`
+
+Resultado: **8 passed**. También se ejecutó `.venv/bin/python manage.py check`,
+sin errores. La suite completa de facturación terminó con **40 passed**.
 
 ---

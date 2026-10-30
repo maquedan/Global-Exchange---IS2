@@ -710,6 +710,33 @@ def test_un_code_negativo_se_traduce_a_factura_rechazada(settings):
     assert "iTiOpe" in str(error.value)
 
 
+@pytest.mark.parametrize(
+    ("formato", "operacion", "mime", "contenido"),
+    [
+        ("pdf", "dwn_kude", "application/pdf", b"%PDF-1.4"),
+        ("xml", "dwn_xml", "application/xml", b"<DE />"),
+    ],
+)
+def test_descarga_real_usa_los_endpoints_get_del_manual(
+    settings, formato, operacion, mime, contenido
+):
+    settings.FACTURASEGURA_TOKEN = "token-de-prueba"
+    settings.FACTURACION_EMISOR_RUC = "2595733"
+    settings.FACTURACION_TIMBRADO = "02595733"
+    cliente = FacturaSeguraCliente()
+    respuesta = type("Respuesta", (), {"status_code": 200, "content": contenido})()
+
+    with patch("apps.facturacion.clientes.facturasegura.requests.get", return_value=respuesta) as get:
+        resultado = cliente.descargar_documento("1" * 44, formato)
+
+    assert resultado == contenido
+    get.assert_called_once_with(
+        f"https://apitest.facturasegura.com.py/misife00/v1/esi/{operacion}/2595733/{'1' * 44}",
+        headers={"Accept": mime, "Authentication-Token": "token-de-prueba"},
+        timeout=5,
+    )
+
+
 def test_un_timeout_se_traduce_a_emision_sin_confirmar(settings):
     settings.FACTURASEGURA_TOKEN = "token-de-prueba"
     settings.FACTURACION_EMISOR_RUC = "80002247"

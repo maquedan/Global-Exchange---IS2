@@ -370,3 +370,16 @@ apps/terminal/tests/test_terminal.py .....                                      
 Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú reducido a las opciones **Panel** y **Terminal**, la visualización de las tres acciones iniciales de autoservicio, la denegación de acceso a usuarios sin dicho rol y el reinicio seguro de la terminal mediante `POST`, incluyendo la limpieza de los datos temporales de la sesión.
 
 ---
+## Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
+
+| Campo | Valor |
+|---|---|
+| **Fecha** | viernes 30 de octubre de 2026 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/facturacion/tests/test_visualizacion.py` |
+| **Comando** | `.venv/bin/python -m pytest apps/facturacion/tests/test_visualizacion.py -q` |
+| **Resultado** | **8 passed** |
+
+Las pruebas cubren PDF/XML por CDC, separación de datos entre cliente y
+administrador, exportación PDF, exportación Excel-compatible y respeto de los
+filtros. El cliente de Factura Segura se reemplaza por un doble, por lo que no
+se realizan llamadas de red.
