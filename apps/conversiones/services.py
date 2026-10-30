@@ -4,12 +4,19 @@ from decimal import Decimal, ROUND_HALF_UP
 from django.db import transaction
 from django.utils import timezone
 
+from apps.cajas.models import Caja, MovimientoCaja, SaldoCaja
+from apps.cajas.services import (
+    MovimientoNoPermitido,
+    proponer_billetes_entrega,
+    registrar_movimiento,
+)
 from apps.clientes.models import Cliente
 from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.services import cliente_habilitado_para
 
-from .models import CompraDivisa, VentaDivisa
+from .models import CambioEstado, CompraDivisa, VentaDivisa
 
 
 DOS_DECIMALES = Decimal("0.01")
@@ -19,10 +26,50 @@ DOS_DECIMALES = Decimal("0.01")
 # para confirmar indefinidamente (RF051 — GEG9-51).
 MINUTOS_EXPIRACION_PENDIENTE = 15
 
+def usuario_es_terminal(usuario):
+    """Indica si el usuario autenticado corresponde a una terminal."""
+    return bool(
+        usuario
+        and usuario.is_authenticated
+        and usuario.groups.filter(name="terminal").exists()
+    )
+
 
 def _vencio_el_plazo(operacion):
     limite = operacion.creado_en + timedelta(minutes=MINUTOS_EXPIRACION_PENDIENTE)
     return timezone.now() > limite
+
+
+def registrar_cambio_estado(operacion, estado_anterior, estado_nuevo, *, motivo="", usuario=None):
+    """Deja constancia de una transición de estado (RF023 — GEG9-37).
+
+    `estado_anterior` vacío significa que la operación recién se crea (todavía
+    no tenía ningún estado previo). Todo cambio de `.estado` en este archivo
+    debe pasar por acá, para que el historial quede completo.
+    """
+    campo_operacion = "compra" if isinstance(operacion, CompraDivisa) else "venta"
+    return CambioEstado.objects.create(
+        estado_anterior=estado_anterior,
+        estado_nuevo=estado_nuevo,
+        motivo=motivo,
+        usuario=usuario,
+        **{campo_operacion: operacion},
+    )
+
+
+def _facturar(operacion):
+    """Agenda la emisión de la factura electrónica de la operación (RF026).
+
+    El import va acá adentro y no arriba porque `apps.facturacion` importa
+    los modelos de esta app: hacerlo a nivel de módulo sería circular.
+
+    `programar_emision` usa `transaction.on_commit`, así que la factura se
+    emite recién cuando la confirmación quedó guardada, y un fallo de la
+    facturación nunca revierte la operación.
+    """
+    from apps.facturacion.services import programar_emision
+
+    programar_emision(operacion)
 
 
 def calcular_conversion(monto, tasa, tipo_operacion):
@@ -57,13 +104,26 @@ class CompraNoConfirmable(Exception):
 
 
 @transaction.atomic
-def iniciar_compra(*, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado):
+def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado, desde_terminal=False):
     """Congela la tasa y comisión vigentes y deja la compra en estado PENDIENTE.
 
     El monto ingresado es la base de conversión. La comisión se cobra aparte y
     forma parte del total a pagar. La operación recién queda CONFIRMADA cuando
     el cliente confirma el pago en `confirmar_pago_compra` (RF051).
+
+    `usuario` es obligatorio desde RF010 (GEG9-20): el servicio comprueba por
+    su cuenta que esa persona pueda operar en nombre del cliente, en vez de
+    confiar en que la vista ya lo verificó.
     """
+    if desde_terminal:
+        if not usuario_es_terminal(usuario):
+            raise CompraNoDisponible(
+                "Solo una terminal autorizada puede iniciar esta operación."
+            )
+    else:
+        cliente_habilitado_para(usuario, cliente_id)
+
+
     cliente = Cliente.objects.select_for_update().filter(pk=cliente_id, activo=True).first()
     if cliente is None:
         raise CompraNoDisponible("El cliente ya no está habilitado para operar.")
@@ -97,7 +157,7 @@ def iniciar_compra(*, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado)
     total_a_pagar = monto_pagado + monto_comision
     monto_recibido = calcular_conversion(monto_pagado, tasa.tasa_compra, "compra")
 
-    return CompraDivisa.objects.create(
+    compra = CompraDivisa.objects.create(
         cliente=cliente,
         moneda_pagada=moneda_pagada,
         moneda_adquirida=moneda_adquirida,
@@ -109,6 +169,8 @@ def iniciar_compra(*, cliente_id, moneda_pagada, moneda_adquirida, monto_pagado)
         tasa_aplicada=tasa.tasa_compra,
         monto_recibido=monto_recibido,
     )
+    registrar_cambio_estado(compra, "", compra.estado)
+    return compra
 
 
 @transaction.atomic
@@ -119,10 +181,15 @@ def expirar_compra_si_corresponde(compra):
     que una cotización vieja nunca quede disponible para pagar (RF051).
     """
     if compra.estado == CompraDivisa.Estado.PENDIENTE and _vencio_el_plazo(compra):
+        estado_anterior = compra.estado
         compra.estado = CompraDivisa.Estado.CANCELADA
         compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.EXPIRADA
         compra.cancelado_en = timezone.now()
         compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            compra, estado_anterior, compra.estado,
+            motivo="Se venció el tiempo para confirmar.",
+        )
     return compra
 
 
@@ -136,7 +203,14 @@ def confirmar_pago_compra(*, pk, usuario):
     """
     compra = (
         CompraDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # cliente__activo: si al cliente lo dieron de baja (RF003) con la
+        # operación pendiente, tampoco se puede confirmar ni cancelar
+        # (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if compra is None:
@@ -160,15 +234,23 @@ def confirmar_pago_compra(*, pk, usuario):
     )
 
     if tasa_vigente is None or tasa_vigente.pk != compra.tasa_cambio_id:
+        estado_anterior = compra.estado
         compra.estado = CompraDivisa.Estado.CANCELADA
         compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.CAMBIO_COTIZACION
         compra.cancelado_en = timezone.now()
         compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            compra, estado_anterior, compra.estado,
+            motivo="La cotización cambió antes de confirmar.", usuario=usuario,
+        )
         return compra
 
+    estado_anterior = compra.estado
     compra.estado = CompraDivisa.Estado.CONFIRMADA
     compra.confirmado_en = timezone.now()
     compra.save(update_fields=["estado", "confirmado_en"])
+    registrar_cambio_estado(compra, estado_anterior, compra.estado, usuario=usuario)
+    _facturar(compra)
     return compra
 
 
@@ -177,7 +259,14 @@ def cancelar_compra(*, pk, usuario):
     """Cancela una compra pendiente por decisión del cliente."""
     compra = (
         CompraDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # cliente__activo: si al cliente lo dieron de baja (RF003) con la
+        # operación pendiente, tampoco se puede confirmar ni cancelar
+        # (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if compra is None:
@@ -189,10 +278,15 @@ def cancelar_compra(*, pk, usuario):
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         return compra
 
+    estado_anterior = compra.estado
     compra.estado = CompraDivisa.Estado.CANCELADA
     compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.CLIENTE
     compra.cancelado_en = timezone.now()
     compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+    registrar_cambio_estado(
+        compra, estado_anterior, compra.estado,
+        motivo="Cancelada por el cliente.", usuario=usuario,
+    )
     return compra
 
 
@@ -204,24 +298,45 @@ class VentaNoConfirmable(Exception):
     """La venta pendiente no puede confirmarse ni cancelarse por acción del cliente."""
 
 
+class AnulacionVentaNoPermitida(Exception):
+    """La venta confirmada no puede anularse de forma segura."""
+
+
 @transaction.atomic
 def iniciar_venta(
-    *, cliente_id, moneda_entregada, moneda_acreditada, cuenta_destino, monto_entregado
+    *, usuario, cliente_id, moneda_entregada, moneda_acreditada,
+    monto_entregado, cuenta_destino=None, desde_terminal=False
 ):
-    """Congela la tasa y comisión vigentes y deja la venta en estado PENDIENTE."""
+    """Congela la tasa y comisión y deja la venta PENDIENTE de entrega en efectivo.
+
+    `usuario` es obligatorio desde RF010 (GEG9-20), igual que en
+    `iniciar_compra`.
+    """
+    if desde_terminal:
+        if not usuario_es_terminal(usuario):
+            raise VentaNoDisponible(
+                "Solo una terminal autorizada puede iniciar esta operación."
+            )
+    else:
+        cliente_habilitado_para(usuario, cliente_id)
+
     cliente = Cliente.objects.select_for_update().filter(pk=cliente_id, activo=True).first()
     if cliente is None:
         raise VentaNoDisponible("El cliente ya no está habilitado para operar.")
     if moneda_entregada == moneda_acreditada:
         raise VentaNoDisponible("Las monedas deben ser diferentes.")
 
-    cuenta = (
-        CuentaPago.objects.select_for_update()
-        .filter(pk=cuenta_destino.pk, cliente=cliente, activa=True)
-        .first()
-    )
-    if cuenta is None:
-        raise VentaNoDisponible("La cuenta de destino no está activa o no pertenece al cliente.")
+    cuenta = None
+    if cuenta_destino is not None:
+        cuenta = (
+            CuentaPago.objects.select_for_update()
+            .filter(pk=cuenta_destino.pk, cliente=cliente, activa=True)
+            .first()
+        )
+        if cuenta is None:
+            raise VentaNoDisponible(
+                "La cuenta de destino no está activa o no pertenece al cliente."
+            )
 
     tasa = (
         TasaCambio.objects.select_for_update()
@@ -253,7 +368,7 @@ def iniciar_venta(
     monto_convertido = calcular_conversion(monto_entregado, tasa.tasa_compra, "compra")
     monto_comision = calcular_comision(monto_convertido, comision.porcentaje)
 
-    return VentaDivisa.objects.create(
+    venta = VentaDivisa.objects.create(
         cliente=cliente,
         moneda_entregada=moneda_entregada,
         moneda_acreditada=moneda_acreditada,
@@ -266,30 +381,49 @@ def iniciar_venta(
         monto_acreditado=monto_convertido - monto_comision,
         tasa_aplicada=tasa.tasa_compra,
     )
+    registrar_cambio_estado(venta, "", venta.estado)
+    return venta
 
 
 @transaction.atomic
 def expirar_venta_si_corresponde(venta):
     """Cancela una venta pendiente si superó el tiempo límite para confirmar."""
     if venta.estado == VentaDivisa.Estado.PENDIENTE and _vencio_el_plazo(venta):
+        estado_anterior = venta.estado
         venta.estado = VentaDivisa.Estado.CANCELADA
         venta.motivo_cancelacion = VentaDivisa.MotivoCancelacion.EXPIRADA
         venta.cancelado_en = timezone.now()
         venta.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            venta, estado_anterior, venta.estado,
+            motivo="Se venció el tiempo para confirmar.",
+        )
     return venta
 
 
 @transaction.atomic
-def confirmar_pago_venta(*, pk, usuario):
-    """Confirma el pago de una venta pendiente, si la cotización no cambió.
+def confirmar_pago_venta(
+    *, pk, usuario, billetes_recibidos, billetes_entregados
+):
+    """Confirma una venta pendiente y entrega el neto en efectivo (RF058).
 
     Misma protección que `confirmar_pago_compra`: si la tasa activa para el
     par ya cambió respecto a la congelada al iniciar la venta, se cancela sola
-    en vez de acreditar un importe calculado con una tasa distinta (RF051).
+    en vez de entregar un importe calculado con una tasa distinta (RF051).
+    La divisa del cliente ingresa y el efectivo entregado sale del fondo del
+    cajero, con ambos movimientos vinculados a la venta en la misma transacción.
     """
+    if not usuario or not usuario.is_authenticated or not usuario.groups.filter(
+        name="cajero"
+    ).exists():
+        raise VentaNoConfirmable("Solo un cajero puede entregar efectivo de una venta.")
+
     venta = (
         VentaDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        .filter(
+            pk=pk,
+            cliente__activo=True,
+        )
         .first()
     )
     if venta is None:
@@ -313,15 +447,89 @@ def confirmar_pago_venta(*, pk, usuario):
     )
 
     if tasa_vigente is None or tasa_vigente.pk != venta.tasa_cambio_id:
+        estado_anterior = venta.estado
         venta.estado = VentaDivisa.Estado.CANCELADA
         venta.motivo_cancelacion = VentaDivisa.MotivoCancelacion.CAMBIO_COTIZACION
         venta.cancelado_en = timezone.now()
         venta.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+        registrar_cambio_estado(
+            venta, estado_anterior, venta.estado,
+            motivo="La cotización cambió antes de confirmar.", usuario=usuario,
+        )
         return venta
 
+    caja = (
+        Caja.objects.select_for_update()
+        .filter(sucursal__activa=True)
+        .select_related("sucursal")
+        .first()
+    )
+    if caja is None:
+        raise VentaNoDisponible("No hay una caja activa configurada para la entrega.")
+
+    propuesta = proponer_billetes_entrega(
+        caja=caja,
+        moneda=venta.moneda_acreditada,
+        importe=venta.monto_acreditado,
+        cajero=usuario,
+    )
+    importe_minimo = propuesta["importe_entrega"]
+    if importe_minimo is None:
+        raise VentaNoDisponible(
+            f"Faltan {propuesta['faltante']:.2f} {venta.moneda_acreditada.codigo} "
+            "en el fondo del cajero para cubrir la entrega."
+        )
+
+    try:
+        movimiento_recibido = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.INGRESO_CAJERO,
+            moneda_id=venta.moneda_entregada_id,
+            realizado_por=usuario,
+            cajero_id=usuario.pk,
+            nota=f"Divisa recibida del cliente por venta #{venta.pk}",
+            billetes=billetes_recibidos,
+        )
+        movimiento_entregado = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
+            moneda_id=venta.moneda_acreditada_id,
+            realizado_por=usuario,
+            cajero_id=usuario.pk,
+            nota=f"Efectivo entregado al cliente por venta #{venta.pk}",
+            billetes=billetes_entregados,
+        )
+    except MovimientoNoPermitido as error:
+        raise VentaNoDisponible(str(error)) from error
+
+    if movimiento_recibido.importe != venta.monto_entregado:
+        raise VentaNoDisponible(
+            f"El desglose recibido debe sumar exactamente "
+            f"{venta.monto_entregado:.2f} {venta.moneda_entregada.codigo}."
+        )
+    if movimiento_entregado.importe != importe_minimo:
+        raise VentaNoDisponible(
+            f"El desglose debe sumar el importe mínimo posible de "
+            f"{importe_minimo:.2f} {venta.moneda_acreditada.codigo}."
+        )
+
+    estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CONFIRMADA
     venta.confirmado_en = timezone.now()
-    venta.save(update_fields=["estado", "confirmado_en"])
+    venta.monto_efectivo_entregado = movimiento_entregado.importe
+    venta.movimiento_efectivo_recibido = movimiento_recibido
+    venta.movimiento_efectivo_entregado = movimiento_entregado
+    venta.save(
+        update_fields=[
+            "estado",
+            "confirmado_en",
+            "monto_efectivo_entregado",
+            "movimiento_efectivo_recibido",
+            "movimiento_efectivo_entregado",
+        ]
+    )
+    registrar_cambio_estado(venta, estado_anterior, venta.estado, usuario=usuario)
+    _facturar(venta)
     return venta
 
 
@@ -330,7 +538,12 @@ def cancelar_venta(*, pk, usuario):
     """Cancela una venta pendiente por decisión del cliente."""
     venta = (
         VentaDivisa.objects.select_for_update()
-        .filter(pk=pk, cliente__asociaciones_usuarios__usuario=usuario)
+        # Ver el comentario en confirmar_pago_compra (RF010 — GEG9-20).
+        .filter(
+            pk=pk,
+            cliente__asociaciones_usuarios__usuario=usuario,
+            cliente__activo=True,
+        )
         .first()
     )
     if venta is None:
@@ -342,8 +555,121 @@ def cancelar_venta(*, pk, usuario):
     if venta.estado == VentaDivisa.Estado.CANCELADA:
         return venta
 
+    estado_anterior = venta.estado
     venta.estado = VentaDivisa.Estado.CANCELADA
     venta.motivo_cancelacion = VentaDivisa.MotivoCancelacion.CLIENTE
     venta.cancelado_en = timezone.now()
     venta.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+    registrar_cambio_estado(
+        venta, estado_anterior, venta.estado,
+        motivo="Cancelada por el cliente.", usuario=usuario,
+    )
+    return venta
+
+
+@transaction.atomic
+def anular_venta(*, pk, usuario, motivo):
+    """Anula una venta confirmada y registra los movimientos inversos (RF059)."""
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="administrador").exists()
+    ):
+        raise AnulacionVentaNoPermitida(
+            "Solo un administrador puede anular una venta confirmada."
+        )
+
+    motivo = (motivo or "").strip()
+    if not motivo or len(motivo) > 255:
+        raise AnulacionVentaNoPermitida(
+            "Indicá un motivo de anulación de hasta 255 caracteres."
+        )
+
+    venta = VentaDivisa.objects.select_for_update().filter(pk=pk).first()
+    if venta is None:
+        raise AnulacionVentaNoPermitida("La venta no existe.")
+    if venta.estado != VentaDivisa.Estado.CONFIRMADA:
+        raise AnulacionVentaNoPermitida(
+            "Solo se pueden anular ventas que ya fueron confirmadas."
+        )
+    if not venta.movimiento_efectivo_recibido_id or not venta.movimiento_efectivo_entregado_id:
+        raise AnulacionVentaNoPermitida(
+            "La venta no tiene ambos movimientos de efectivo vinculados; "
+            "no se puede revertir automáticamente."
+        )
+
+    movimientos = (
+        MovimientoCaja.objects.select_for_update()
+        .filter(
+            pk__in=[
+                venta.movimiento_efectivo_recibido_id,
+                venta.movimiento_efectivo_entregado_id,
+            ]
+        )
+        .prefetch_related("detalle_billetes")
+    )
+    movimientos_por_id = {movimiento.pk: movimiento for movimiento in movimientos}
+    movimiento_recibido = movimientos_por_id.get(
+        venta.movimiento_efectivo_recibido_id
+    )
+    movimiento_entregado = movimientos_por_id.get(
+        venta.movimiento_efectivo_entregado_id
+    )
+    if movimiento_recibido is None or movimiento_entregado is None:
+        raise AnulacionVentaNoPermitida(
+            "No se encuentran los movimientos originales de la venta."
+        )
+    if (
+        movimiento_recibido.tipo != MovimientoCaja.Tipo.INGRESO_CAJERO
+        or movimiento_entregado.tipo != MovimientoCaja.Tipo.RETIRO_CAJERO
+        or movimiento_recibido.caja_id != movimiento_entregado.caja_id
+        or movimiento_recibido.cajero_id != movimiento_entregado.cajero_id
+    ):
+        raise AnulacionVentaNoPermitida(
+            "Los movimientos originales no corresponden a una liquidación "
+            "de efectivo válida."
+        )
+
+    movimientos_inversos = (
+        (movimiento_recibido, MovimientoCaja.Tipo.RETIRO_CAJERO),
+        (movimiento_entregado, MovimientoCaja.Tipo.INGRESO_CAJERO),
+    )
+    for original, tipo_inverso in movimientos_inversos:
+        billetes = dict(
+            original.detalle_billetes.values_list("denominacion_id", "cantidad")
+        )
+        if not billetes:
+            raise AnulacionVentaNoPermitida(
+                "Falta el desglose de billetes de un movimiento original."
+            )
+        try:
+            registrar_movimiento(
+                caja_id=original.caja_id,
+                tipo=tipo_inverso,
+                moneda_id=original.moneda_id,
+                realizado_por=usuario,
+                cajero_id=original.cajero_id,
+                nota=(
+                    f"Anulación de venta #{venta.pk}; reversión del movimiento "
+                    f"#{original.pk}: {motivo}"
+                ),
+                billetes=billetes,
+                reversion_de=original,
+            )
+        except MovimientoNoPermitido as error:
+            raise AnulacionVentaNoPermitida(
+                f"No se puede completar la reversión: {error}"
+            ) from error
+
+    estado_anterior = venta.estado
+    venta.estado = VentaDivisa.Estado.ANULADA
+    venta.anulado_en = timezone.now()
+    venta.save(update_fields=["estado", "anulado_en"])
+    registrar_cambio_estado(
+        venta,
+        estado_anterior,
+        venta.estado,
+        motivo=f"Anulada por administrador: {motivo}",
+        usuario=usuario,
+    )
     return venta

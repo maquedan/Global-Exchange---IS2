@@ -2,8 +2,7 @@ from decimal import Decimal
 
 from django import forms
 
-from apps.clientes.models import Cliente
-from apps.cuentas.models import CuentaPago
+from apps.cajas.models import DenominacionBillete
 from apps.monedas.models import Moneda
 
 from .services import calcular_conversion
@@ -68,9 +67,12 @@ def construir_resultado(formulario, tasa_cambio):
 
 
 class CompraDivisaForm(forms.Form):
-    """Datos que el cliente debe indicar para confirmar una compra de divisas."""
+    """Datos que el cliente debe indicar para confirmar una compra de divisas.
 
-    cliente = forms.ModelChoiceField(queryset=Cliente.objects.none(), label="Cliente")
+    No pide elegir el cliente: la compra se hace en nombre del cliente
+    activo de la sesión (RF008 — GEG9-18), que resuelve el servidor.
+    """
+
     moneda_pagada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True),
         label="Moneda con la que pagás",
@@ -88,14 +90,6 @@ class CompraDivisaForm(forms.Form):
         help_text="La comisión se calcula aparte y se suma al total.",
     )
 
-    def __init__(self, *args, usuario=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        if usuario is not None:
-            self.fields["cliente"].queryset = Cliente.objects.filter(
-                asociaciones_usuarios__usuario=usuario,
-                activo=True,
-            ).distinct()
-
     def clean(self):
         datos = super().clean()
         if (
@@ -111,17 +105,17 @@ class CompraDivisaForm(forms.Form):
 
 
 class VentaDivisaForm(forms.Form):
-    """Datos de una venta y la cuenta del cliente donde acreditar el neto."""
+    """Datos de una venta que el cajero liquidará en efectivo.
 
-    cliente = forms.ModelChoiceField(queryset=Cliente.objects.none(), label="Cliente")
+    Igual que la compra, opera en nombre del cliente activo de la sesión
+    (RF008). El neto se entrega en efectivo al confirmar la venta (RF058).
+    """
+
     moneda_entregada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True), label="Divisa que vendés"
     )
     moneda_acreditada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True), label="Moneda a acreditar"
-    )
-    cuenta_destino = forms.ModelChoiceField(
-        queryset=CuentaPago.objects.none(), label="Cuenta o billetera de destino"
     )
     monto_entregado = forms.DecimalField(
         label="Monto de la divisa que vendés",
@@ -131,34 +125,129 @@ class VentaDivisaForm(forms.Form):
         widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
 
-    def __init__(self, *args, usuario=None, **kwargs):
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        if usuario is not None:
-            self.fields["cliente"].queryset = Cliente.objects.filter(
-                asociaciones_usuarios__usuario=usuario,
-                activo=True,
-            ).distinct()
-            self.fields["cuenta_destino"].queryset = CuentaPago.objects.filter(
-                cliente__asociaciones_usuarios__usuario=usuario,
-                cliente__activo=True,
-                activa=True,
-            ).distinct()
 
     def clean(self):
         datos = super().clean()
         entregada = datos.get("moneda_entregada")
         acreditada = datos.get("moneda_acreditada")
-        cliente = datos.get("cliente")
-        cuenta = datos.get("cuenta_destino")
 
         if entregada and acreditada and entregada == acreditada:
             self.add_error(
                 "moneda_acreditada",
                 "La moneda acreditada debe ser diferente de la que vendés.",
             )
-        if cliente and cuenta and cuenta.cliente_id != cliente.pk:
-            self.add_error(
-                "cuenta_destino",
-                "Elegí una cuenta perteneciente al cliente seleccionado.",
-            )
         return datos
+
+
+class EntregaEfectivoVentaForm(forms.Form):
+    """Desgloses de billetes recibidos y entregados al liquidar la venta."""
+
+    def __init__(
+        self,
+        *args,
+        moneda_recibida,
+        importe_recibido,
+        moneda_entregada,
+        importe_entregado,
+        billetes_entregados_iniciales=None,
+        **kwargs,
+    ):
+        super().__init__(*args, **kwargs)
+        self.moneda_recibida = moneda_recibida
+        self.importe_recibido = importe_recibido
+        self.moneda_entregada = moneda_entregada
+        self.importe_entregado = importe_entregado
+        self.campos_billetes_recibidos = self._agregar_campos_billetes(
+            prefijo="recibido",
+            moneda=moneda_recibida,
+            iniciales={},
+        )
+        self.campos_billetes_entregados = self._agregar_campos_billetes(
+            prefijo="entregado",
+            moneda=moneda_entregada,
+            iniciales=billetes_entregados_iniciales or {},
+        )
+
+    def _agregar_campos_billetes(self, *, prefijo, moneda, iniciales):
+        campos = []
+        denominaciones = DenominacionBillete.objects.filter(
+            moneda=moneda, moneda__activo=True
+        ).order_by("-valor")
+        for denominacion in denominaciones:
+            nombre = f"billete_{prefijo}_{denominacion.pk}"
+            self.fields[nombre] = forms.IntegerField(
+                label=f"{moneda.codigo} {denominacion.valor}",
+                min_value=0,
+                required=False,
+                initial=iniciales.get(denominacion.pk, 0),
+                widget=forms.NumberInput(attrs={"min": "0", "step": "1"}),
+            )
+            campos.append(
+                {
+                    "denominacion": denominacion,
+                    "campo": self[nombre],
+                }
+            )
+        return campos
+
+    def clean(self):
+        datos = super().clean()
+        datos["billetes_recibidos"] = self._limpiar_desglose(
+            datos,
+            prefijo="recibido",
+            campos=self.campos_billetes_recibidos,
+            moneda=self.moneda_recibida,
+            importe_esperado=self.importe_recibido,
+            etiqueta="recibir del cliente",
+        )
+        datos["billetes_entregados"] = self._limpiar_desglose(
+            datos,
+            prefijo="entregado",
+            campos=self.campos_billetes_entregados,
+            moneda=self.moneda_entregada,
+            importe_esperado=self.importe_entregado,
+            etiqueta="entregar al cliente",
+        )
+        return datos
+
+    def _limpiar_desglose(
+        self, datos, *, prefijo, campos, moneda, importe_esperado, etiqueta
+    ):
+        cantidades = {}
+        total = Decimal("0.00")
+        for item in campos:
+            denominacion = item["denominacion"]
+            cantidad = datos.get(f"billete_{prefijo}_{denominacion.pk}") or 0
+            if cantidad:
+                cantidades[denominacion.pk] = cantidad
+                total += denominacion.valor * cantidad
+
+        if total != importe_esperado:
+            diferencia = abs(importe_esperado - total)
+            if prefijo == "entregado":
+                detalle = (
+                    f"Faltan {diferencia:.2f} {moneda.codigo} para alcanzar "
+                    "el importe mínimo posible."
+                    if total < importe_esperado
+                    else f"El desglose supera el importe mínimo posible por "
+                    f"{diferencia:.2f} {moneda.codigo}."
+                )
+            else:
+                detalle = (
+                    f"El desglose para {etiqueta} difiere por {diferencia:.2f} "
+                    f"{moneda.codigo}; debe sumar exactamente "
+                    f"{importe_esperado:.2f} {moneda.codigo}."
+                )
+            self.add_error(None, detalle)
+        return cantidades
+
+
+class AnularVentaForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de anulación",
+        max_length=255,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )

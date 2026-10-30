@@ -11,8 +11,19 @@ urlpatterns = [
     path("compras/<int:pk>/confirmar/", views.confirmar_compra_view, name="confirmar_compra"),
     path("compras/<int:pk>/cancelar/", views.cancelar_compra_view, name="cancelar_compra"),
     path("vender/", views.vender, name="vender"),
+    path(
+        "ventas-administracion/",
+        views.ventas_administracion_view,
+        name="ventas_administracion",
+    ),
     path("ventas/<int:pk>/", views.comprobante_venta, name="comprobante_venta"),
-    path("ventas/<int:pk>/confirmar/", views.confirmar_venta_view, name="confirmar_venta"),
+    path("ventas-pendientes/", views.ventas_pendientes_view, name="ventas_pendientes"),
+    path(
+        "ventas/<int:pk>/entregar-efectivo/",
+        views.confirmar_venta_view,
+        name="confirmar_venta",
+    ),
     path("ventas/<int:pk>/cancelar/", views.cancelar_venta_view, name="cancelar_venta"),
+    path("ventas/<int:pk>/anular/", views.anular_venta_view, name="anular_venta"),
     path("historial/", views.historial, name="historial"),
 ]

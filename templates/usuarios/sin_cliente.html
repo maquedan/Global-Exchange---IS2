@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block titulo %}Tu cuenta todavía no puede operar | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Tu cuenta todavía no está asociada a un cliente</h1>
+
+  <p class="sin-cliente-explicacion">
+    Para comprar o vender divisas, registrar medios de pago o pagar una
+    operación, tu usuario tiene que estar asociado a un cliente. Pedile a un
+    administrador que haga la asociación.
+  </p>
+
+  {% if clientes %}
+    {# Caso raro: tiene clientes pero ninguno elegido. Lo normal lo resuelve #}
+    {# el middleware de RF008; esto es la red por si se llega de otra forma. #}
+    <p class="mensaje">
+      Tenés clientes asociados pero todavía no elegiste con cuál operar.
+    </p>
+    <a class="boton" href="{% url 'usuarios:seleccionar_cliente' %}">Elegir cliente</a>
+  {% endif %}
+
+  <h2>Mientras tanto, sí podés consultar</h2>
+  <ul class="sin-cliente-opciones">
+    <li>
+      <a href="{% url 'tasas:panel' %}">Cotizaciones</a>
+      <span>Ver las tasas de compra y venta vigentes y su evolución.</span>
+    </li>
+    <li>
+      <a href="{% url 'conversiones:simular' %}">Simular una conversión</a>
+      <span>Calcular cuánto recibirías por un importe. No registra ninguna operación.</span>
+    </li>
+    <li>
+      <a href="{% url 'usuarios:panel' %}">Tu panel</a>
+      <span>Volver al inicio.</span>
+    </li>
+  </ul>
+</div>
+
+<style>
+  .sin-cliente-explicacion {
+    padding: 1rem 1.25rem;
+    border: 1px solid #fde68a;
+    border-left: 4px solid #d97706;
+    border-radius: 0.75rem;
+    background: #fffbeb;
+    color: #78350f;
+  }
+
+  .sin-cliente-opciones {
+    list-style: none;
+    margin: 1rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .sin-cliente-opciones li {
+    padding: 0.9rem 1.1rem;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #0ea5e9;
+    border-radius: 0.75rem;
+    background: #f8fafc;
+  }
+
+  .sin-cliente-opciones a {
+    font-weight: 700;
+    color: #0369a1;
+  }
+
+  .sin-cliente-opciones span {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+</style>
+{% endblock %}

@@ -3,13 +3,20 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
+from django.core.paginator import Paginator
 from django.shortcuts import get_object_or_404, redirect, render
+from django.views.decorators.http import require_POST
 
+from apps.cajas.models import Caja
+from apps.cajas.services import proponer_billetes_entrega
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.services import requiere_cliente_activo
 
 from .forms import (
+    AnularVentaForm,
     CompraDivisaForm,
+    EntregaEfectivoVentaForm,
     SimulacionConversionForm,
     VentaDivisaForm,
     construir_resultado,
@@ -17,12 +24,14 @@ from .forms import (
 from .models import CompraDivisa, VentaDivisa
 from .services import (
     MINUTOS_EXPIRACION_PENDIENTE,
+    AnulacionVentaNoPermitida,
     CompraNoConfirmable,
     CompraNoDisponible,
     VentaNoConfirmable,
     VentaNoDisponible,
     cancelar_compra,
     cancelar_venta,
+    anular_venta,
     confirmar_pago_compra,
     confirmar_pago_venta,
     expirar_compra_si_corresponde,
@@ -36,6 +45,26 @@ def requiere_cliente(vista):
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_cajero(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "cajero"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_administrador(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "administrador"):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
@@ -72,6 +101,7 @@ def simular(request):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def comprar(request):
     """Inicia una compra con los valores vigentes al enviar el formulario.
 
@@ -81,14 +111,13 @@ def comprar(request):
     Si viene con datos por query string (el botón "Repetir esta operación" de
     una compra cancelada), se usan para pre-llenar el formulario.
     """
-    formulario = CompraDivisaForm(
-        request.POST or None, usuario=request.user, initial=request.GET or None
-    )
+    formulario = CompraDivisaForm(request.POST or None, initial=request.GET or None)
     if request.method == "POST" and formulario.is_valid():
         datos = formulario.cleaned_data
         try:
             compra = iniciar_compra(
-                cliente_id=datos["cliente"].pk,
+                usuario=request.user,
+                cliente_id=request.cliente_activo.pk,
                 moneda_pagada=datos["moneda_pagada"],
                 moneda_adquirida=datos["moneda_adquirida"],
                 monto_pagado=datos["monto_pagado"],
@@ -122,6 +151,7 @@ def comprobante_compra(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def confirmar_compra_view(request, pk):
     """Confirma el pago de una compra pendiente (RF051 — GEG9-51)."""
     if request.method != "POST":
@@ -146,6 +176,7 @@ def confirmar_compra_view(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def cancelar_compra_view(request, pk):
     """Cancela una compra pendiente por decisión del cliente (RF051)."""
     if request.method != "POST":
@@ -162,8 +193,9 @@ def cancelar_compra_view(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def vender(request):
-    """Inicia una venta con la cuenta de acreditación elegida.
+    """Inicia una venta que queda pendiente de entrega en efectivo.
 
     Queda pendiente de confirmación (RF051), igual que una compra.
 
@@ -171,16 +203,16 @@ def vender(request):
     una venta cancelada), se usan para pre-llenar el formulario.
     """
     formulario = VentaDivisaForm(
-        request.POST or None, usuario=request.user, initial=request.GET or None
+        request.POST or None, initial=request.GET or None
     )
     if request.method == "POST" and formulario.is_valid():
         datos = formulario.cleaned_data
         try:
             venta = iniciar_venta(
-                cliente_id=datos["cliente"].pk,
+                usuario=request.user,
+                cliente_id=request.cliente_activo.pk,
                 moneda_entregada=datos["moneda_entregada"],
                 moneda_acreditada=datos["moneda_acreditada"],
-                cuenta_destino=datos["cuenta_destino"],
                 monto_entregado=datos["monto_entregado"],
             )
         except VentaNoDisponible as error:
@@ -192,50 +224,161 @@ def vender(request):
 
 
 @login_required
-@requiere_cliente
 def comprobante_venta(request, pk):
     """Muestra el estado de la venta (pendiente, confirmada o cancelada)."""
+    es_cajero = tiene_rol(request.user, "cajero", "administrador")
+    filtros = {"pk": pk}
+    if not es_cajero:
+        if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        filtros["cliente__asociaciones_usuarios__usuario"] = request.user
+
     venta = get_object_or_404(
         VentaDivisa.objects.select_related(
-            "cliente", "moneda_entregada", "moneda_acreditada", "cuenta_destino"
+            "cliente",
+            "moneda_entregada",
+            "moneda_acreditada",
+            "cuenta_destino",
+            "movimiento_efectivo_recibido__moneda",
+            "movimiento_efectivo_entregado__moneda",
+            "movimiento_efectivo_recibido__movimiento_reversion__moneda",
+            "movimiento_efectivo_entregado__movimiento_reversion__moneda",
+        ).prefetch_related(
+            "movimiento_efectivo_recibido__detalle_billetes__denominacion",
+            "movimiento_efectivo_entregado__detalle_billetes__denominacion",
+            "movimiento_efectivo_recibido__movimiento_reversion__detalle_billetes__denominacion",
+            "movimiento_efectivo_entregado__movimiento_reversion__detalle_billetes__denominacion",
         ),
-        pk=pk,
-        cliente__asociaciones_usuarios__usuario=request.user,
+        **filtros,
     )
     venta = expirar_venta_si_corresponde(venta)
     return render(
         request,
         "conversiones/comprobante_venta.html",
-        {"venta": venta, "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE},
+        {
+            "venta": venta,
+            "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE,
+            "es_cajero": es_cajero,
+            "es_administrador": tiene_rol(request.user, "administrador"),
+        },
+    )
+
+
+@login_required
+@requiere_cajero
+def ventas_pendientes_view(request):
+    ventas = (
+        VentaDivisa.objects.filter(estado=VentaDivisa.Estado.PENDIENTE)
+        .select_related("cliente", "moneda_entregada", "moneda_acreditada")
+        .order_by("creado_en", "pk")
+    )
+    return render(request, "conversiones/ventas_pendientes.html", {"ventas": ventas})
+
+
+@login_required
+@requiere_administrador
+def ventas_administracion_view(request):
+    """Lista las ventas para que administración pueda consultar y anular."""
+    ventas = (
+        VentaDivisa.objects.select_related(
+            "cliente",
+            "moneda_entregada",
+            "moneda_acreditada",
+        )
+        .order_by("-creado_en", "-pk")
+    )
+    pagina = Paginator(ventas, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "conversiones/ventas_administracion.html",
+        {"ventas": pagina, "ventas_page_obj": pagina},
+    )
+
+
+@login_required
+@requiere_cajero
+def confirmar_venta_view(request, pk):
+    """Permite al cajero revisar el desglose y confirmar la entrega (RF058)."""
+    venta = get_object_or_404(
+        VentaDivisa.objects.select_related(
+            "cliente", "moneda_entregada", "moneda_acreditada", "cuenta_destino"
+        ),
+        pk=pk,
+    )
+    venta = expirar_venta_si_corresponde(venta)
+    if venta.estado != VentaDivisa.Estado.PENDIENTE:
+        return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+    caja = Caja.objects.filter(sucursal__activa=True).first()
+    propuesta = (
+        proponer_billetes_entrega(
+            caja=caja,
+            moneda=venta.moneda_acreditada,
+            importe=venta.monto_acreditado,
+            cajero=request.user,
+        )
+        if caja is not None
+        else {
+            "billetes": {},
+            "disponible": venta.monto_acreditado * 0,
+            "faltante": venta.monto_acreditado,
+            "importe_entrega": None,
+            "excedente": None,
+        }
+    )
+    formulario = EntregaEfectivoVentaForm(
+        request.POST if request.method == "POST" else None,
+        moneda_recibida=venta.moneda_entregada,
+        importe_recibido=venta.monto_entregado,
+        moneda_entregada=venta.moneda_acreditada,
+        importe_entregado=propuesta["importe_entrega"] or venta.monto_acreditado,
+        billetes_entregados_iniciales=propuesta["billetes"],
+    )
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            venta = confirmar_pago_venta(
+                pk=venta.pk,
+                usuario=request.user,
+                billetes_recibidos=formulario.cleaned_data["billetes_recibidos"],
+                billetes_entregados=formulario.cleaned_data["billetes_entregados"],
+            )
+        except VentaNoConfirmable as error:
+            raise PermissionDenied from error
+        except VentaNoDisponible as error:
+            formulario.add_error(None, str(error))
+        else:
+            if venta.estado == VentaDivisa.Estado.CANCELADA:
+                messages.error(
+                    request,
+                    "La cotización cambió o venció mientras se preparaba la "
+                    "entrega; la venta se canceló y no se retiró efectivo.",
+                )
+            else:
+                messages.success(
+                    request,
+                    "La venta fue confirmada. La divisa recibida y el efectivo "
+                    "entregado quedaron registrados en el fondo del cajero.",
+                )
+            return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+    return render(
+        request,
+        "conversiones/entregar_efectivo_venta.html",
+        {
+            "venta": venta,
+            "caja": caja,
+            "formulario": formulario,
+            "disponible": propuesta["disponible"],
+            "faltante": propuesta["faltante"],
+            "importe_entrega": propuesta["importe_entrega"],
+            "excedente": propuesta["excedente"],
+        },
     )
 
 
 @login_required
 @requiere_cliente
-def confirmar_venta_view(request, pk):
-    """Confirma el pago de una venta pendiente (RF051 — GEG9-51)."""
-    if request.method != "POST":
-        return redirect("conversiones:comprobante_venta", pk=pk)
-
-    try:
-        venta = confirmar_pago_venta(pk=pk, usuario=request.user)
-    except VentaNoConfirmable as error:
-        raise PermissionDenied from error
-
-    if venta.estado == VentaDivisa.Estado.CANCELADA:
-        messages.error(
-            request,
-            "La cotización cambió mientras revisabas la operación, así que se "
-            "canceló: no se te acreditó con una tasa distinta a la que aceptaste.",
-        )
-    else:
-        messages.success(request, "La venta de divisas fue confirmada correctamente.")
-
-    return redirect("conversiones:comprobante_venta", pk=venta.pk)
-
-
-@login_required
-@requiere_cliente
+@requiere_cliente_activo
 def cancelar_venta_view(request, pk):
     """Cancela una venta pendiente por decisión del cliente (RF051)."""
     if request.method != "POST":
@@ -249,14 +392,49 @@ def cancelar_venta_view(request, pk):
     messages.success(request, "Cancelaste la operación.")
     return redirect("conversiones:comprobante_venta", pk=venta.pk)
 
+
+@login_required
+@require_POST
+def anular_venta_view(request, pk):
+    """Permite al administrador anular una venta y revertir sus movimientos."""
+    if not tiene_rol(request.user, "administrador"):
+        raise PermissionDenied
+
+    formulario = AnularVentaForm(request.POST)
+    if not formulario.is_valid():
+        messages.error(request, "Indicá un motivo válido para anular la venta.")
+        return redirect("conversiones:comprobante_venta", pk=pk)
+
+    try:
+        venta = anular_venta(
+            pk=pk,
+            usuario=request.user,
+            motivo=formulario.cleaned_data["motivo"],
+        )
+    except AnulacionVentaNoPermitida as error:
+        messages.error(request, str(error))
+        return redirect("conversiones:comprobante_venta", pk=pk)
+
+    messages.success(
+        request,
+        "La venta fue anulada y se registraron los movimientos inversos.",
+    )
+    return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+
 @login_required
 @requiere_cliente
+@requiere_cliente_activo
 def historial(request):
-    """Muestra en modo consulta las transacciones confirmadas del usuario."""
+    """Transacciones confirmadas del cliente activo, en modo consulta.
+
+    Antes de RF008 mezclaba las de todos los clientes asociados; ahora
+    muestra solo las del cliente con el que se está operando.
+    """
 
     compras = (
         CompraDivisa.objects.filter(
-            cliente__asociaciones_usuarios__usuario=request.user,
+            cliente=request.cliente_activo,
             estado=CompraDivisa.Estado.CONFIRMADA,
         )
         .select_related(
@@ -269,7 +447,7 @@ def historial(request):
 
     ventas = (
         VentaDivisa.objects.filter(
-            cliente__asociaciones_usuarios__usuario=request.user,
+            cliente=request.cliente_activo,
             estado=VentaDivisa.Estado.CONFIRMADA,
         )
         .select_related(

@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import models
@@ -23,8 +24,14 @@ class CompraDivisa(models.Model):
 
     class Estado(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente de confirmación"
-        CONFIRMADA = "CONFIRMADA", "Confirmada"
+        # El ERS de RF023 (GEG9-37) llama a este estado "pagada". No se
+        # renombra la constante (rompería RF030 y las pruebas existentes):
+        # solo cambia la etiqueta visible.
+        CONFIRMADA = "CONFIRMADA", "Pagada"
         CANCELADA = "CANCELADA", "Cancelada"
+        # Agregado para RF023. La lógica para anular una operación es RF024 y
+        # todavía no existe: por ahora el valor solo está disponible.
+        ANULADA = "ANULADA", "Anulada"
 
     class MotivoCancelacion(models.TextChoices):
         CAMBIO_COTIZACION = "CAMBIO_COTIZACION", "La cotización cambió antes de confirmar"
@@ -98,16 +105,17 @@ class CompraDivisa(models.Model):
 
 
 class VentaDivisa(models.Model):
-    """Venta de divisas con el importe neto y cuenta destino como histórico.
+    """Venta de divisas con el importe neto a entregar en efectivo.
 
-    Igual que `CompraDivisa`, queda PENDIENTE hasta que el cliente confirma el
-    pago; si la cotización cambió para entonces, se cancela sola (RF051).
+    Queda PENDIENTE hasta que un cajero entrega el efectivo (RF058); si la
+    cotización cambió para entonces, se cancela sola (RF051).
     """
 
     class Estado(models.TextChoices):
         PENDIENTE = "PENDIENTE", "Pendiente de confirmación"
-        CONFIRMADA = "CONFIRMADA", "Confirmada"
+        CONFIRMADA = "CONFIRMADA", "Pagada"
         CANCELADA = "CANCELADA", "Cancelada"
+        ANULADA = "ANULADA", "Anulada"
 
     class MotivoCancelacion(models.TextChoices):
         CAMBIO_COTIZACION = "CAMBIO_COTIZACION", "La cotización cambió antes de confirmar"
@@ -138,6 +146,8 @@ class VentaDivisa(models.Model):
         CuentaPago,
         on_delete=models.PROTECT,
         related_name="ventas_divisas",
+        null=True,
+        blank=True,
     )
     monto_entregado = models.DecimalField(
         max_digits=16,
@@ -148,6 +158,23 @@ class VentaDivisa(models.Model):
     monto_comision = models.DecimalField(max_digits=18, decimal_places=2)
     monto_convertido = models.DecimalField(max_digits=18, decimal_places=2)
     monto_acreditado = models.DecimalField(max_digits=18, decimal_places=2)
+    monto_efectivo_entregado = models.DecimalField(
+        max_digits=18, decimal_places=2, null=True, blank=True
+    )
+    movimiento_efectivo_recibido = models.OneToOneField(
+        "cajas.MovimientoCaja",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="venta_efectivo_recibido",
+    )
+    movimiento_efectivo_entregado = models.OneToOneField(
+        "cajas.MovimientoCaja",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="venta_efectivo_entregado",
+    )
     tasa_aplicada = models.DecimalField(max_digits=12, decimal_places=2)
     estado = models.CharField(
         max_length=12, choices=Estado.choices, default=Estado.PENDIENTE
@@ -158,6 +185,7 @@ class VentaDivisa(models.Model):
     creado_en = models.DateTimeField(auto_now_add=True)
     confirmado_en = models.DateTimeField(null=True, blank=True)
     cancelado_en = models.DateTimeField(null=True, blank=True)
+    anulado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-creado_en"]
@@ -189,3 +217,71 @@ class VentaDivisa(models.Model):
 
     def __str__(self):
         return f"Venta #{self.pk} — {self.cliente}"
+
+    @property
+    def excedente_efectivo(self):
+        if (
+            self.monto_efectivo_entregado is not None
+            and self.monto_efectivo_entregado > self.monto_acreditado
+        ):
+            return self.monto_efectivo_entregado - self.monto_acreditado
+        return Decimal("0.00")
+
+
+class CambioEstado(models.Model):
+    """Registro histórico de una transición de estado (RF023 — GEG9-37).
+
+    Se crea un registro por cada cambio, nunca se edita ni se borra. Siempre
+    pertenece a una compra o a una venta, nunca a las dos ni a ninguna — lo
+    exige el `CheckConstraint` de abajo. `estado_anterior` queda vacío en la
+    primera transición de cada operación (todavía no existía ningún estado).
+    """
+
+    compra = models.ForeignKey(
+        CompraDivisa,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cambios_estado",
+    )
+    venta = models.ForeignKey(
+        VentaDivisa,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cambios_estado",
+    )
+    estado_anterior = models.CharField(
+        max_length=12, choices=CompraDivisa.Estado.choices, blank=True
+    )
+    estado_nuevo = models.CharField(
+        max_length=12, choices=CompraDivisa.Estado.choices
+    )
+    motivo = models.CharField(max_length=255, blank=True)
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cambios_estado_conversiones",
+        help_text="Vacío si el cambio lo hizo el sistema (por ejemplo, al vencerse el plazo).",
+    )
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["fecha"]
+        verbose_name = "cambio de estado"
+        verbose_name_plural = "cambios de estado"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(compra__isnull=False, venta__isnull=True)
+                    | models.Q(compra__isnull=True, venta__isnull=False)
+                ),
+                name="cambio_estado_pertenece_a_una_sola_operacion",
+            ),
+        ]
+
+    def __str__(self):
+        operacion = self.compra or self.venta
+        return f"{operacion}: {self.estado_anterior or '—'} → {self.estado_nuevo}"

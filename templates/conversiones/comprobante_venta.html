@@ -1,33 +1,35 @@
 {% extends "base.html" %}
 
 {% block titulo %}
-  {% if venta.estado == "PENDIENTE" %}Confirmá tu venta{% elif venta.estado == "CONFIRMADA" %}Venta confirmada{% else %}Venta cancelada{% endif %} | Global Exchange
+  {% if venta.estado == "PENDIENTE" %}Venta pendiente{% elif venta.estado == "CONFIRMADA" %}Venta confirmada{% elif venta.estado == "ANULADA" %}Venta anulada{% else %}Venta cancelada{% endif %} | Global Exchange
 {% endblock %}
 
 {% block contenido %}
 <div class="tarjeta">
   {% if venta.estado == "PENDIENTE" %}
-    <h1>Revisá y confirmá tu venta</h1>
-    <p>Esta es la cotización vigente al iniciar la operación. Si la tasa cambia
-      antes de que confirmes el pago, la operación se cancela sola para que no
-      se te acredite con una tasa distinta a la que ves acá. Tenés 15 minutos
-      desde que iniciaste la venta para confirmar, o se cancela sola por
-      vencimiento.</p>
+    <h1>Venta pendiente de entrega</h1>
+    <p>Un cajero debe revisar la cotización y entregarte el importe neto en
+      efectivo. Si la tasa cambia antes de la entrega, la operación se cancela
+      automáticamente. Tenés 15 minutos desde que iniciaste la venta.</p>
   {% elif venta.estado == "CONFIRMADA" %}
     <h1>Venta confirmada</h1>
     <p>Operación #{{ venta.pk }} confirmada el {{ venta.confirmado_en|date:"d/m/Y H:i" }}.</p>
-  {% else %}
+  {% elif venta.estado == "CANCELADA" %}
     <h1>Venta cancelada</h1>
     {% if venta.motivo_cancelacion == "CAMBIO_COTIZACION" %}
-      <p>La cotización cambió antes de que confirmaras el pago, así que la
-        operación #{{ venta.pk }} se canceló automáticamente. No se te acreditó
-        nada.</p>
+      <p>La cotización cambió antes de la entrega, así que la operación
+        #{{ venta.pk }} se canceló automáticamente. No se te entregó
+        efectivo.</p>
     {% elif venta.motivo_cancelacion == "EXPIRADA" %}
-      <p>Pasaron más de 15 minutos sin confirmar el pago, así que la operación
-        #{{ venta.pk }} se canceló sola. No se te acreditó nada.</p>
+      <p>Pasaron más de 15 minutos sin concretar la entrega, así que la operación
+        #{{ venta.pk }} se canceló sola. No se te entregó efectivo.</p>
     {% else %}
-      <p>Cancelaste la operación #{{ venta.pk }}. No se te acreditó nada.</p>
+      <p>Cancelaste la operación #{{ venta.pk }}. No se te entregó efectivo.</p>
     {% endif %}
+  {% else %}
+    <h1>Venta anulada</h1>
+    <p>Operación #{{ venta.pk }} anulada el {{ venta.anulado_en|date:"d/m/Y H:i" }}.
+      Los movimientos inversos están registrados en el historial de caja.</p>
   {% endif %}
 
   <h2>Detalle de la operación</h2>
@@ -36,19 +38,87 @@
   <p>Tasa aplicada: {{ venta.tasa_aplicada }}</p>
   <p>Importe convertido: {{ venta.monto_convertido }} {{ venta.moneda_acreditada.codigo }}</p>
   <p>Comisión aplicada: {{ venta.porcentaje_comision }}% ({{ venta.monto_comision }} {{ venta.moneda_acreditada.codigo }})</p>
-  <p>Destino: {{ venta.cuenta_destino.get_tipo_display }} — {{ venta.cuenta_destino.entidad }} ({{ venta.cuenta_destino.numero_cuenta }})</p>
-  <p><strong>Importe neto a acreditar: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+  {% if venta.cuenta_destino %}
+    <p>Cuenta de destino histórica: {{ venta.cuenta_destino.get_tipo_display }} — {{ venta.cuenta_destino.entidad }} ({{ venta.cuenta_destino.numero_cuenta }})</p>
+  {% endif %}
+  {% if venta.monto_efectivo_entregado %}
+    <p>Importe neto de la venta: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</p>
+    <p><strong>Efectivo entregado: {{ venta.monto_efectivo_entregado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+    {% if venta.excedente_efectivo > 0 %}
+      <p>Excedente mínimo por denominaciones: {{ venta.excedente_efectivo }} {{ venta.moneda_acreditada.codigo }}</p>
+    {% endif %}
+  {% elif venta.estado == "PENDIENTE" %}
+    <p><strong>Importe neto a entregar: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+  {% else %}
+    <p><strong>Importe neto de la venta: {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }}</strong></p>
+  {% endif %}
+    {% if venta.movimiento_efectivo_recibido %}
+      <h2>Movimientos del fondo del cajero</h2>
+      <p>
+        Divisa recibida:
+        movimiento #{{ venta.movimiento_efectivo_recibido_id }}
+        — {{ venta.movimiento_efectivo_recibido.importe }}
+        {{ venta.movimiento_efectivo_recibido.moneda.codigo }}
+        ({{ venta.movimiento_efectivo_recibido.creado_en|date:"d/m/Y H:i:s" }})
+        {% for detalle in venta.movimiento_efectivo_recibido.detalle_billetes.all %}
+          — {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}
+        {% endfor %}
+      </p>
+      {% if venta.movimiento_efectivo_recibido.movimiento_reversion %}
+        <p>
+          Reversión del ingreso:
+          movimiento #{{ venta.movimiento_efectivo_recibido.movimiento_reversion.pk }}
+          — {{ venta.movimiento_efectivo_recibido.movimiento_reversion.importe }}
+          {{ venta.movimiento_efectivo_recibido.movimiento_reversion.moneda.codigo }}
+          ({{ venta.movimiento_efectivo_recibido.movimiento_reversion.creado_en|date:"d/m/Y H:i:s" }})
+        </p>
+      {% endif %}
+      <p>
+        Efectivo entregado:
+        movimiento #{{ venta.movimiento_efectivo_entregado_id }}
+        — {{ venta.movimiento_efectivo_entregado.importe }}
+        {{ venta.movimiento_efectivo_entregado.moneda.codigo }}
+        ({{ venta.movimiento_efectivo_entregado.creado_en|date:"d/m/Y H:i:s" }})
+        {% for detalle in venta.movimiento_efectivo_entregado.detalle_billetes.all %}
+          — {{ detalle.cantidad }} × {{ detalle.denominacion.valor }}
+        {% endfor %}
+      </p>
+      {% if venta.movimiento_efectivo_entregado.movimiento_reversion %}
+        <p>
+          Reversión de la entrega:
+          movimiento #{{ venta.movimiento_efectivo_entregado.movimiento_reversion.pk }}
+          — {{ venta.movimiento_efectivo_entregado.movimiento_reversion.importe }}
+          {{ venta.movimiento_efectivo_entregado.movimiento_reversion.moneda.codigo }}
+          ({{ venta.movimiento_efectivo_entregado.movimiento_reversion.creado_en|date:"d/m/Y H:i:s" }})
+        </p>
+      {% endif %}
+    {% endif %}
+
+  {% if venta.estado == "CONFIRMADA" and es_administrador %}
+    <h2>Anular venta</h2>
+    <p>La anulación intenta revertir ambos movimientos. Debe haber suficiente
+      efectivo en el fondo del cajero para devolver la divisa recibida.</p>
+    <form method="post" action="{% url 'conversiones:anular_venta' venta.pk %}">
+      {% csrf_token %}
+      <label for="motivo-anulacion">Motivo de anulación</label>
+      <textarea id="motivo-anulacion" name="motivo" rows="3" maxlength="255" required></textarea>
+      <button class="boton boton-secundario" type="submit">Anular venta</button>
+    </form>
+  {% endif %}
 
   {% if venta.estado == "PENDIENTE" %}
     <p id="contador-vencimiento" class="mensaje"></p>
-    <form method="post" action="{% url 'conversiones:confirmar_venta' venta.pk %}" style="display:inline">
-      {% csrf_token %}
-      <button class="boton" type="submit">Confirmar pago</button>
-    </form>
-    <form method="post" action="{% url 'conversiones:cancelar_venta' venta.pk %}" style="display:inline">
-      {% csrf_token %}
-      <button class="boton boton-secundario" type="submit">Cancelar</button>
-    </form>
+    {% if es_cajero %}
+      <p>Esta venta está pendiente de entrega de efectivo en caja.</p>
+      <a class="boton" href="{% url 'conversiones:confirmar_venta' venta.pk %}">Preparar entrega</a>
+      <a class="boton boton-secundario" href="{% url 'conversiones:ventas_pendientes' %}">Volver a ventas pendientes</a>
+    {% else %}
+      <p>La entrega se procesa desde la caja. Consultá con un cajero para completar la operación.</p>
+      <form method="post" action="{% url 'conversiones:cancelar_venta' venta.pk %}" style="display:inline">
+        {% csrf_token %}
+        <button class="boton boton-secundario" type="submit">Cancelar</button>
+      </form>
+    {% endif %}
     <script>
       (function () {
         var limiteMs = new Date("{{ venta.creado_en|date:'c' }}").getTime()
@@ -58,14 +128,14 @@
         function actualizar() {
           var restante = limiteMs - Date.now();
           if (restante <= 0) {
-            elemento.textContent = "Se venció el tiempo para confirmar. Actualizando...";
+            elemento.textContent = "Se venció el plazo para la entrega. Actualizando...";
             window.location.reload();
             return;
           }
           var minutos = Math.floor(restante / 60000);
           var segundos = Math.floor((restante % 60000) / 1000);
-          elemento.textContent = "Tenés " + minutos + " min " +
-            (segundos < 10 ? "0" : "") + segundos + " s para confirmar el pago.";
+          elemento.textContent = "La venta vence en " + minutos + " min " +
+            (segundos < 10 ? "0" : "") + segundos + ".";
         }
 
         actualizar();
@@ -73,8 +143,93 @@
       })();
     </script>
   {% else %}
-    <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}">Realizar otra venta</a>
-    <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}?cliente={{ venta.cliente_id }}&moneda_entregada={{ venta.moneda_entregada_id }}&moneda_acreditada={{ venta.moneda_acreditada_id }}&cuenta_destino={{ venta.cuenta_destino_id }}&monto_entregado={{ venta.monto_entregado|stringformat:'.2f' }}">Repetir esta operación</a>
+    {% if es_cajero %}
+      <a class="boton" href="{% url 'conversiones:ventas_pendientes' %}">Volver a ventas pendientes</a>
+    {% else %}
+      <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}">Realizar otra venta</a>
+      <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}?moneda_entregada={{ venta.moneda_entregada_id }}&moneda_acreditada={{ venta.moneda_acreditada_id }}&monto_entregado={{ venta.monto_entregado|stringformat:'.2f' }}">Repetir esta operación</a>
+    {% endif %}
   {% endif %}
+  {% with factura=venta.facturas.first %}
+    {% include "facturacion/_factura.html" %}
+  {% endwith %}
+
+  <h2>Línea de tiempo</h2>
+  <ul class="linea-tiempo">
+    {% for cambio in venta.cambios_estado.all %}
+      <li class="linea-tiempo-item estado-{{ cambio.estado_nuevo }}">
+        <span class="linea-tiempo-fecha">{{ cambio.fecha|date:"d/m/Y H:i" }}</span>
+        <span class="linea-tiempo-estado">
+          {% if cambio.estado_anterior %}{{ cambio.get_estado_anterior_display }} → {% endif %}{{ cambio.get_estado_nuevo_display }}
+        </span>
+        {% if cambio.motivo %}<span class="linea-tiempo-motivo">{{ cambio.motivo }}</span>{% endif %}
+      </li>
+    {% endfor %}
+  </ul>
 </div>
+
+<style>
+  .linea-tiempo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .linea-tiempo-item {
+    position: relative;
+    margin-left: 0.4rem;
+    padding: 0 0 1.25rem 1.5rem;
+    border-left: 2px solid #e2e8f0;
+  }
+
+  .linea-tiempo-item:last-child {
+    border-left-color: transparent;
+    padding-bottom: 0;
+  }
+
+  .linea-tiempo-item::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 0.2rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 9999px;
+    background: #94a3b8;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #e2e8f0;
+  }
+
+  .linea-tiempo-item.estado-CONFIRMADA::before {
+    background: #047857;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #ecfdf5;
+  }
+
+  .linea-tiempo-item.estado-CANCELADA::before {
+    background: #b91c1c;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #fef2f2;
+  }
+
+  .linea-tiempo-item.estado-ANULADA::before {
+    background: #64748b;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #f1f5f9;
+  }
+
+  .linea-tiempo-fecha {
+    display: block;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .linea-tiempo-estado {
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .linea-tiempo-motivo {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+</style>
 {% endblock %}

@@ -32,6 +32,8 @@ INSTALLED_APPS = [
     "apps.notificaciones",
     "apps.cajas",
     "apps.pagos",
+    "apps.facturacion",
+    "apps.terminal",
 ]
 
 MIDDLEWARE = [
@@ -42,6 +44,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Deja request.cliente_activo y manda a elegir antes de operar (RF008).
+    # Va después del de autenticación: necesita request.user ya resuelto.
+    "apps.usuarios.middleware.ClienteActivoMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -165,6 +170,89 @@ DLOCAL_BASE_URL = env("DLOCAL_BASE_URL", default="https://sandbox.dlocal.com")
 # después de pagar (apps/pagos/views.retorno). En Docker, el navegador
 # siempre entra por localhost, nunca por el nombre interno del servicio.
 SITE_BASE_URL = env("SITE_BASE_URL", default="http://localhost:8000")
+
+# ===== Facturación electrónica (RF026 — GEG9-50) =====
+# "facturasegura" llama de verdad al ambiente de pruebas de Factura Segura;
+# "simulado" no toca la red (desarrollo, demo y tests).
+# El `or` está en todas estas lecturas por el mismo motivo: una clave presente
+# pero vacía (como queda al copiar .env.example) devuelve "" y no el default.
+FACTURACION_PROVEEDOR = env("FACTURACION_PROVEEDOR", default="") or "simulado"
+FACTURASEGURA_BASE_URL = (
+    env("FACTURASEGURA_BASE_URL", default="")
+    or "https://apitest.facturasegura.com.py/misife00/v1/esi"
+)
+# El token se genera una vez por ambiente y va SOLO en el .env, nunca acá.
+FACTURASEGURA_TOKEN = env("FACTURASEGURA_TOKEN", default="")
+
+# Numeración del documento. La secuencia de `dNumDoc` la lleva el modelo
+# `SecuenciaFactura`, una por establecimiento + punto de expedición.
+FACTURACION_ESTABLECIMIENTO = env("FACTURACION_ESTABLECIMIENTO", default="") or "001"
+FACTURACION_PUNTO_EXPEDICION = env("FACTURACION_PUNTO_EXPEDICION", default="") or "001"
+# Rango de números que la cátedra autorizó para este punto de expedición. La
+# numeración arranca en DESDE (no en 1) y no pasa de HASTA: un `dNumDoc` fuera
+# del rango lo rechaza el SIFEN. HASTA en 0 significa "sin límite".
+#
+# No se usa `env.int()`: esa función revienta con ValueError si la variable
+# está presente pero vacía, y en .env.example estas dos claves van sin valor
+# justamente para que cada uno complete el rango que le autorizaron. Quien
+# copiara el .env.example tal cual no podía ni levantar Django.
+def _entero_opcional(nombre):
+    valor = env(nombre, default="").strip()
+    return int(valor) if valor else 0
+
+
+FACTURACION_NUMERO_DESDE = _entero_opcional("FACTURACION_NUMERO_DESDE") or 1
+FACTURACION_NUMERO_HASTA = _entero_opcional("FACTURACION_NUMERO_HASTA")
+
+# OJO: los datos del emisor que siguen son VALORES DE PRUEBA, puestos para
+# poder desarrollar, hacer la demo con el proveedor simulado y correr los
+# tests. Los reales dependen del emisor que la cátedra asocie a nuestro
+# usuario ESI de Factura Segura y todavía no los tenemos: hasta completarlos
+# en el .env, la factura NO sirve ante el SIFEN. Con
+# FACTURACION_PROVEEDOR=facturasegura el cliente real se niega a emitir
+# mientras sigan en estos valores (ver apps/facturacion/clientes/).
+#
+# Se usa `or` porque en .env.example estas claves están sin valor: si alguien
+# copia el archivo tal cual, `env` devuelve "" y no el default.
+FACTURACION_TIMBRADO = env("FACTURACION_TIMBRADO", default="") or "00000000"
+FACTURACION_TIMBRADO_INICIO = (
+    env("FACTURACION_TIMBRADO_INICIO", default="") or "2026-01-01"
+)
+FACTURACION_EMISOR_RUC = env("FACTURACION_EMISOR_RUC", default="") or "00000000"
+FACTURACION_EMISOR_DV = env("FACTURACION_EMISOR_DV", default="") or "0"
+FACTURACION_EMISOR_TIPO_CONTRIBUYENTE = (
+    env("FACTURACION_EMISOR_TIPO_CONTRIBUYENTE", default="") or "2"
+)
+FACTURACION_EMISOR_NOMBRE = (
+    env("FACTURACION_EMISOR_NOMBRE", default="") or "GLOBAL EXCHANGE (DATOS DE PRUEBA)"
+)
+FACTURACION_EMISOR_DIRECCION = (
+    env("FACTURACION_EMISOR_DIRECCION", default="") or "Sin definir"
+)
+FACTURACION_EMISOR_NUMERO_CASA = env("FACTURACION_EMISOR_NUMERO_CASA", default="") or "0"
+FACTURACION_EMISOR_DEPARTAMENTO = (
+    env("FACTURACION_EMISOR_DEPARTAMENTO", default="") or "1"
+)
+FACTURACION_EMISOR_DEPARTAMENTO_NOMBRE = (
+    env("FACTURACION_EMISOR_DEPARTAMENTO_NOMBRE", default="") or "CAPITAL"
+)
+FACTURACION_EMISOR_CIUDAD = env("FACTURACION_EMISOR_CIUDAD", default="") or "1"
+FACTURACION_EMISOR_CIUDAD_NOMBRE = (
+    env("FACTURACION_EMISOR_CIUDAD_NOMBRE", default="") or "ASUNCION (DISTRITO)"
+)
+FACTURACION_EMISOR_TELEFONO = (
+    env("FACTURACION_EMISOR_TELEFONO", default="") or "(021)000000"
+)
+FACTURACION_EMISOR_EMAIL = (
+    env("FACTURACION_EMISOR_EMAIL", default="") or "facturacion@globalexchange.test"
+)
+# Actividades económicas del emisor (gActEco del SIFEN). Son varias, y cada
+# código va con su descripción: se escriben como "codigo:descripcion",
+# separadas por "|". Las reales las define el RUC del emisor.
+FACTURACION_EMISOR_ACTIVIDADES = (
+    env("FACTURACION_EMISOR_ACTIVIDADES", default="")
+    or "66190:Otras actividades auxiliares de servicios financieros"
+)
 
 LANGUAGE_CODE = "es"
 TIME_ZONE = "America/Asuncion"

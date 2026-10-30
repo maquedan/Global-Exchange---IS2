@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block titulo %}Ventas pendientes | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Ventas pendientes de entrega</h1>
+  <p>Revisá la cotización y prepará el efectivo antes de confirmar cada operación.</p>
+  {% for venta in ventas %}
+    <article>
+      <h2>Venta #{{ venta.pk }} — {{ venta.cliente }}</h2>
+      <p>{{ venta.monto_entregado }} {{ venta.moneda_entregada.codigo }} →
+        {{ venta.monto_acreditado }} {{ venta.moneda_acreditada.codigo }} netos</p>
+      <p>Iniciada: {{ venta.creado_en|date:"d/m/Y H:i" }}</p>
+      <a class="boton" href="{% url 'conversiones:confirmar_venta' venta.pk %}">
+        Preparar entrega
+      </a>
+    </article>
+  {% empty %}
+    <p>No hay ventas pendientes de entrega.</p>
+  {% endfor %}
+</div>
+{% endblock %}

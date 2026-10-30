@@ -20,8 +20,9 @@ administración y lo escribe en el ``.env``.
    docker compose run --rm --no-deps -e KEYCLOAK_URL=http://keycloak:8080 \
      web python scripts/sincronizar_secret.py
 
-Hay que ejecutarlo una vez después del primer ``docker compose up``, y cada vez
-que se recree el realm desde cero.
+El script de despliegue ``./scripts/deploy.sh dev|prod`` lo ejecuta cuando
+Keycloak está listo. También se puede ejecutar manualmente después de importar
+el realm o recrearlo.
 
 ``scripts/configurar_smtp.py``
 ------------------------------

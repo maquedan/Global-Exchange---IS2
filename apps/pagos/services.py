@@ -13,6 +13,7 @@ from django.db import transaction
 from django.urls import reverse
 
 from apps.clientes.models import AsociacionUsuarioCliente
+from apps.usuarios.services import cliente_habilitado_para
 from apps.conversiones.models import CompraDivisa
 from apps.conversiones.services import (
     CompraNoConfirmable,
@@ -66,17 +67,22 @@ def monto_para_pasarela(compra):
 
 
 @transaction.atomic
-def iniciar_pago(compra_pk):
+def iniciar_pago(compra_pk, *, usuario):
     """Crea el `Pago` y le pide a la pasarela el link de cobro.
 
     Recibe el `pk`, no un objeto ya cargado: hace su propio
     `select_for_update`, igual que `confirmar_pago_compra`/`cancelar_compra`
     en RF051 — un objeto pasado de afuera podría estar desactualizado si
     algo más cambió la compra mientras tanto.
+
+    `usuario` es obligatorio desde RF010 (GEG9-20): antes este servicio
+    cobraba la compra de cualquiera con solo pasarle el `pk`.
     """
     compra = CompraDivisa.objects.select_for_update().filter(pk=compra_pk).first()
     if compra is None:
         raise OperacionNoDisponibleParaPago("La operación no existe.")
+
+    cliente_habilitado_para(usuario, compra.cliente_id)
 
     compra = expirar_compra_si_corresponde(compra)
     if compra.estado != CompraDivisa.Estado.PENDIENTE:

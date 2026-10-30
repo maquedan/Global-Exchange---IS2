@@ -1,0 +1,96 @@
+{% extends "terminal/base_terminal.html" %}
+
+{% block titulo %}Simulación | Terminal Global Exchange{% endblock %}
+
+{% block contenido %}
+  <section class="mx-auto w-full max-w-3xl">
+    <p class="text-center text-sm font-bold uppercase tracking-[0.2em] text-cyan-300">
+      Paso 4 de 4
+    </p>
+
+    <h2 class="mt-3 text-center text-3xl font-black text-white">
+      Resumen de tu operación
+    </h2>
+
+    {% if error %}
+      <div class="mx-auto mt-8 max-w-2xl rounded-2xl bg-rose-100 p-6 text-center text-rose-900">
+        <p class="text-lg font-bold">{{ error }}</p>
+
+        <a href="{% url 'terminal:datos_operacion' %}"
+           class="mt-6 inline-block rounded-xl bg-slate-900 px-6 py-3 font-bold text-white">
+          Modificar datos
+        </a>
+      </div>
+    {% else %}
+      <p class="mt-4 text-center text-lg text-slate-300">
+        Cliente: <strong>{{ cliente }}</strong>
+      </p>
+
+      <div class="mt-8 rounded-3xl bg-white p-8 text-slate-900 shadow-2xl">
+        <dl class="space-y-5">
+          <div class="flex items-center justify-between gap-6 border-b border-slate-200 pb-4">
+            <dt class="text-slate-600">Operación</dt>
+            <dd class="font-black">
+              {{ tipo_operacion|title }} de divisas
+            </dd>
+          </div>
+
+          <div class="flex items-center justify-between gap-6 border-b border-slate-200 pb-4">
+            <dt class="text-slate-600">Par de monedas</dt>
+            <dd class="font-black">
+              {{ moneda_origen.codigo }} → {{ moneda_destino.codigo }}
+            </dd>
+          </div>
+
+          <div class="flex items-center justify-between gap-6 border-b border-slate-200 pb-4">
+            <dt class="text-slate-600">Tasa aplicada</dt>
+            <dd class="font-black">{{ tasa_aplicada }}</dd>
+          </div>
+
+          <div class="flex items-center justify-between gap-6 border-b border-slate-200 pb-4">
+            <dt class="text-slate-600">
+              Comisión ({{ porcentaje_comision }}%)
+            </dt>
+            <dd class="font-black">
+              {{ monto_comision }} {{ moneda_comision.codigo }}
+            </dd>
+          </div>
+
+          <div class="flex items-center justify-between gap-6 border-b border-slate-200 pb-4">
+            <dt class="text-slate-600">{{ etiqueta_total }}</dt>
+            <dd class="font-black">
+              {{ total }} {{ moneda_total.codigo }}
+            </dd>
+          </div>
+
+          <div class="flex items-center justify-between gap-6 rounded-2xl bg-cyan-50 p-5">
+            <dt class="font-bold text-slate-700">{{ etiqueta_resultado }}</dt>
+            <dd class="text-xl font-black text-cyan-800">
+              {{ monto_resultado }} {{ moneda_destino.codigo }}
+            </dd>
+          </div>
+        </dl>
+      </div>
+
+      <p class="mt-6 text-center text-sm text-slate-400">
+        La cotización se confirmará en el siguiente paso.
+      </p>
+
+      <div class="mt-8 flex flex-col-reverse gap-4 sm:flex-row sm:justify-between">
+        <a href="{% url 'terminal:datos_operacion' %}"
+           class="w-full rounded-xl border-2 border-slate-500 px-6 py-4 text-center font-bold text-white transition hover:border-cyan-300 hover:bg-slate-800 sm:w-48">
+          Modificar
+        </a>
+
+      <form method="post" action="{% url 'terminal:confirmar_operacion' %}">
+        {% csrf_token %}
+
+        <button type="submit"
+                class="w-full rounded-xl bg-cyan-400 px-6 py-4 text-lg font-black text-slate-950 transition hover:bg-cyan-300 sm:w-48">
+          Confirmar
+        </button>
+      </form>
+      </div>
+    {% endif %}
+  </section>
+{% endblock %}

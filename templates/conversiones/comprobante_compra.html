@@ -80,6 +80,10 @@
     {% endif %}
   {% endwith %}
 
+  {% with factura=compra.facturas.first %}
+    {% include "facturacion/_factura.html" %}
+  {% endwith %}
+
   <h2>Línea de tiempo</h2>
   <ul class="linea-tiempo">
     {% for cambio in compra.cambios_estado.all %}
@@ -93,4 +97,69 @@
     {% endfor %}
   </ul>
 </div>
+
+<style>
+  .linea-tiempo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .linea-tiempo-item {
+    position: relative;
+    margin-left: 0.4rem;
+    padding: 0 0 1.25rem 1.5rem;
+    border-left: 2px solid #e2e8f0;
+  }
+
+  .linea-tiempo-item:last-child {
+    border-left-color: transparent;
+    padding-bottom: 0;
+  }
+
+  .linea-tiempo-item::before {
+    content: "";
+    position: absolute;
+    left: -7px;
+    top: 0.2rem;
+    width: 12px;
+    height: 12px;
+    border-radius: 9999px;
+    background: #94a3b8;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #e2e8f0;
+  }
+
+  .linea-tiempo-item.estado-CONFIRMADA::before {
+    background: #047857;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #ecfdf5;
+  }
+
+  .linea-tiempo-item.estado-CANCELADA::before {
+    background: #b91c1c;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #fef2f2;
+  }
+
+  .linea-tiempo-item.estado-ANULADA::before {
+    background: #64748b;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #f1f5f9;
+  }
+
+  .linea-tiempo-fecha {
+    display: block;
+    font-size: 0.75rem;
+    color: #64748b;
+  }
+
+  .linea-tiempo-estado {
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .linea-tiempo-motivo {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+</style>
 {% endblock %}

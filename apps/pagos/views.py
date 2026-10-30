@@ -9,6 +9,7 @@ from django.views.decorators.http import require_POST
 
 from apps.conversiones.models import CompraDivisa
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.services import requiere_cliente_para_operar
 
 from .models import Pago
 from .services import (
@@ -31,6 +32,7 @@ def requiere_cliente(vista):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_para_operar
 def elegir_pago(request, compra_pk):
     """Pantalla "Elegí cómo pagar" para una compra pendiente (RF022 — GEG9-36)."""
     compra = get_object_or_404(
@@ -41,7 +43,7 @@ def elegir_pago(request, compra_pk):
 
     if request.method == "POST":
         try:
-            pago = iniciar_pago(compra.pk)
+            pago = iniciar_pago(compra.pk, usuario=request.user)
         except OperacionNoDisponibleParaPago as error:
             messages.error(request, str(error))
             return redirect("conversiones:comprobante_compra", pk=compra.pk)
@@ -55,6 +57,7 @@ def elegir_pago(request, compra_pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_para_operar
 def esperando(request, pk):
     """"Esperando confirmación del pago" + botones del proveedor Simulado."""
     pago = get_object_or_404(
@@ -75,6 +78,10 @@ def retorno(request, pk):
     **nunca confía en nada de la URL o el cuerpo del POST** — siempre vuelve
     a consultar el estado real del pago en la pasarela antes de confirmar
     nada (RF022 — GEG9-36).
+
+    Por lo mismo queda **deliberadamente afuera** de la restricción de RF010
+    (GEG9-20): no es una vista que use una persona, es el punto de retorno de
+    la pasarela. Pedirle cliente activo rompería el cobro.
     """
     pago = get_object_or_404(Pago, pk=pk)
     usuario = request.user if request.user.is_authenticated else None
@@ -84,6 +91,7 @@ def retorno(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_para_operar
 @require_POST
 def simulado_aprobar(request, pk):
     pago = get_object_or_404(
@@ -98,6 +106,7 @@ def simulado_aprobar(request, pk):
 
 @login_required
 @requiere_cliente
+@requiere_cliente_para_operar
 @require_POST
 def simulado_rechazar(request, pk):
     pago = get_object_or_404(

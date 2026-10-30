@@ -6,6 +6,55 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block titulo %}Global Exchange{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <style>
+    .operando-como {
+      display: inline-block;
+      max-width: 22rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #e0f2fe;
+      font-size: 0.75rem;
+    }
+
+    .operando-como strong {
+      color: #fff;
+    }
+
+    .cambiar-cliente {
+      margin-left: 0.5rem;
+      padding-left: 0.5rem;
+      border-left: 1px solid rgba(255, 255, 255, 0.25);
+      color: #67e8f9;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .cambiar-cliente:hover,
+    .cambiar-cliente:focus {
+      color: #fff;
+      text-decoration: underline;
+    }
+
+    .contador-notificaciones {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 1.25rem;
+      height: 1.25rem;
+      margin-left: 0.35rem;
+      padding: 0 0.35rem;
+      border-radius: 9999px;
+      background: #f43f5e;
+      color: #fff;
+      font-size: 0.7rem;
+      font-weight: 700;
+      vertical-align: middle;
+    }
+  </style>
 </head>
 <body class="min-h-screen bg-[#f2f6fb] text-slate-800 antialiased">
   <header class="relative overflow-hidden bg-[#071f36] text-white shadow-2xl">
@@ -21,6 +70,15 @@
         <div class="flex items-center gap-4">
           <div class="flex shrink-0 items-center gap-3 text-sm">
             {% if user.is_authenticated %}
+              {% if cliente_activo %}
+                <span class="operando-como" title="Cliente con el que estás operando">
+                  Operando como <strong>{{ cliente_activo }}</strong>
+                  {% if puede_cambiar_cliente %}
+                    <a class="cambiar-cliente" href="{% url 'usuarios:seleccionar_cliente' %}"
+                       title="Operar en nombre de otro de tus clientes, sin cerrar sesión">Cambiar</a>
+                  {% endif %}
+                </span>
+              {% endif %}
               <span class="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-300 text-xs font-black text-sky-950">{{ user.get_full_name|default:user.username|slice:":1"|upper }}</span>
               <span class="max-w-44 truncate font-medium text-blue-50" title="{{ user.get_full_name|default:user.username }}">{{ user.get_full_name|default:user.username }}</span>
               {# El logout de mozilla-django-oidc exige POST (protección CSRF) #}
