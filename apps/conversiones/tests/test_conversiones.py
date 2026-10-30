@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Group
+from django.db import IntegrityError
 from django.urls import reverse
 from django.utils import timezone
 
@@ -12,8 +13,6 @@ from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
-
-from django.db import IntegrityError
 
 from apps.conversiones.models import CambioEstado, CompraDivisa, VentaDivisa
 from apps.conversiones.services import (
@@ -955,7 +954,7 @@ def test_cancelar_por_expiracion_registra_el_motivo(
     assert cambio.estado_anterior == CompraDivisa.Estado.PENDIENTE
     assert cambio.estado_nuevo == CompraDivisa.Estado.CANCELADA
     assert cambio.motivo == "Se venció el tiempo para confirmar."
-    assert cambio.usuario is None  # lo cancela el sistema, no una persona
+    assert cambio.usuario is None
 
 
 @pytest.mark.django_db

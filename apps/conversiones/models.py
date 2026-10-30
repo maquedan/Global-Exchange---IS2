@@ -225,7 +225,9 @@ class CambioEstado(models.Model):
     estado_anterior = models.CharField(
         max_length=12, choices=CompraDivisa.Estado.choices, blank=True
     )
-    estado_nuevo = models.CharField(max_length=12, choices=CompraDivisa.Estado.choices)
+    estado_nuevo = models.CharField(
+        max_length=12, choices=CompraDivisa.Estado.choices
+    )
     motivo = models.CharField(max_length=255, blank=True)
     usuario = models.ForeignKey(
         settings.AUTH_USER_MODEL,

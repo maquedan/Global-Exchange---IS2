@@ -58,6 +58,26 @@ def test_analista_puede_crear_tasa(client, monedas):
 
 
 @pytest.mark.django_db
+def test_formulario_guarda_tasas_con_seis_decimales(monedas):
+	formulario = TasaCambioForm(
+		datos_tasa(
+			*monedas,
+			tasa_compra="7.123456",
+			tasa_venta="7.654321",
+		)
+	)
+
+	assert formulario.is_valid(), formulario.errors
+	tasa = formulario.save()
+	tasa.refresh_from_db()
+
+	assert tasa.tasa_compra == Decimal("7.123456")
+	assert tasa.tasa_venta == Decimal("7.654321")
+	assert formulario.fields["tasa_compra"].widget.attrs["step"] == "0.000001"
+	assert formulario.fields["tasa_venta"].widget.attrs["step"] == "0.000001"
+
+
+@pytest.mark.django_db
 def test_usuario_cliente_no_puede_gestionar_tasas(client):
 	client.force_login(usuario_con_rol("usuario_cliente"))
 

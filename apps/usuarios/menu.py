@@ -61,12 +61,12 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
-        "texto": "Cajas y sucursales",
+        "texto": "Caja principal",
         "url": "cajas:lista",
         "roles": ["administrador"],
     },
     {
-        "texto": "Historial de cajas",
+        "texto": "Historial de caja",
         "url": "cajas:historial_movimientos",
         "roles": ["administrador"],
     },

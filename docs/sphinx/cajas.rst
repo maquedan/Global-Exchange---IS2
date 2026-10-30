@@ -1,17 +1,23 @@
 Cajas
 =====
 
-Administración de sucursales, saldos de caja y fondos en efectivo asignados a
-cajeros (RF041 y RF043), con control del inventario de billetes por denominación
+Administración de la caja principal, sus saldos y fondos en efectivo asignados
+a cajeros (RF041 y RF043), con control del inventario de billetes por denominación
 (RF042), control de movimientos y ajustes autorizados (RF045), arqueos de caja
 (RF046), registro de diferencias (RF047) y trazabilidad de operaciones (RF048).
 Las asignaciones a cajeros se registran como movimientos de caja con
-cantidades por denominación, importe total, sucursal, cajero, divisa y fecha y
-hora; los conteos reconciliados quedan auditados con su detalle.
+cantidades por denominación, importe total, cajero, divisa y fecha y hora; los
+conteos reconciliados quedan auditados con su detalle.
 
-La pantalla de detalle de una sucursal se dedica a consultar saldos, existencias
-e historiales. Registrar movimientos, agregar denominaciones y reconciliar el
-inventario son operaciones disponibles en páginas independientes.
+El sistema mantiene una sola sucursal operativa, Centro, y una caja principal.
+La página de caja permite consultar saldos y existencias; los historiales de
+movimientos y conteos se consultan en ``/cajas/historial/``.
+Registrar movimientos, agregar denominaciones y reconciliar el inventario son
+operaciones disponibles en páginas independientes. La base de datos impide
+crear sucursales adicionales.
+La migración que establece este límite conserva Centro y sus datos; elimina
+las demás sucursales y los movimientos, arqueos, diferencias, conteos, fondos
+e inventarios asociados.
 Desde la página de denominaciones se pueden modificar o eliminar las que aún no
 se hayan usado. Las denominaciones referenciadas por inventarios, movimientos o
 conteos quedan protegidas para conservar la interpretación del historial.
@@ -27,7 +33,7 @@ contado, diferencia, observaciones y estado: ``CUADRADO``, ``FALTANTE`` o
 mediante ``DetalleArqueoBillete``.
 
 La operación está restringida al rol ``cajero`` y solo permite seleccionar
-cajas y monedas en las que el usuario tenga fondos asignados.
+monedas en las que el usuario tenga fondos asignados en la caja principal.
 
 RF047 — Registro de Diferencias de Caja
 ---------------------------------------
@@ -55,11 +61,13 @@ coincida exactamente con el importe de la diferencia.
 RF048 — Trazabilidad de Operaciones de Caja
 -------------------------------------------
 
-El administrador consulta desde ``/cajas/historial/`` el historial de
-operaciones de efectivo de la única caja operativa. Cada
-registro identifica la sucursal y caja, tipo de operación, divisa, importe,
-cajero, usuario responsable y fecha y hora. La consulta es de solo lectura,
-está paginada y muestra directamente la única caja operativa de la sucursal.
+El administrador consulta desde ``/cajas/historial/`` los historiales de
+movimientos y de conteos y conciliaciones, en secciones separadas. Los
+movimientos muestran el tipo, divisa, importe, desglose de billetes, saldos,
+cajero, usuario responsable, nota y fecha y hora. Los conteos muestran la
+divisa, inventario contado, importe total, cajero, usuario responsable y fecha
+y hora. Ambas secciones son de solo lectura, se paginan independientemente y
+corresponden a la única caja operativa de la sucursal.
 
 Modelos
 -------

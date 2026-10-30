@@ -6,12 +6,20 @@ históricas), para mostrarlos al usuario final. Inspirado en el selector de
 monedas de xe.com/es/currencycharts: se elige un par con dos desplegables
 y se ve el gráfico de ese par, con estadísticas del período.
 """
+from decimal import Decimal
+
 from django.contrib.auth.decorators import login_required
 from django.http import JsonResponse
 from django.shortcuts import render
 
 from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
+
+
+def _formatear_tasa(valor):
+    """Muestra al menos dos decimales y conserva hasta seis si son significativos."""
+    entero, decimales = f"{Decimal(valor):.6f}".split(".")
+    return f"{entero}.{decimales.rstrip('0').ljust(2, '0')}"
 
 
 def _pares_disponibles():
@@ -46,17 +54,21 @@ def _estadisticas(historial, campo):
     decimales con COMA en español, lo que rompería la comparación que hace
     el JavaScript del auto-refresco (que siempre usa punto).
     """
-    valores = [float(getattr(tasa, campo)) for tasa in historial]
+    valores = [getattr(tasa, campo) for tasa in historial]
     primero, ultimo = valores[0], valores[-1]
-    variacion = ((ultimo - primero) / primero) * 100 if primero else 0
+    variacion = (
+        ((float(ultimo) - float(primero)) / float(primero)) * 100
+        if primero
+        else 0
+    )
 
     return {
         "variacion": f"{variacion:+.2f}",
         "subio": variacion > 0,
         "bajo": variacion < 0,
-        "maximo": f"{max(valores):.2f}",
-        "minimo": f"{min(valores):.2f}",
-        "promedio": f"{sum(valores) / len(valores):.2f}",
+        "maximo": _formatear_tasa(max(valores)),
+        "minimo": _formatear_tasa(min(valores)),
+        "promedio": _formatear_tasa(sum(valores) / len(valores)),
     }
 
 
@@ -81,8 +93,8 @@ def _resumen_de_pares(pares_disponibles):
             {
                 "origen": ultima.moneda_origen,
                 "destino": ultima.moneda_destino,
-                "compra": f"{ultima.tasa_compra:.2f}",
-                "venta": f"{ultima.tasa_venta:.2f}",
+                "compra": _formatear_tasa(ultima.tasa_compra),
+                "venta": _formatear_tasa(ultima.tasa_venta),
                 "cambio": cambio,
             }
         )
@@ -117,6 +129,11 @@ def panel(request):
         "activa": next((t for t in reversed(historial) if t.activo), None),
         "resumen_pares": _resumen_de_pares(pares_disponibles),
     }
+
+    if contexto["activa"]:
+        contexto["tasa_venta_actual"] = _formatear_tasa(
+            contexto["activa"].tasa_venta
+        )
 
     if historial:
         contexto["estadisticas_compra"] = _estadisticas(historial, "tasa_compra")
