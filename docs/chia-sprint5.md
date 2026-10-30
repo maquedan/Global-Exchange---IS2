@@ -621,6 +621,7 @@ Se ejecutaron las pruebas específicas del módulo:
 ```text
 docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
 ```
+
 Las pruebas cubren que el rol terminal vea solo las opciones de menú correspondientes, que acceda a la pantalla inicial, que otros roles reciban 403, que la ruta de reinicio rechace solicitudes GET y que una solicitud POST elimine correctamente los datos temporales de la sesión antes de redirigir al inicio.
 
 ## 10. Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
