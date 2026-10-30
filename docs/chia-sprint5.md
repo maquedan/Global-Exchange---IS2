@@ -626,7 +626,7 @@ Las pruebas cubren que el rol terminal vea solo las opciones de menú correspond
 
 ---
 
-## 10. Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
+## 9. Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
 
 **Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
 
@@ -692,7 +692,7 @@ sin errores. La suite completa de facturación terminó con **40 passed**.
 
 ---
 
-## 11. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
+## 10. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
 
 **Objetivo.** Completar la venta de divisas con una entrega física en caja:
 el cajero identifica la operación pendiente, prepara los billetes y confirma
@@ -736,7 +736,7 @@ tres migraciones nuevas aparecen aplicadas. El detalle está en
 
 ---
 
-## 9. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
+## 11. Daniela González — RF055, Operación Guiada en la Terminal (GEG9-56)
 
 **Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
 

@@ -370,6 +370,7 @@ apps/terminal/tests/test_terminal.py .....                                      
 Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú reducido a las opciones **Panel** y **Terminal**, la visualización de las tres acciones iniciales de autoservicio, la denegación de acceso a usuarios sin dicho rol y el reinicio seguro de la terminal mediante `POST`, incluyendo la limpieza de los datos temporales de la sesión.
 
 ---
+
 ## Fabrizio Cardozo — RF029, Descarga de Documentos (GEG9-53)
 
 | Campo | Valor |
@@ -386,7 +387,7 @@ se realizan llamadas de red.
 
 ---
 
-## RF059 – Movimientos de Caja por Transacción en Metálico
+## Ryuto Maehara - RF059 – Movimientos de Caja por Transacción en Metálico
 
 | Campo | Resultado |
 |---|---|
@@ -427,3 +428,5 @@ cajero.
 `python manage.py makemigrations --check --dry-run` respondió `No changes
 detected`. El único warning fue la deprecación futura de `EMAIL_BACKEND`
 reportada por `pytest-django`.
+
+---
