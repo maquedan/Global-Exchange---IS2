@@ -430,7 +430,7 @@ inofensivas —sólo GET y POST que quedaban bloqueados—; la de servicios no.
 
 **Herramienta:** Codex, integrado en el entorno de desarrollo del proyecto.
 
-### «¿Qué ya existe para implementar la visualización?»
+### 4.1. «¿Qué ya existe para implementar la visualización?»
 
 **Lo que aprendimos.** `apps.facturacion` ya tenía el modelo `Factura`, la
 emisión automática de RF026 y un parcial para los comprobantes, pero no tenía
@@ -440,7 +440,7 @@ número, fechas, montos, CDC, `estado_fiscal` y la operación relacionada.
 **Decisión.** Construir el listado y el detalle sobre el modelo existente, sin
 crear una migración nueva para RF053.
 
-### «¿Cómo se separan las facturas de clientes y administradores?»
+### 4.2. «¿Cómo se separan las facturas de clientes y administradores?»
 
 **Decisión.** La consulta base se filtra en el servidor: un cliente solo puede
 ver facturas cuya compra o venta pertenece a su `cliente_activo`; un
@@ -448,7 +448,7 @@ administrador ve todas, incluso sin cliente activo. El detalle reutiliza el
 mismo queryset protegido, de modo que cambiar el id de la URL no permite
 consultar una factura ajena. Los demás roles reciben `403`.
 
-### «¿Qué filtros y datos debe mostrar la pantalla?»
+### 4.3. «¿Qué filtros y datos debe mostrar la pantalla?»
 
 El listado permite filtrar por número, rango de fechas, estado fiscal y tipo de
 transacción. Muestra número, fecha, monto, estado fiscal y operación asociada.
@@ -457,7 +457,7 @@ RUC. Si `estado_fiscal` está vacío se muestra **“Sin consultar”**. Para un
 persona física, `documento` se muestra como RUC según la convención del
 proyecto; para una persona jurídica se usa `ruc`.
 
-### Cambios realizados
+### 4.4. Cambios realizados
 
 - Vistas y autorización en `apps/facturacion/views.py`.
 - Rutas en `apps/facturacion/urls.py` y `config/urls.py`.
@@ -467,7 +467,7 @@ proyecto; para una persona jurídica se usa `ruc`.
 - Pruebas específicas en `apps/facturacion/tests/test_visualizacion.py`.
 - Documentación en `docs/sphinx/facturacion.rst`.
 
-### Verificaciones realizadas
+### 4.5. Verificaciones realizadas
 
 `manage.py check` terminó sin errores y las seis pruebas específicas de RF053
 pasaron. Las advertencias de `EMAIL_BACKEND` y `.pytest_cache` no afectan el
@@ -477,20 +477,20 @@ resultado.
 
 ## 5. Fabrizio Cardozo — RF028, Gestión de Estados Fiscales (GEG9-52)
 
-### «¿Cómo consultar sin duplicar una factura?»
+### 5.1. «¿Cómo consultar sin duplicar una factura?»
 
 Una factura puede tener CDC aunque la respuesta de la emisión se haya perdido.
 Por eso `emitir_factura()` consulta primero `consultar_estado` cuando existe
 CDC y solo vuelve a generar si el resultado es `RECHAZADA`. Si la API devuelve
 `EMITIDA` o `APROBADA`, no se reenvía el documento.
 
-### «¿Qué estados y qué información se conserva?»
+### 5.2. «¿Qué estados y qué información se conserva?»
 
 `Factura.estado_fiscal` usa `EMITIDA`, `APROBADA` y `RECHAZADA`; el motivo queda
 en `motivo_rechazo`. Cada transición se persiste en `HistorialEstadoFiscal`
 con estado anterior/nuevo, motivo, `operation_id`, respuesta y fecha/hora.
 
-### Cambios realizados
+### 5.3. Cambios realizados
 
 - Consulta por CDC en los clientes simulado y real de Factura Segura.
 - Servicios `consultar_estado_fiscal()` y `reintentar_factura()`.
@@ -498,7 +498,7 @@ con estado anterior/nuevo, motivo, `operation_id`, respuesta y fecha/hora.
 - Acciones administrativas y visualización del motivo e historial.
 - Pruebas en `apps/facturacion/tests/test_estado_fiscal.py`.
 
-### Verificaciones realizadas
+### 5.4. Verificaciones realizadas
 
 `manage.py check` no reportó problemas. Las pruebas específicas de facturación
 pasaron. La suite completa encontró dos fallos preexistentes en
@@ -508,7 +508,7 @@ relacionados con RF028.
 
 ---
 
-## Ryuto Maehara - GEG9-61 SCR — Script de Despliegue Automático (desarrollo y producción)
+## 6. Ryuto Maehara - GEG9-61 SCR — Script de Despliegue Automático (desarrollo y producción)
 
 **Herramienta:** Copilot SDK en VS Code.
 
@@ -529,7 +529,9 @@ borrar volúmenes para corregir estos problemas.
 compilación estricta de Sphinx. El arranque integrado en el servidor requirió
 completar y verificar su configuración local.
 
-## Ryuto Maehara - GEG9-62 SCR — Población de Base de Datos (datos iniciales)
+---
+
+## 7. Ryuto Maehara - GEG9-62 SCR — Población de Base de Datos (datos iniciales)
 
 **Herramienta:** Copilot SDK en VS Code.
 
@@ -549,3 +551,76 @@ en `.env.prod`; no se inventan cotizaciones.
 **Verificaciones.** Pruebas para ambos perfiles, repetición sin duplicados y
 validación de valores requeridos; Django check, suite del proyecto y
 compilación estricta de Sphinx.
+
+---
+
+## 8. Daniela González — RF054, Modo Terminal de Autoservicio (GEG9-55)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 8.1. «¿Cómo implementar una terminal sin exponer el sistema administrativo?»
+
+**Lo que aprendimos.** El sistema principal contiene opciones destinadas a
+administradores, analistas y cajeros. Una terminal de autoservicio debe ofrecer
+una experiencia simplificada para operar de forma guiada, sin mostrar esos
+módulos ni permitir el acceso a sus rutas.
+
+**Decisión.** Se creó la aplicación independiente `apps.terminal`, con sus
+propias vistas, rutas y plantillas. La pantalla inicial utiliza una plantilla
+base específica, `base_terminal.html`, y presenta únicamente las acciones
+disponibles para comenzar: comprar divisas, vender divisas y consultar
+cotizaciones.
+
+### 8.2. «¿Cómo se controla que solo un usuario de terminal pueda ingresar?»
+
+**Lo que aprendimos.** Ocultar una opción del menú no es suficiente como medida
+de seguridad, porque cualquier usuario autenticado podría intentar acceder
+directamente a la URL `/terminal/`.
+
+**Decisión.** Se implementó el decorador `requiere_terminal`, que verifica el
+rol dinámico `terminal` antes de ejecutar las vistas. Además, `construir_menu`
+devuelve exclusivamente las opciones **Panel** y **Terminal** cuando el usuario
+posee dicho rol. Los usuarios con otros roles reciben una respuesta `403` al
+intentar acceder a la terminal.
+
+### 8.3. «¿Cómo se reinicia una operación abandonada?»
+
+**Lo que aprendimos.** Una terminal de autoservicio no debe dejar en pantalla ni
+conservar temporalmente los datos de una operación si la persona se aleja sin
+terminarla.
+
+**Decisión.** Se incorporó un temporizador de cinco minutos sin interacción.
+Treinta segundos antes del límite se muestra un aviso con cuenta regresiva y
+la opción de continuar. Si no hay interacción, el navegador envía una solicitud
+`POST` a `/terminal/reiniciar/`; la vista elimina de la sesión los identificadores
+temporales de cliente, tipo de operación, compra y venta, y vuelve al inicio de
+la terminal.
+
+La sesión autenticada no se cierra: únicamente se limpia el contexto temporal
+de la operación actual.
+
+### 8.4. Cambios realizados
+
+- Nueva aplicación `apps.terminal`.
+- Registro de la aplicación en `INSTALLED_APPS`.
+- Inclusión de las rutas bajo `/terminal/`.
+- Vista inicial protegida por autenticación y rol `terminal`.
+- Ruta de reinicio restringida a solicitudes `POST`.
+- Plantillas `base_terminal.html` e `inicio.html`.
+- Menú reducido a **Panel** y **Terminal** para el rol de terminal.
+- Temporizador de inactividad con aviso previo y limpieza de sesión.
+- Pruebas unitarias específicas en `apps/terminal/tests/test_terminal.py`.
+
+No se crearon modelos ni migraciones, porque RF054 no requiere almacenar nuevas
+entidades en la base de datos.
+
+### 8.5. Verificaciones realizadas
+
+Se ejecutaron las pruebas específicas del módulo:
+
+```text
+docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+```
+Las pruebas cubren que el rol terminal vea solo las opciones de menú correspondientes, que acceda a la pantalla inicial, que otros roles reciban 403, que la ruta de reinicio rechace solicitudes GET y que una solicitud POST elimine correctamente los datos temporales de la sesión antes de redirigir al inicio.
+
+---

@@ -304,10 +304,7 @@ La suite de `apps` y `scripts/tests` también terminó con código 0: **281
 passed, 1 warning en 30.39s**. El warning es la deprecación futura de
 `EMAIL_BACKEND` reportada por `pytest-django`.
 
-<!--
-Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
-completá con tu propia ejecución, y pegá tu sección debajo de esta línea.
--->
+---
 
 ## Fabrizio Cardozo — RF028, Gestión de Estados Fiscales (GEG9-52)
 
@@ -333,3 +330,43 @@ rechazos después de consultar nuevamente su estado.
 La suite completa terminó con **2 fallos no relacionados** en
 `apps/monedas/tests/test_cargar_datos_iniciales.py`: conflicto de unicidad de
 `Sucursal.es_unica` y una sucursal residual en el perfil `minimal`.
+
+---
+
+## Daniela González — RF054, Modo Terminal de Autoservicio (GEG9-55)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 30 de octubre de 2026, 02:49:45 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/terminal/tests/test_terminal.py` |
+| **Comando** | `docker compose exec web pytest apps/terminal/tests/test_terminal.py -v` |
+| **Resultado** | **5 passed** en 7.13s |
+
+```text
+$ date
+Fri Oct 30 02:49:45 -03 2026
+
+$ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+=============================================== test session starts ===============================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 5 items                                                                                                 
+
+apps/terminal/tests/test_terminal.py .....                                                                  [100%]
+
+================================================ warnings summary =================================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================================== 5 passed, 1 warning in 7.13s ===========================================
+
+```
+
+Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú reducido a las opciones **Panel** y **Terminal**, la visualización de las tres acciones iniciales de autoservicio, la denegación de acceso a usuarios sin dicho rol y el reinicio seguro de la terminal mediante `POST`, incluyendo la limpieza de los datos temporales de la sesión.
+
+---

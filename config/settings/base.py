@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     "apps.cajas",
     "apps.pagos",
     "apps.facturacion",
+    "apps.terminal",
 ]
 
 MIDDLEWARE = [
