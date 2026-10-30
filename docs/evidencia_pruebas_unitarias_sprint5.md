@@ -370,3 +370,39 @@ apps/terminal/tests/test_terminal.py .....                                      
 Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú reducido a las opciones **Panel** y **Terminal**, la visualización de las tres acciones iniciales de autoservicio, la denegación de acceso a usuarios sin dicho rol y el reinicio seguro de la terminal mediante `POST`, incluyendo la limpieza de los datos temporales de la sesión.
 
 ---
+
+## Ryuto Maehara - RF058, Entrega de Efectivo en Venta
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 30 de octubre de 2026, 09:54 (-03, hora de Paraguay) |
+| **Ambiente** | Docker Compose, servicio `web` con Python 3.12.14, Django 6.1.2 y PostgreSQL |
+| **Artefactos probados** | `apps/conversiones/tests/test_conversiones.py`, `apps/cajas/tests/test_cajas.py`, `apps/facturacion/tests/test_facturacion.py`, `apps/usuarios/tests/test_restriccion_operaciones.py` |
+| **Resultado** | **154 passed**, 1 warning, en 22.59s |
+
+```text
+$ docker compose exec -T web pytest apps/conversiones/tests/test_conversiones.py apps/cajas/tests/test_cajas.py apps/facturacion/tests/test_facturacion.py apps/usuarios/tests/test_restriccion_operaciones.py --tb=no
+........................................................................ [ 46%]
+........................................................................ [ 93%]
+..........                                                               [100%]
+154 passed, 1 warning in 22.59s
+```
+
+La cobertura verifica la propuesta del menor total posible con el inventario,
+la aceptación y persistencia del excedente mínimo, el rechazo de un excedente
+mayor cuando existe una combinación mejor, la prevención de la entrega por
+saldo insuficiente, el retiro y actualización del inventario, la confirmación
+de la venta y la autorización exclusiva del cajero. También se probaron las
+regresiones de cajas, facturación y restricciones de acceso.
+
+El warning corresponde a la deprecación futura de `EMAIL_BACKEND` reportada
+por `pytest-django`; no produjo fallos.
+
+**Chequeos de Django y migración.** En Docker, `python manage.py check`
+respondió `System check identified no issues (0 silenced)` y
+`python manage.py makemigrations --check --dry-run` respondió `No changes
+detected`. Las migraciones `0006_alter_ventadivisa_cuenta_destino` y
+`0007_ventadivisa_monto_efectivo_entregado` aparecen aplicadas en la base de
+datos del entorno.
+
+---

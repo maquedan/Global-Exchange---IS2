@@ -624,3 +624,45 @@ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
 Las pruebas cubren que el rol terminal vea solo las opciones de menú correspondientes, que acceda a la pantalla inicial, que otros roles reciban 403, que la ruta de reinicio rechace solicitudes GET y que una solicitud POST elimine correctamente los datos temporales de la sesión antes de redirigir al inicio.
 
 ---
+
+## 9. Ryuto Maehara - RF058, Entrega de Efectivo en Venta
+
+**Objetivo.** Completar la venta de divisas con una entrega física en caja:
+el cajero identifica la operación pendiente, prepara los billetes y confirma
+la salida del efectivo.
+
+**Decisión de flujo.** La venta conserva los estados y el vencimiento de RF051
+y el historial de transiciones de RF023. El cliente inicia la venta y puede
+cancelarla mientras siga pendiente; la confirma un cajero, no el cliente.
+La acreditación bancaria deja de ser el destino de esta modalidad.
+
+**Cambios.** Se agregó la cola de ventas pendientes para cajeros y una pantalla
+de entrega con propuesta editable por denominación. Al confirmar, el servicio
+vuelve a validar cotización, saldo e inventario, registra el retiro de caja con
+su detalle de billetes y cambia la venta a confirmada en una sola transacción.
+El modelo conserva el importe efectivamente entregado, que puede diferir del
+neto de la venta si las denominaciones no permiten formar el importe exacto.
+
+**Criterio para excedentes.** A pedido del usuario, se permite exceder el neto,
+pero solo por el mínimo posible con las existencias actuales: la propuesta
+busca una combinación disponible que cubra el monto con el menor total. El
+cajero puede ajustar el desglose, pero no confirmar uno que entregue más que
+ese mínimo. Si el total disponible o las combinaciones de billetes no alcanzan,
+la venta permanece pendiente y se informa el faltante.
+
+**Persistencia y trazabilidad.** Las ventas en efectivo no necesitan cuenta
+destino; el campo quedó opcional para conservar las ventas históricas. Se
+registran el importe efectivo entregado y el movimiento de caja asociado.
+Migraciones: `0006_alter_ventadivisa_cuenta_destino.py` y
+`0007_ventadivisa_monto_efectivo_entregado.py`.
+
+**Verificaciones.** Antes del ajuste de excedente mínimo, pasaron en Docker
+109 pruebas de conversiones, facturación y permisos, y 42 pruebas de cajas;
+`manage.py check` y la comprobación de migraciones también fueron correctos.
+Para el cambio de excedente mínimo se ejecutaron también las pruebas de la
+combinación mínima, el registro del excedente y el rechazo de excedentes
+mayores. La evidencia actualizada está en
+`docs/evidencia_pruebas_unitarias_sprint5.md`: **154 pruebas pasaron** y la
+migración `0007` está aplicada en Docker.
+
+---
