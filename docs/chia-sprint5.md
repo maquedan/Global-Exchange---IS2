@@ -426,7 +426,7 @@ inofensivas —sólo GET y POST que quedaban bloqueados—; la de servicios no.
 
 ---
 
-## Fabrizio Cardozo — RF053, Visualización de Facturas (GEG9-54)
+## 4. Fabrizio Cardozo — RF053, Visualización de Facturas (GEG9-54)
 
 **Herramienta:** Codex, integrado en el entorno de desarrollo del proyecto.
 
@@ -472,6 +472,39 @@ proyecto; para una persona jurídica se usa `ruc`.
 `manage.py check` terminó sin errores y las seis pruebas específicas de RF053
 pasaron. Las advertencias de `EMAIL_BACKEND` y `.pytest_cache` no afectan el
 resultado.
+
+---
+
+## 5. Fabrizio Cardozo — RF028, Gestión de Estados Fiscales (GEG9-52)
+
+### «¿Cómo consultar sin duplicar una factura?»
+
+Una factura puede tener CDC aunque la respuesta de la emisión se haya perdido.
+Por eso `emitir_factura()` consulta primero `consultar_estado` cuando existe
+CDC y solo vuelve a generar si el resultado es `RECHAZADA`. Si la API devuelve
+`EMITIDA` o `APROBADA`, no se reenvía el documento.
+
+### «¿Qué estados y qué información se conserva?»
+
+`Factura.estado_fiscal` usa `EMITIDA`, `APROBADA` y `RECHAZADA`; el motivo queda
+en `motivo_rechazo`. Cada transición se persiste en `HistorialEstadoFiscal`
+con estado anterior/nuevo, motivo, `operation_id`, respuesta y fecha/hora.
+
+### Cambios realizados
+
+- Consulta por CDC en los clientes simulado y real de Factura Segura.
+- Servicios `consultar_estado_fiscal()` y `reintentar_factura()`.
+- Migración `0002_factura_estado_fiscal_consultado_en_and_more.py`.
+- Acciones administrativas y visualización del motivo e historial.
+- Pruebas en `apps/facturacion/tests/test_estado_fiscal.py`.
+
+### Verificaciones realizadas
+
+`manage.py check` no reportó problemas. Las pruebas específicas de facturación
+pasaron. La suite completa encontró dos fallos preexistentes en
+`apps/monedas/tests/test_cargar_datos_iniciales.py`, relacionados con la
+unicidad global de `Sucursal.es_unica` y el perfil `minimal`; no están
+relacionados con RF028.
 
 ---
 

@@ -52,7 +52,7 @@
         <td class="px-4 py-3">{{ factura.generada_en|default:factura.creada_en|date:"d/m/Y H:i" }}</td>
         {% if es_administrador %}<td class="px-4 py-3">{{ factura.operacion.cliente }}</td>{% endif %}
         <td class="px-4 py-3">{{ factura.monto|floatformat:0 }} {{ factura.moneda }}</td>
-        <td class="px-4 py-3">{{ factura.estado_fiscal|default:"Sin consultar" }}</td>
+        <td class="px-4 py-3">{{ factura.estado_fiscal|default:"Sin consultar" }}{% if factura.estado_fiscal == "RECHAZADA" and factura.motivo_rechazo %}<span class="block text-xs text-red-700">{{ factura.motivo_rechazo }}</span>{% endif %}</td>
         <td class="px-4 py-3">{% if factura.compra_id %}Compra #{{ factura.compra_id }}{% else %}Venta #{{ factura.venta_id }}{% endif %}</td>
         <td class="px-4 py-3 text-right"><a class="font-bold text-sky-700 hover:text-sky-900" href="{% url 'facturacion:detalle' factura.pk %}">Ver detalle</a></td>
       </tr>{% endfor %}
