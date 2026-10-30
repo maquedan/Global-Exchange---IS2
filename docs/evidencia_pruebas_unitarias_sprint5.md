@@ -250,6 +250,60 @@ documento como RUC para persona física. Las advertencias mostradas por pytest
 corresponden a compatibilidad futura de `EMAIL_BACKEND` y a permisos de
 `.pytest_cache`; no representan fallos.
 
+---
+
+## Ryuto Maehara — SCR, Despliegue y población inicial (GEG9-61 / GEG9-62)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 30 de octubre de 2026, 02:00:42 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/monedas/tests/test_cargar_datos_iniciales.py`, `scripts/tests/test_deploy.py` |
+| **Comando focalizado** | `python -m pytest apps/monedas/tests/test_cargar_datos_iniciales.py scripts/tests/test_deploy.py -v` |
+| **Resultado focalizado** | **6 passed** en 2.99s |
+| **Suite completa** | **281 passed**, 1 warning en 30.39s (`python -m pytest apps scripts/tests`) |
+
+Ejecución focalizada en entorno Python temporal con SQLite en memoria; los
+archivos de entorno y dependencias locales del proyecto no se modificaron:
+
+```text
+$ python -m pytest apps/monedas/tests/test_cargar_datos_iniciales.py scripts/tests/test_deploy.py -v
+============================= test session starts ==============================
+platform darwin -- Python 3.14.7, pytest-9.2.0, pluggy-1.7.0
+django: version: 6.1.2, settings: config.settings.dev (from ini)
+rootdir: /Users/ryutom/is2/Global-Exchange---IS2
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 6 items
+
+apps/monedas/tests/test_cargar_datos_iniciales.py ...                    [ 50%]
+scripts/tests/test_deploy.py ...                                         [100%]
+
+=============================== warnings summary ===============================
+../../../../private/var/folders/8w/7kcwpgxs11z02q24gy9d725h0000gn/T/geg9-scr-target-evidence-2lnemz64/venv/lib/python3.14/site-packages/pytest_django/plugin.py:394
+  /private/var/folders/8w/7kcwpgxs11z02q24gy9d725h0000gn/T/geg9-scr-target-evidence-2lnemz64/venv/lib/python3.14/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 6 passed, 1 warning in 2.99s =========================
+```
+
+La prueba de GEG9-62 cubre el perfil demo y su repetición idempotente, el perfil
+mínimo sin datos demo y el rechazo de valores financieros ausentes. En la
+ejecución se ajustó el cargador para reutilizar la sucursal única `Centro` que
+crea la migración de cajas; el perfil mínimo conserva esa caja de sistema y no
+crea clientes ni existencias demo.
+
+Las tres pruebas de GEG9-61 ejecutan el script con dobles locales de Docker y
+HTTP: el camino de desarrollo aplica migraciones, `collectstatic`, perfil demo
+y arranque web; producción valida la configuración, carga perfil mínimo y
+arranca web/Nginx; y la falta de valores financieros detiene producción antes
+de invocar Docker. **Esto es una simulación del script, no un despliegue real
+de contenedores ni en el servidor.**
+
+La suite de `apps` y `scripts/tests` también terminó con código 0: **281
+passed, 1 warning en 30.39s**. El warning es la deprecación futura de
+`EMAIL_BACKEND` reportada por `pytest-django`.
+
 <!--
 Próxima persona: copiá desde acá el bloque de arriba (## Nombre — Historia),
 completá con tu propia ejecución, y pegá tu sección debajo de esta línea.

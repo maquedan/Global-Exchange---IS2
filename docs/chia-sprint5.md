@@ -472,3 +472,47 @@ proyecto; para una persona jurídica se usa `ruc`.
 `manage.py check` terminó sin errores y las seis pruebas específicas de RF053
 pasaron. Las advertencias de `EMAIL_BACKEND` y `.pytest_cache` no afectan el
 resultado.
+
+---
+
+## Ryuto Maehara - GEG9-61 SCR — Script de Despliegue Automático (desarrollo y producción)
+
+**Herramienta:** Copilot SDK en VS Code.
+
+**Objetivo.** Desplegar el proyecto con un comando por ambiente. Se agregó
+`./scripts/deploy.sh dev|prod`: prepara Docker Compose, espera PostgreSQL y
+Keycloak, aplica migraciones, recoge estáticos y arranca los servicios. Usa
+`.env` para desarrollo y `.env.prod` para producción; las credenciales no se
+versionan.
+
+**Incidencias revisadas durante la prueba.** Se identificaron credenciales de
+PostgreSQL de Keycloak desincronizadas con su volumen persistente, valores
+financieros vacíos o con formato decimal inválido y una URL pública que usaba
+un puerto distinto al publicado por Compose. El despliegue requiere alinear
+credenciales, formato y puerto con la configuración del servidor; no se deben
+borrar volúmenes para corregir estos problemas.
+
+**Verificaciones.** Script Bash, archivos Compose, pruebas del proyecto y
+compilación estricta de Sphinx. El arranque integrado en el servidor requirió
+completar y verificar su configuración local.
+
+## Ryuto Maehara - GEG9-62 SCR — Población de Base de Datos (datos iniciales)
+
+**Herramienta:** Copilot SDK en VS Code.
+
+**Objetivo.** Dejar datos necesarios para operar y demostrar el sistema. Se
+agregó `python manage.py cargar_datos_iniciales --profile demo|minimal`, que
+el despliegue ejecuta después de las migraciones y de recoger estáticos.
+
+- `demo`: monedas y tasas ficticias, comisiones, roles, clientes de ejemplo y
+  una caja con saldos e inventario en cero.
+- `minimal`: USD/PYG, tasas y comisiones aprobadas para producción y roles;
+  no crea clientes ni cajas demo.
+
+La carga es idempotente: no duplica datos ni sobrescribe tasas o comisiones
+existentes. Los valores financieros de producción se configuran explícitamente
+en `.env.prod`; no se inventan cotizaciones.
+
+**Verificaciones.** Pruebas para ambos perfiles, repetición sin duplicados y
+validación de valores requeridos; Django check, suite del proyecto y
+compilación estricta de Sphinx.

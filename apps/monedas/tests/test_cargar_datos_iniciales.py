@@ -85,8 +85,12 @@ class CargarDatosInicialesTests(TestCase):
             name__in=("administrador", "analista_cambiario", "usuario_cliente", "cajero")
         ).count(), 4)
         self.assertFalse(Cliente.objects.exists())
-        self.assertFalse(Sucursal.objects.exists())
-        self.assertFalse(Caja.objects.exists())
+        # La migración de cajas crea la sucursal/caja única del sistema;
+        # el perfil minimal no agrega clientes ni inventario demo.
+        self.assertEqual(Sucursal.objects.count(), 1)
+        self.assertEqual(Caja.objects.count(), 1)
+        self.assertFalse(SaldoCaja.objects.exists())
+        self.assertFalse(InventarioBilleteCaja.objects.exists())
 
     def test_perfil_minimal_exige_valores_financieros_sin_cargar_datos_parciales(self):
         with patch.dict(os.environ, {}, clear=True):

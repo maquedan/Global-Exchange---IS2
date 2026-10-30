@@ -202,8 +202,8 @@ class Command(BaseCommand):
     @staticmethod
     def _crear_caja_demo(monedas):
         sucursal, _ = Sucursal.objects.get_or_create(
-            nombre="Casa Central Demo",
-            defaults={"direccion": "Dirección de demostración"},
+            nombre="Centro",
+            defaults={"direccion": "Centro"},
         )
         caja, _ = Caja.objects.get_or_create(sucursal=sucursal)
         for codigo in ("USD", "PYG"):
