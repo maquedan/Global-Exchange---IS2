@@ -380,7 +380,7 @@ def test_confirmar_pago_compra_falla_si_el_cliente_fue_dado_de_baja(
 
 @pytest.mark.django_db
 def test_el_menu_sin_cliente_no_ofrece_operar(sin_cliente):
-    textos = {opcion["texto"] for opcion in construir_menu(sin_cliente, None)}
+    textos = {opcion["texto"] for opcion in construir_menu(sin_cliente, puede_operar=False)}
 
     assert "Comprar divisas" not in textos
     assert "Vender divisas" not in textos
@@ -393,8 +393,8 @@ def test_el_menu_sin_cliente_no_ofrece_operar(sin_cliente):
 
 @pytest.mark.django_db
 def test_el_menu_con_cliente_si_ofrece_operar(con_cliente):
-    usuario, cliente = con_cliente
-    textos = {opcion["texto"] for opcion in construir_menu(usuario, cliente)}
+    usuario, _cliente = con_cliente
+    textos = {opcion["texto"] for opcion in construir_menu(usuario, puede_operar=True)}
 
     assert "Comprar divisas" in textos
     assert "Vender divisas" in textos
@@ -413,3 +413,38 @@ def test_administrador_y_analista_no_son_bloqueados(client, django_user_model, r
     # Las pantallas de administración se rigen por su propio control de rol.
     esperado = 200 if rol == "administrador" else 403
     assert client.get(reverse("clientes:lista")).status_code == esperado
+
+
+@pytest.mark.django_db
+def test_con_varios_clientes_sin_elegir_igual_ve_las_opciones(client, django_user_model):
+    """Regresión: ocultarlas lo dejaba sin forma de llegar a elegir.
+
+    Con dos clientes asociados y ninguno elegido, `cliente_activo` es `None`.
+    Si el menú se guiara por eso, el usuario no vería "Comprar divisas" —y
+    como el acceso a la pantalla de selección también cuelga de tener un
+    cliente activo, se quedaría encerrado sin poder operar nunca.
+    """
+    usuario = _usuario(django_user_model, "con-dos-clientes", "usuario_cliente")
+    for n, nombre in enumerate(["Uno", "Dos"], start=1):
+        cliente = Cliente.objects.create(
+            tipo=Cliente.Tipo.FISICA,
+            nombres=nombre,
+            apellidos="Cliente",
+            documento=f"800000{n}",
+            email=f"c{n}@example.com",
+            telefono="0981000000",
+            direccion="Asuncion",
+        )
+        AsociacionUsuarioCliente.objects.create(usuario=usuario, cliente=cliente)
+
+    client.force_login(usuario)
+    respuesta = client.get(reverse("usuarios:panel"))
+    contexto = respuesta.context
+
+    assert contexto["cliente_activo"] is None
+    textos = {opcion["texto"] for opcion in contexto["menu_principal"]}
+    assert "Comprar divisas" in textos
+    assert "Mis medios de pago" in textos
+    # Y tiene cómo llegar a elegir desde la barra superior.
+    assert contexto["debe_elegir_cliente"] is True
+    assert reverse("usuarios:seleccionar_cliente") in respuesta.content.decode()
