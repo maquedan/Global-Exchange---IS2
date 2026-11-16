@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block titulo %}Conciliar transferencias | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Transferencias por verificar</h1>
+  <p>Operaciones que el cliente eligió pagar por transferencia bancaria y
+    siguen pendientes. No se vencen: quedan reservadas hasta que verifiques
+    el pago en el banco y las concilies.</p>
+
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  {% if compras %}
+    <table class="tabla-conciliacion">
+      <thead>
+        <tr>
+          <th>Operación</th>
+          <th>Cliente</th>
+          <th>Total a pagar</th>
+          <th>Recibe</th>
+          <th>Iniciada</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for compra in compras %}
+          <tr>
+            <td>#{{ compra.pk }}</td>
+            <td>{{ compra.cliente }}</td>
+            <td><strong>{{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}</strong></td>
+            <td>{{ compra.monto_recibido }} {{ compra.moneda_adquirida.codigo }}</td>
+            <td>{{ compra.creado_en|date:"d/m/Y H:i" }}</td>
+            <td>
+              <a class="boton" href="{% url 'conversiones:conciliar' compra.pk %}">Conciliar</a>
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p class="mensaje">No hay transferencias pendientes de verificar.</p>
+  {% endif %}
+</div>
+
+<style>
+  .tabla-conciliacion {
+    width: 100%;
+    margin-top: 1.25rem;
+    border-collapse: collapse;
+  }
+
+  .tabla-conciliacion th,
+  .tabla-conciliacion td {
+    padding: 0.7rem 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .tabla-conciliacion th {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #64748b;
+  }
+
+  .tabla-conciliacion tbody tr:hover { background: #f8fafc; }
+</style>
+{% endblock %}

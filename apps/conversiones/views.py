@@ -14,6 +14,7 @@ from apps.usuarios.menu import tiene_rol
 from apps.usuarios.services import requiere_cliente_activo
 
 from .forms import (
+    ConciliacionForm,
     AnularVentaForm,
     CompraDivisaForm,
     EntregaEfectivoVentaForm,
@@ -23,6 +24,9 @@ from .forms import (
 )
 from .models import CompraDivisa, VentaDivisa
 from .services import (
+    ConciliacionNoPermitida,
+    compras_pendientes_de_conciliar,
+    conciliar_compra,
     MINUTOS_EXPIRACION_PENDIENTE,
     AnulacionVentaNoPermitida,
     CompraNoConfirmable,
@@ -505,4 +509,67 @@ def historial(request):
         request,
         "conversiones/historial.html",
         {"transacciones": transacciones},
+    )
+
+@login_required
+@requiere_administrador
+def conciliaciones(request):
+    """Compras esperando que se verifique una transferencia (RF025 — GEG9-75)."""
+    pendientes = compras_pendientes_de_conciliar()
+    return render(
+        request,
+        "conversiones/conciliaciones.html",
+        {"compras": pendientes},
+    )
+
+
+@login_required
+@requiere_administrador
+def conciliar(request, pk):
+    """Marca una compra como pagada tras verificar la transferencia (RF025).
+
+    El control de acceso está por duplicado a propósito: el decorador corta
+    el GET y el POST, y el servicio vuelve a verificar el rol por su cuenta,
+    para que no se pueda conciliar por otra vía que no sea esta vista.
+    """
+    compra = get_object_or_404(
+        CompraDivisa.objects.select_related(
+            "cliente", "moneda_pagada", "moneda_adquirida"
+        ),
+        pk=pk,
+    )
+    formulario = ConciliacionForm(request.POST or None)
+
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            conciliada = conciliar_compra(
+                pk=compra.pk,
+                usuario=request.user,
+                referencia=formulario.cleaned_data["referencia"],
+                observacion=formulario.cleaned_data["observacion"],
+            )
+        except ConciliacionNoPermitida as error:
+            formulario.add_error(None, str(error))
+        else:
+            if conciliada.estado != CompraDivisa.Estado.CONFIRMADA:
+                # RF051: la cotización cambió, así que se canceló en vez de
+                # confirmarse. La cancelación ya quedó guardada.
+                messages.error(
+                    request,
+                    f"La cotización cambió desde que se inició la operación "
+                    f"#{compra.pk}, así que se canceló en vez de confirmarse. "
+                    "No se le cobró nada al cliente: hay que devolverle la "
+                    "transferencia o iniciar una operación nueva.",
+                )
+            else:
+                messages.success(
+                    request,
+                    f"La operación #{compra.pk} quedó confirmada como pagada.",
+                )
+            return redirect("conversiones:conciliaciones")
+
+    return render(
+        request,
+        "conversiones/conciliar.html",
+        {"compra": compra, "formulario": formulario},
     )

@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block titulo %}Conciliar operación #{{ compra.pk }} | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Conciliar la operación #{{ compra.pk }}</h1>
+  <p>Verificá que la transferencia figure en el extracto del banco antes de
+    confirmar. Al conciliar, la operación queda <strong>pagada</strong>, se
+    emite la factura electrónica y queda registrado que la confirmaste vos.</p>
+
+  <h2>Detalle de la operación</h2>
+  <p>Cliente: {{ compra.cliente }}</p>
+  <p>Monto base: {{ compra.monto_pagado }} {{ compra.moneda_pagada.codigo }}</p>
+  <p>Comisión: {{ compra.porcentaje_comision }}% ({{ compra.monto_comision }} {{ compra.moneda_pagada.codigo }})</p>
+  <p><strong>Total transferido: {{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}</strong></p>
+  <p>Tasa aplicada: {{ compra.tasa_aplicada }}</p>
+  <p>El cliente recibe: {{ compra.monto_recibido }} {{ compra.moneda_adquirida.codigo }}</p>
+  <p>Iniciada el {{ compra.creado_en|date:"d/m/Y H:i" }}</p>
+
+  {% if compra.estado != "PENDIENTE" %}
+    <p class="mensaje error">Esta operación ya no está pendiente
+      (está {{ compra.get_estado_display }}): no se puede conciliar.</p>
+    <a class="boton boton-secundario" href="{% url 'conversiones:conciliaciones' %}">Volver</a>
+  {% else %}
+    <form method="post" novalidate>
+      {% csrf_token %}
+
+      {% for error in formulario.non_field_errors %}
+        <p class="mensaje error">{{ error }}</p>
+      {% endfor %}
+
+      <p>
+        <label for="{{ formulario.referencia.id_for_label }}">{{ formulario.referencia.label }}</label><br>
+        {{ formulario.referencia }}
+        <span class="ayuda">{{ formulario.referencia.help_text }}</span>
+        {% for error in formulario.referencia.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+      </p>
+
+      <p>
+        <label for="{{ formulario.observacion.id_for_label }}">{{ formulario.observacion.label }}</label><br>
+        {{ formulario.observacion }}
+        {% for error in formulario.observacion.errors %}<p class="mensaje error">{{ error }}</p>{% endfor %}
+      </p>
+
+      <div class="acciones mt-6">
+        <button class="boton" type="submit">Marcar como pagada</button>
+        <a class="boton boton-secundario" href="{% url 'conversiones:conciliaciones' %}">Cancelar</a>
+      </div>
+    </form>
+  {% endif %}
+</div>
+
+<style>
+  .ayuda {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.8rem;
+    color: #64748b;
+  }
+</style>
+{% endblock %}

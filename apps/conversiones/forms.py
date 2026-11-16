@@ -251,3 +251,23 @@ class AnularVentaForm(forms.Form):
         strip=True,
         widget=forms.Textarea(attrs={"rows": 3}),
     )
+
+
+class ConciliacionForm(forms.Form):
+    """Datos con los que el administrador concilia una transferencia (RF025).
+
+    La referencia es obligatoria: es el dato que permite rastrear el cobro
+    hasta el extracto del banco. La observación es libre y opcional.
+    """
+
+    referencia = forms.CharField(
+        label="Referencia de la transferencia",
+        max_length=100,
+        help_text="Número de comprobante o referencia que figura en el extracto.",
+    )
+    observacion = forms.CharField(
+        label="Observación (opcional)",
+        max_length=150,
+        required=False,
+        widget=forms.Textarea(attrs={"rows": 2}),
+    )

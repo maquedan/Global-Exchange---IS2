@@ -948,3 +948,138 @@ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
 **Resultado:** 15 pruebas aprobadas. Las pruebas nuevas verifican comprobantes de compra y venta confirmadas, bloqueo de comprobantes para operaciones pendientes, aviso cuando no hay factura disponible y descarga de PDF/XML cuando la factura posee CDC. Las descargas se probaron con un doble del proveedor de facturación, por lo que no realizaron llamadas reales a Factura Segura.
 
 ---
+
+## 4. Leyda Fleitas — RF025, Conciliación Manual (GEG9-75)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket pedía reportar el diseño y las decisiones abiertas antes de
+implementar.
+
+### 4.1. «El ticket pide pasar por `confirmar_pago_compra`, pero un administrador no puede»
+
+**Lo que aprendimos.** `confirmar_pago_compra` filtra así:
+
+```python
+.filter(pk=pk,
+        cliente__asociaciones_usuarios__usuario=usuario,
+        cliente__activo=True)
+```
+
+Ese filtro es el control de dueño que agregaron RF008 y RF010. Un
+administrador **no está asociado** al cliente, así que el filtro devuelve
+`None` y el servicio responde "la operación no existe o no te pertenece".
+Pasar por ahí tal cual era imposible.
+
+**Decisión.** Extraer el núcleo a `_confirmar_compra_pendiente(compra, *,
+usuario, motivo)` y dejar dos puertas de entrada que solo se diferencian en
+el control de acceso: `confirmar_pago_compra` (dueño) y `conciliar_compra`
+(rol `administrador`). Así la revalidación de tasa de RF051, la trazabilidad
+de RF023 y la facturación de RF026 son idénticas por los dos caminos, que es
+lo que el ticket pedía con "no dupliques lógica", y el historial registra al
+administrador real y no al cliente.
+
+Había **precedente en el repo**: `anular_venta` (RF059, de un compañero) ya
+valida el grupo `administrador` dentro del servicio y busca sin filtro de
+dueño. Se siguió esa misma forma.
+
+### 4.2. «La función no serviría: la ventana es de 15 minutos»
+
+**Lo que aprendimos**, y fue el hallazgo que cambió el alcance:
+`MINUTOS_EXPIRACION_PENDIENTE = 15`, y `confirmar_pago_compra` llama a
+`expirar_compra_si_corresponde` **antes** de confirmar. Verificar una
+transferencia bancaria lleva horas o días: para cuando el administrador
+entrara a conciliar, **toda** compra pendiente ya se habría cancelado sola.
+La pantalla habría estado siempre vacía.
+
+**Decisión de la integrante** (entre tres opciones planteadas): un campo
+nuevo `espera_transferencia` en `CompraDivisa`. El cliente lo marca al elegir
+cómo pagar, y esa compra deja de vencerse.
+
+La protección de RF051 **no se pierde**: al conciliar se revalida la
+cotización igual, y si cambió la operación se cancela en vez de confirmarse.
+Lo que se suspende es el vencimiento por tiempo, no el control de tasa.
+
+### 4.3. «¿Alcanza con el cambio de estado, o se registra un `Pago`?»
+
+**Decisión de la integrante:** registrar también un `Pago` con proveedor
+`"manual"` y estado `APROBADO`. `Pago.proveedor` es texto libre, así que no
+hizo falta migrar nada, y el comprobante ya muestra un bloque "Pago" leyendo
+`compra.pagos.first`: la conciliación aparece ahí **sin tocar esa
+plantilla**. La referencia bancaria va en `id_externo` y quién concilió en
+`respuesta_cruda`.
+
+Se registra el importe **tal como lo transfirió el cliente** (el total en la
+moneda de la operación), no el convertido para la pasarela: acá no hubo
+pasarela que convirtiera nada.
+
+### 4.4. «Bug propio: lanzar una excepción revertía la cancelación»
+
+**Lo que aprendimos.** `conciliar_compra` está decorado con
+`@transaction.atomic`. Cuando RF051 detectaba que la cotización había
+cambiado, el servicio cancelaba la compra y después **lanzaba** una excepción
+para avisarle al administrador. Resultado: la transacción revertía la
+cancelación que se acababa de registrar, y la compra quedaba pendiente como
+si nada hubiera pasado.
+
+Lo destapó una prueba que esperaba `CANCELADA` y encontró `PENDIENTE`.
+
+**Decisión.** El servicio **devuelve** la compra en vez de lanzar, y la vista
+mira el estado para mostrar el mensaje. Así la cancelación persiste, igual
+que en el pago normal. Queda documentado en el docstring, porque es un
+contrato fácil de romper: *no alcanza con que no haya excepción, hay que
+mirar el estado*.
+
+### 4.5. «Incidente: una prueba llamó a la API real de Factura Segura»
+
+**Lo que aprendimos.** Al correr las pruebas nuevas, una de ellas emitió
+contra Factura Segura **de verdad**. La causa es la ya conocida de la sección
+2.9: `config.settings.dev` lee el `.env`, que en esta máquina tiene
+`FACTURACION_PROVEEDOR=facturasegura`. Las pruebas de `apps/facturacion` se
+protegían con un fixture propio, pero esa protección **no alcanzaba a un
+archivo de pruebas de otra app**.
+
+No se perdió ningún número: la API rechazó el intento con `NUMDOC_APROBADO`
+—el número ya estaba aprobado— y la secuencia real quedó intacta. Fue suerte,
+no diseño.
+
+**Decisión.** Mover la protección a un **`conftest.py` en la raíz** del
+proyecto, con fixtures `autouse` que fuerzan el proveedor simulado de
+facturación **y** de pagos en todas las pruebas. Ahora ninguna prueba del
+proyecto puede salir a la red, la escriba quien la escriba y esté donde esté.
+La lección de 2.9 estaba bien aprendida pero mal ubicada: una salvaguarda que
+vive en el archivo que ya se acordó de ponerla no protege de los olvidos.
+
+### 4.6. Hallazgos del ambiente (no son de esta historia, pero se verificaron)
+
+- El certificado TLS de Factura Segura, que entre el 28/10 y mediados de
+  noviembre fue emitido por una CA interna de un FortiGate y rompía toda
+  llamada, **está corregido**: ahora lo emite Amazon y la conexión valida.
+- Con la API otra vez disponible se consultó `get_estado_sifen` de las tres
+  facturas emitidas: las **tres figuran `0260 - Aprobado`**, incluida la de
+  una compra. Es decir, la emisión automática de RF026 produce documentos
+  fiscalmente válidos, y los datos de prueba del emisor no impidieron la
+  aprobación: Factura Segura valida la identidad contra el RUC y el timbrado
+  registrados en la cuenta ESI, no contra el nombre y la dirección enviados.
+
+## 4.7. Verificaciones realizadas
+
+- **16 pruebas nuevas.** Suite completa: **328 aprobadas** (eran 312), sin
+  regresiones en las historias de los compañeros (RF028, RF029, RF053, RF055,
+  RF056, RF059) ni en las propias.
+- Casos cubiertos: conciliar deja la compra confirmada y con factura
+  generada; queda registrado quién concilió y con qué referencia; se crea el
+  `Pago` manual con la referencia y el importe correctos; no se puede
+  conciliar una cancelada; conciliar dos veces no duplica pago, factura ni
+  cambio de estado; la referencia es obligatoria; si la cotización cambió se
+  cancela y **no** se registra pago; la compra por transferencia no se vence
+  ni a los dos días mientras que una normal sí; la lista solo trae las que
+  esperan transferencia; el servicio y las vistas rechazan a quien no es
+  administrador (GET y POST); y un fallo de la facturación no deshace la
+  conciliación (RNF011).
+- `python manage.py check` sin errores, migración `conversiones.0011`
+  aplicada y Sphinx genera **sin warnings** — de paso se repuso
+  `docs/sphinx/notificaciones.rst`, que el `index` referenciaba y no existía
+  en el repositorio.
+
+---

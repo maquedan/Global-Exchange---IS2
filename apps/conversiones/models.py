@@ -75,6 +75,14 @@ class CompraDivisa(models.Model):
     motivo_cancelacion = models.CharField(
         max_length=20, choices=MotivoCancelacion.choices, blank=True
     )
+    espera_transferencia = models.BooleanField(
+        default=False,
+        help_text=(
+            "El cliente eligió pagar por transferencia bancaria. Esta compra "
+            "no se vence a los 15 minutos: queda esperando que un "
+            "administrador verifique la transferencia y la concilie (RF025)."
+        ),
+    )
     creado_en = models.DateTimeField(auto_now_add=True)
     confirmado_en = models.DateTimeField(null=True, blank=True)
     cancelado_en = models.DateTimeField(null=True, blank=True)
