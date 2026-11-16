@@ -12,5 +12,7 @@ urlpatterns = [
     path("simulacion/", views.simulacion_terminal, name="simulacion"),
     path("confirmar/", views.confirmar_operacion_terminal, name="confirmar_operacion"),
     path("operacion-pendiente/", views.operacion_pendiente_terminal, name="operacion_pendiente"),
+    path("comprobante/", views.comprobante_terminal, name="comprobante",),
+    path("comprobante/factura/<str:formato>/", views.descargar_factura_terminal, name="descargar_factura",),
     path("reiniciar/", views.reiniciar_terminal, name="reiniciar"),
 ]

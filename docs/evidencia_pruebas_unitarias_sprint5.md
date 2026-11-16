@@ -382,8 +382,7 @@ Las cinco pruebas cubren el acceso exclusivo para el rol `terminal`, el menú re
 
 Las pruebas cubren PDF/XML por CDC, separación de datos entre cliente y
 administrador, exportación PDF, exportación Excel-compatible y respeto de los
-filtros. El cliente de Factura Segura se reemplaza por un doble, por lo que no
-se realizan llamadas de red.
+filtros. El cliente de Factura Segura se reemplaza por un doble, por lo que no se realizan llamadas de red.
 
 ---
 
@@ -428,5 +427,49 @@ cajero.
 `python manage.py makemigrations --check --dry-run` respondió `No changes
 detected`. El único warning fue la deprecación futura de `EMAIL_BACKEND`
 reportada por `pytest-django`.
+
+---
+
+## Daniela González — RF056, Comprobante de la Terminal (GEG9-57)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** |lunes 16 de noviembre de 2026, 01:54:48 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/terminal/tests/test_terminal.py` |
+| **Comando** | `docker compose exec web pytest apps/terminal/tests/test_terminal.py -v` |
+| **Resultado** | **15 passed** en 17.68s |
+
+```text
+$ date
+Mon Nov 16 01:54:48 -03 2026
+
+$ docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+==================================== test session starts ====================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 15 items                                                                          
+
+apps/terminal/tests/test_terminal.py ...............                                  [100%]
+
+===================================== warnings summary ======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================== 15 passed, 1 warning in 17.68s ===============================
+
+```
+
+Las cinco pruebas nuevas verifican que una compra confirmada muestre un
+comprobante con operación, monedas, monto total, tasa, comisión y monto
+recibido; que una venta confirmada muestre sus importes correspondientes; que
+una operación pendiente no permita acceder al comprobante final; que una
+factura sin CDC se indique como no disponible; y que, cuando la factura posee
+CDC, puedan descargarse correctamente su PDF y XML desde la sesión protegida
+de terminal.
 
 ---
