@@ -10,8 +10,11 @@
     <h1>Revisá y confirmá tu compra</h1>
     <p>Esta es la cotización vigente al iniciar la operación. Si la tasa cambia
       antes de que confirmes el pago, la operación se cancela sola para que no
-      pagues una tasa distinta a la que ves acá. Tenés 15 minutos desde que
-      iniciaste la compra para confirmar, o se cancela sola por vencimiento.</p>
+      pagues una tasa distinta a la que ves acá.
+      {% if not compra.espera_transferencia %}
+        Tenés 15 minutos desde que iniciaste la compra para confirmar, o se
+        cancela sola por vencimiento.
+      {% endif %}</p>
   {% elif compra.estado == "CONFIRMADA" %}
     <h1>Compra confirmada</h1>
     <p>Operación #{{ compra.pk }} confirmada el {{ compra.confirmado_en|date:"d/m/Y H:i" }}.</p>
@@ -38,12 +41,22 @@
   <p><strong>Recibirás {{ compra.monto_recibido }} {{ compra.moneda_adquirida.codigo }}</strong></p>
 
   {% if compra.estado == "PENDIENTE" %}
-    <p id="contador-vencimiento" class="mensaje"></p>
-    <a class="boton" href="{% url 'pagos:elegir_pago' compra.pk %}">Pagar</a>
+    {% if compra.espera_transferencia %}
+      {# RF025: esta compra no se vence, asi que no va el contador. #}
+      <p class="mensaje">Anotamos que vas a pagar por <strong>transferencia bancaria</strong>.
+        La operación queda reservada <strong>sin vencimiento</strong> hasta que
+        verifiquemos el pago. Vas a ver el comprobante acá mismo cuando se confirme.</p>
+    {% else %}
+      <p id="contador-vencimiento" class="mensaje"></p>
+    {% endif %}
+    {% if not compra.espera_transferencia %}
+      <a class="boton" href="{% url 'pagos:elegir_pago' compra.pk %}">Pagar</a>
+    {% endif %}
     <form method="post" action="{% url 'conversiones:cancelar_compra' compra.pk %}" style="display:inline">
       {% csrf_token %}
       <button class="boton boton-secundario" type="submit">Cancelar</button>
     </form>
+    {% if not compra.espera_transferencia %}
     <script>
       (function () {
         var limiteMs = new Date("{{ compra.creado_en|date:'c' }}").getTime()
@@ -67,6 +80,7 @@
         setInterval(actualizar, 1000);
       })();
     </script>
+    {% endif %}
   {% else %}
     <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
     <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>

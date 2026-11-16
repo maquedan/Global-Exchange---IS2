@@ -24,6 +24,19 @@
       color: #fff;
     }
 
+    .elegir-cliente {
+      background: rgba(250, 204, 21, 0.18);
+      color: #fde68a;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .elegir-cliente:hover,
+    .elegir-cliente:focus {
+      background: rgba(250, 204, 21, 0.3);
+      color: #fff;
+    }
+
     .cambiar-cliente {
       margin-left: 0.5rem;
       padding-left: 0.5rem;
@@ -70,6 +83,12 @@
         <div class="flex items-center gap-4">
           <div class="flex shrink-0 items-center gap-3 text-sm">
             {% if user.is_authenticated %}
+              {% if debe_elegir_cliente %}
+                <a class="operando-como elegir-cliente" href="{% url 'usuarios:seleccionar_cliente' %}"
+                   title="Elegí con cuál de tus clientes vas a operar">
+                  Elegí un cliente para operar
+                </a>
+              {% endif %}
               {% if cliente_activo %}
                 <span class="operando-como" title="Cliente con el que estás operando">
                   Operando como <strong>{{ cliente_activo }}</strong>

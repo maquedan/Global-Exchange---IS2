@@ -28,6 +28,14 @@ PREFIJOS_QUE_NECESITAN_CLIENTE = (
     "/pagos/",
 )
 
+# Excepciones dentro de esos prefijos: pantallas de administración que viven
+# bajo una ruta operativa pero **no** operan en nombre de un cliente. Sin
+# esto, a un administrador que además estuviera asociado a algún cliente se
+# lo mandaría a elegir uno antes de poder conciliar (RF025 — GEG9-75).
+RUTAS_SIN_CLIENTE = (
+    "/conversiones/conciliaciones/",
+)
+
 
 class ClienteActivoMiddleware:
     def __init__(self, get_response):
@@ -51,6 +59,9 @@ class ClienteActivoMiddleware:
             return False
 
         if not request.path.startswith(PREFIJOS_QUE_NECESITAN_CLIENTE):
+            return False
+
+        if request.path.startswith(RUTAS_SIN_CLIENTE):
             return False
 
         # Sin ningún cliente asociado no hay nada para elegir: mandarlo a la

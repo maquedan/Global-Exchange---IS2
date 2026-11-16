@@ -56,6 +56,13 @@ MENU_PRINCIPAL = [
         "roles": ["usuario_cliente"],
     },
     {
+        # Sin "necesita_cliente": el administrador no opera en nombre de un
+        # cliente, y marcarla se la ocultaría por RF010 (GEG9-20).
+        "texto": "Conciliar transferencias",
+        "url": "conversiones:conciliaciones",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Comisiones",
         "url": "comisiones:lista",
         "roles": ["administrador"],
@@ -145,13 +152,18 @@ def tiene_permiso(usuario, codigo):
     return PermisoRol.objects.filter(rol__in=roles_de(usuario), permiso__codigo=codigo).exists()
 
 
-def construir_menu(usuario, cliente_activo=None):
+def construir_menu(usuario, puede_operar=False):
     """Devuelve solo las opciones que este usuario puede ver.
 
-    `cliente_activo` es el cliente con el que está operando (RF008). Si es
-    `None`, se ocultan las opciones marcadas con `necesita_cliente`: son las
-    que operan en nombre de un cliente y llevarían a un bloqueo (RF010).
-    Ocultarlas es solo comodidad — el bloqueo de verdad está en las vistas.
+    `puede_operar` indica si el usuario tiene **al menos un cliente activo
+    asociado**, no si ya eligió con cuál operar. La diferencia importa: quien
+    tiene varios clientes y todavía no eligió sí debe ver las opciones de
+    operar, porque al tocarlas el middleware de RF008 lo lleva a la pantalla
+    de selección. Ocultárselas lo dejaría sin ninguna forma de llegar ahí.
+
+    Las opciones marcadas con `necesita_cliente` se ocultan solo a quien no
+    tiene ningún cliente (RF010). Es comodidad: el bloqueo de verdad está en
+    las vistas.
     """
     if not usuario.is_authenticated:
         return []
@@ -171,7 +183,7 @@ def construir_menu(usuario, cliente_activo=None):
         if opcion["roles"] and not (mis_roles & set(opcion["roles"])):
             continue
         # 2) ¿Opera en nombre de un cliente, y no tiene ninguno?
-        if opcion.get("necesita_cliente") and cliente_activo is None:
+        if opcion.get("necesita_cliente") and not puede_operar:
             continue
         # 3) ¿La ruta ya existe? Todavía no programamos el CRUD de Clientes,
         #    así que esa opción se saltea sola. Cuando creemos

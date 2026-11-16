@@ -66,6 +66,39 @@ def esperando(request, pk):
     return render(request, "pagos/esperando.html", {"pago": pago})
 
 
+@login_required
+@requiere_cliente
+@requiere_cliente_para_operar
+@require_POST
+def esperar_transferencia(request, compra_pk):
+    """El cliente elige pagar por transferencia bancaria (RF025 — GEG9-75).
+
+    No cobra nada: deja la compra marcada para que **no se venza** a los 15
+    minutos y aparezca en la pantalla de conciliación del administrador, que
+    la confirmará cuando verifique la transferencia.
+    """
+    compra = get_object_or_404(
+        CompraDivisa,
+        pk=compra_pk,
+        cliente__asociaciones_usuarios__usuario=request.user,
+    )
+
+    if compra.estado != CompraDivisa.Estado.PENDIENTE:
+        messages.error(request, "Esta operación ya no está pendiente de pago.")
+        return redirect("conversiones:comprobante_compra", pk=compra.pk)
+
+    if not compra.espera_transferencia:
+        compra.espera_transferencia = True
+        compra.save(update_fields=["espera_transferencia"])
+
+    messages.success(
+        request,
+        "Anotamos que vas a pagar por transferencia. La operación queda "
+        "reservada sin vencimiento hasta que verifiquemos el pago.",
+    )
+    return redirect("conversiones:comprobante_compra", pk=compra.pk)
+
+
 @csrf_exempt
 def retorno(request, pk):
     """A donde vuelve el navegador del cliente desde dLocal.

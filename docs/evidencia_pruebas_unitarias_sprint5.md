@@ -473,3 +473,72 @@ CDC, puedan descargarse correctamente su PDF y XML desde la sesión protegida
 de terminal.
 
 ---
+
+## Leyda Fleitas — RF025, Conciliación Manual (GEG9-75)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 16 de noviembre de 2026, 10:26:24 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_conciliacion.py` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/tests/test_conciliacion.py -v` |
+| **Resultado** | **16 passed** en 3.29s |
+
+```text
+$ date
+Mon Nov 16 10:26:24 -03 2026
+
+$ docker compose exec web pytest apps/conversiones/tests/test_conciliacion.py -v
+============================= test session starts ==============================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 16 items
+
+apps/conversiones/tests/test_conciliacion.py ................            [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 16 passed, 1 warning in 3.29s =========================
+```
+
+Ninguna prueba llama a Factura Segura ni a dLocal: se agregó un
+`conftest.py` en la raíz del proyecto con fixtures `autouse` que fuerzan los
+proveedores simulados en **todas** las pruebas (el motivo está en
+`docs/chia-sprint5.md`, sección 4.5).
+
+Casos cubiertos:
+
+- **Camino feliz:** conciliar deja la compra `CONFIRMADA`, con
+  `confirmado_en` y con la factura electrónica `GENERADA` — o sea que la
+  conciliación dispara RF026 por el mismo camino que un pago con tarjeta.
+- **Trazabilidad (RF023):** el `CambioEstado` queda con el administrador como
+  autor y con la referencia y la observación en el motivo.
+- **Registro del cobro:** se crea un `Pago` con proveedor `manual`, estado
+  `APROBADO`, la referencia en `id_externo`, el importe en la moneda de la
+  operación y el usuario que concilió en `respuesta_cruda`.
+- **Lo que no se puede conciliar:** una compra cancelada; dos veces seguidas
+  (no duplica ni el pago, ni la factura, ni el cambio de estado); sin
+  referencia.
+- **RF051 sigue valiendo:** si la cotización cambió, la compra se cancela, no
+  se registra ningún pago y la cancelación **queda guardada** — esto último
+  fue un bug propio: lanzar la excepción dentro de la transacción la
+  revertía.
+- **El vencimiento:** una compra marcada para pagar por transferencia no se
+  vence ni a los dos días y se puede conciliar; una normal con dos horas sí
+  se cancela por `EXPIRADA`. La lista del administrador solo trae las que
+  esperan transferencia.
+- **Acceso:** el servicio rechaza a quien no tiene el rol `administrador`, y
+  las dos vistas devuelven 403 con GET y con POST (parametrizado).
+- **RNF011:** un fallo de la facturación no deshace la conciliación.
+
+También se corrió la suite completa: **328 passed** (eran 312), sin
+regresiones en las historias de los compañeros ni en las propias.
+
+---
+
