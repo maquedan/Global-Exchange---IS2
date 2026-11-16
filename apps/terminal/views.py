@@ -6,6 +6,7 @@ from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 from django.db.models import Q
 from django.utils import timezone
+from django.http import Http404, HttpResponse
 
 from apps.comisiones.models import ComisionCategoria
 from apps.conversiones.services import calcular_comision, calcular_conversion, iniciar_compra, iniciar_venta, CompraNoDisponible, VentaNoDisponible
@@ -14,6 +15,8 @@ from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
 from apps.clientes.models import Cliente
+from apps.facturacion.models import Factura
+from apps.facturacion.services import cliente_configurado
 
 from decimal import Decimal, InvalidOperation
 
@@ -43,6 +46,49 @@ def cliente_terminal_activo(request):
         request.session.pop("terminal_cliente_id", None)
 
     return cliente
+
+
+def operacion_terminal_actual(request):
+    """Obtiene la última operación creada en esta sesión de terminal."""
+    cliente = cliente_terminal_activo(request)
+
+    if cliente is None:
+        return None, None, None
+
+    compra_id = request.session.get("terminal_compra_id")
+    venta_id = request.session.get("terminal_venta_id")
+
+    if compra_id:
+        compra = (
+            CompraDivisa.objects.select_related(
+                "cliente",
+                "moneda_pagada",
+                "moneda_adquirida",
+            )
+            .filter(
+                pk=compra_id,
+                cliente=cliente,
+            )
+            .first()
+        )
+        return cliente, compra, "compra"
+
+    if venta_id:
+        venta = (
+            VentaDivisa.objects.select_related(
+                "cliente",
+                "moneda_entregada",
+                "moneda_acreditada",
+            )
+            .filter(
+                pk=venta_id,
+                cliente=cliente,
+            )
+            .first()
+        )
+        return cliente, venta, "venta"
+
+    return cliente, None, None
 
 
 @login_required
@@ -389,32 +435,15 @@ def confirmar_operacion_terminal(request):
 
     return redirect("terminal:operacion_pendiente")
 
+
 @login_required
 @requiere_terminal
 def operacion_pendiente_terminal(request):
-    """Muestra el cierre del flujo tras registrar una operación pendiente."""
-    cliente = cliente_terminal_activo(request)
-    compra_id = request.session.get("terminal_compra_id")
-    venta_id = request.session.get("terminal_venta_id")
+    """Muestra el cierre temporal antes de completar la operación en caja."""
+    cliente, operacion, tipo_operacion = operacion_terminal_actual(request)
 
     if cliente is None:
         return redirect("terminal:identificar")
-
-    operacion = None
-    tipo_operacion = None
-
-    if compra_id:
-        operacion = CompraDivisa.objects.filter(
-            pk=compra_id,
-            cliente=cliente,
-        ).first()
-        tipo_operacion = "compra"
-    elif venta_id:
-        operacion = VentaDivisa.objects.filter(
-            pk=venta_id,
-            cliente=cliente,
-        ).first()
-        tipo_operacion = "venta"
 
     if operacion is None:
         return redirect("terminal:inicio")
@@ -428,6 +457,101 @@ def operacion_pendiente_terminal(request):
             "tipo_operacion": tipo_operacion,
         },
     )
+
+
+@login_required
+@requiere_terminal
+def comprobante_terminal(request):
+    """Muestra el comprobante imprimible de una operación ya confirmada."""
+    cliente, operacion, tipo_operacion = operacion_terminal_actual(request)
+
+    if cliente is None:
+        return redirect("terminal:identificar")
+
+    if operacion is None:
+        return redirect("terminal:inicio")
+
+    if operacion.estado != operacion.Estado.CONFIRMADA:
+        return redirect("terminal:operacion_pendiente")
+
+    if tipo_operacion == "compra":
+        factura = Factura.objects.filter(compra=operacion).first()
+        moneda_origen = operacion.moneda_pagada
+        moneda_destino = operacion.moneda_adquirida
+        monto_origen = operacion.total_a_pagar
+        monto_resultado = operacion.monto_recibido
+        moneda_comision = operacion.moneda_pagada
+    else:
+        factura = Factura.objects.filter(venta=operacion).first()
+        moneda_origen = operacion.moneda_entregada
+        moneda_destino = operacion.moneda_acreditada
+        monto_origen = operacion.monto_entregado
+        monto_resultado = operacion.monto_acreditado
+        moneda_comision = operacion.moneda_acreditada
+
+    return render(
+        request,
+        "terminal/comprobante.html",
+        {
+            "cliente": cliente,
+            "operacion": operacion,
+            "tipo_operacion": tipo_operacion,
+            "factura": factura,
+            "moneda_origen": moneda_origen,
+            "moneda_destino": moneda_destino,
+            "moneda_comision": moneda_comision,
+            "monto_origen": monto_origen,
+            "monto_resultado": monto_resultado,
+        },
+    )
+
+
+def factura_terminal_confirmada(request):
+    """Obtiene la factura disponible para la operación actual de terminal."""
+    cliente, operacion, tipo_operacion = operacion_terminal_actual(request)
+
+    if cliente is None or operacion is None:
+        raise Http404
+
+    if operacion.estado != operacion.Estado.CONFIRMADA:
+        raise Http404
+
+    if tipo_operacion == "compra":
+        factura = Factura.objects.filter(compra=operacion).first()
+    else:
+        factura = Factura.objects.filter(venta=operacion).first()
+
+    if factura is None or not factura.cdc:
+        raise Http404
+
+    return factura
+
+
+@login_required
+@requiere_terminal
+def descargar_factura_terminal(request, formato):
+    """Descarga PDF o XML de la factura asociada a la sesión de terminal."""
+    if formato not in ("pdf", "xml"):
+        raise Http404
+
+    factura = factura_terminal_confirmada(request)
+    _, cliente_facturacion = cliente_configurado()
+    contenido = cliente_facturacion.descargar_documento(factura.cdc, formato)
+
+    tipo_contenido = (
+        "application/pdf"
+        if formato == "pdf"
+        else "application/xml"
+    )
+
+    respuesta = HttpResponse(
+        contenido,
+        content_type=tipo_contenido,
+    )
+    respuesta["Content-Disposition"] = (
+        f'attachment; filename="factura-{factura.numero_completo}.{formato}"'
+    )
+    return respuesta
 
 
 @login_required

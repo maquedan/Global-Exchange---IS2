@@ -866,3 +866,85 @@ administrativa. `manage.py check` no reportó problemas. La evidencia está en
 `docs/evidencia_pruebas_unitarias_sprint5.md`.
 
 ---
+
+## 13. Daniela González — RF056, Comprobante de la Terminal (GEG9-57)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 13.1. «¿Cuándo debe mostrarse el comprobante final?»
+
+**Lo que aprendimos.** La terminal no confirma directamente el pago ni
+registra efectivo: RF055 crea una compra o venta en estado `PENDIENTE` y la
+deriva al cajero. Mostrar un comprobante final en ese punto sería engañoso,
+porque la operación todavía puede vencer, cancelarse por cambio de cotización
+o no completarse en caja.
+
+**Decisión.** Se mantuvo la pantalla de operación pendiente como comprobante
+temporal de la reserva de cotización. El comprobante de RF056 solo se habilita cuando la operación cambia al estado `CONFIRMADA`. Si aún está pendiente, la ruta del comprobante vuelve a la pantalla que indica continuar con el cajero.
+
+### 13.2. «¿Cómo volver al comprobante después de ser atendido por caja?»
+
+**Lo que aprendimos.** La operación se confirma desde una sesión distinta,
+correspondiente al cajero. Sin embargo, la terminal conserva temporalmente en
+su sesión el identificador de compra o venta que creó, por lo que puede volver a consultar el estado de esa misma operación sin exponer las de otros
+clientes.
+
+**Decisión.** Se agregó el botón **Ya completé mi operación en caja**. La
+terminal recupera exclusivamente la operación guardada en su propia sesión y
+verifica además que pertenezca al cliente identificado. Solo entonces muestra
+el comprobante final. Al finalizar o alcanzar el tiempo de inactividad, se
+limpia la sesión y desaparecen los datos mostrados.
+
+### 13.3. «¿Qué datos debe contener el comprobante?»
+
+**Decisión.** El comprobante muestra el número y fecha de operación, tipo
+(compra o venta), monedas de origen y destino, tasa aplicada, porcentaje e
+importe de comisión, monto pagado o entregado y el monto final recibido. Los
+campos se obtienen de `CompraDivisa` o `VentaDivisa`, que almacenan la
+fotografía histórica de tasa y comisión tomada al iniciar la operación; no se
+recalcula la cotización al imprimir.
+
+La impresión se realiza desde el navegador mediante `window.print()`. Los
+botones funcionales se excluyen de la versión impresa mediante `print:hidden`.
+
+### 13.4. «¿Cómo se integra la factura electrónica sin exponer facturas ajenas?»
+
+**Lo que aprendimos.** Las rutas normales de facturación están destinadas a
+clientes asociados y administradores. El usuario autenticado de una terminal
+es técnico y no representa directamente al cliente que utiliza la pantalla.
+
+**Decisión.** Se agregaron rutas específicas de terminal para descargar PDF o
+XML. Estas verifican simultáneamente el rol `terminal`, la operación guardada
+en la sesión, la pertenencia al cliente identificado, el estado confirmado y
+la existencia de una factura con CDC. Así, no se acepta un identificador de
+factura en la URL y una terminal no puede descargar documentos ajenos.
+
+Si la factura no existe, no tiene CDC o su emisión falló, el comprobante sigue mostrando la operación realizada, pero informa claramente que la factura aún no está disponible para descargar.
+
+### 13.5. Cambios realizados
+
+- Helper para recuperar de manera segura la operación asociada a la sesión de
+  terminal.
+- Comprobante final exclusivo para compras y ventas confirmadas.
+- Datos históricos de monedas, importes, tasa y comisión para ambos tipos de
+  operación.
+- Botón de impresión desde el navegador.
+- Integración condicional con PDF/XML de factura electrónica cuando existe CDC.
+- Protección de descarga por rol, sesión, cliente y estado de operación.
+- Cinco pruebas unitarias nuevas de RF056.
+
+No se crearon modelos ni migraciones: se reutilizan `CompraDivisa`,
+`VentaDivisa`, `Factura`, los servicios de facturación y las sesiones de
+terminal existentes.
+
+### 13.6. Verificaciones realizadas
+
+Se ejecutó:
+
+```text
+docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+```
+
+**Resultado:** 15 pruebas aprobadas. Las pruebas nuevas verifican comprobantes de compra y venta confirmadas, bloqueo de comprobantes para operaciones pendientes, aviso cuando no hay factura disponible y descarga de PDF/XML cuando la factura posee CDC. Las descargas se probaron con un doble del proveedor de facturación, por lo que no realizaron llamadas reales a Factura Segura.
+
+---
