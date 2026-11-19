@@ -591,3 +591,55 @@ regresiones.
 
 ---
 
+## Leyda Fleitas — RF009, Conmutación de Cliente en Sesión (GEG9-19)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 16:55:24 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/usuarios/tests/test_conmutacion_cliente.py` |
+| **Comando** | `docker compose exec web pytest apps/usuarios/tests/test_conmutacion_cliente.py -v` |
+| **Resultado** | **13 passed** en 3.06s |
+
+```text
+$ date
+Thu Nov 19 16:55:24 -03 2026
+
+$ docker compose exec web pytest apps/usuarios/tests/test_conmutacion_cliente.py -v
+apps/usuarios/tests/test_conmutacion_cliente.py .............            [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 13 passed, 1 warning in 3.06s =========================
+```
+
+RF008 dejó el mecanismo hecho, así que estas pruebas cubren lo propio de
+RF009: **cambiar** de cliente estando ya operando con otro, y que ese cambio
+no abra ninguna puerta. De las 10 pruebas que ya existían en
+`test_cliente_activo.py`, ninguna probaba el cambio.
+
+- **El cambio en sí:** se hace sin cerrar sesión (se verifica que la clave de
+  sesión sea la misma antes y después); el encabezado pasa a mostrar el
+  cliente nuevo y deja de mostrar el anterior; el enlace *Cambiar* aparece con
+  dos clientes y desaparece cuando queda uno.
+- **Redirección abierta (hallazgo de seguridad):** prueba parametrizada con
+  cuatro variantes —URL absoluta, `//dominio`, otro dominio por `http` y
+  `javascript:`— tanto por POST como por query string. Todas terminan en el
+  panel. Antes de esta historia, la primera redirigía al sitio externo.
+- **Volver a la pantalla de origen:** con una ruta interna válida, sí vuelve.
+- **Que el cambio no abra puertas:** no se puede elegir un cliente ajeno
+  mandando su id en el POST; y una compra pendiente del cliente anterior
+  **deja de ser confirmable** tras cambiar de cliente, cosa que antes sí se
+  podía.
+- **Cliente desactivado:** si se desactiva el activo y queda otro, se pasa a
+  ese solo; si se desactivan todos, se vuelve a pedir elegir.
+
+También se corrió la suite completa: **356 passed** (eran 343), sin
+regresiones. El detalle de los dos hallazgos está en `docs/chia-sprint5.md`,
+secciones 6.1 y 6.2.
+
+---
+

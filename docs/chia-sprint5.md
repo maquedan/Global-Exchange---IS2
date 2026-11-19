@@ -1193,3 +1193,109 @@ archivo**, no heredados. Más el idioma español. Siete líneas de diff.
 - `sphinx-build` sin warnings.
 
 ---
+
+## 6. Leyda Fleitas — RF009, Conmutación de Cliente en Sesión (GEG9-19)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket anticipaba que la historia ya estaba casi hecha por RF008 y pedía
+relevar antes de tocar nada. Era cierto en lo funcional, pero el relevamiento
+destapó un agujero de seguridad.
+
+### 6.1. «Bug propio: redirección abierta en el parámetro `siguiente`»
+
+**Lo que aprendimos.** La vista de selección volvía a donde estabas con:
+
+```python
+siguiente = request.POST.get("siguiente") or request.GET.get("siguiente")
+...
+return redirect(siguiente or "usuarios:panel")
+```
+
+Ese valor **lo controla quien arma el enlace** y no se validaba. Se comprobó:
+
+```
+POST /elegir-cliente/  siguiente=https://sitio-malicioso.example.com/phishing
+302 → https://sitio-malicioso.example.com/phishing
+```
+
+Es una **redirección abierta**. Sirve para engañar: alguien manda un enlace
+que empieza con el dominio real de la aplicación, la víctima elige su cliente
+con toda normalidad y termina en una página ajena que imita la nuestra y le
+pide la contraseña. El enlace que compartió era legítimo.
+
+Lo escribí yo en RF008 y pasó desapercibido porque **funcionaba bien**: el
+caso normal —volver a `/conversiones/comprar/`— anda igual con o sin
+validación. El error solo aparece si alguien busca abusarlo.
+
+**Decisión.** Validar con `url_has_allowed_host_and_scheme` de Django, que
+es la función que el propio framework usa para el `next` del login, y exigir
+además que la ruta empiece con `/` para no dejar pasar algo como
+`javascript:`. Ante cualquier duda, al panel.
+
+La prueba es parametrizada con cuatro formas distintas del ataque: URL
+absoluta, `//dominio` (que el navegador interpreta como externa), otro
+dominio por `http` y `javascript:`.
+
+### 6.2. «Cambiar de cliente dejaba operable lo del cliente anterior»
+
+**Lo que aprendimos**, y no lo esperaba: estando asociada a dos clientes, se
+podía elegir el cliente B y **confirmar igual una compra pendiente del
+cliente A**. Lo destapó una prueba escrita justamente para descartarlo.
+
+No es un robo de datos —el usuario está asociado a los dos clientes—, pero
+contradice lo que RF008 le promete: *"todas las operaciones que hagas se van
+a registrar en nombre del que elijas acá"*. Si lo que elegís en la barra no
+delimita sobre qué podés actuar, el selector es decorativo.
+
+La causa: los servicios filtran por *"alguno de los clientes del usuario"*,
+que es el control de dueño correcto, pero ninguna capa miraba el cliente
+**activo**.
+
+**Decisión.** Un helper `_es_del_cliente_activo()` en las vistas, aplicado a
+confirmar y cancelar compra y a cancelar venta. Va en la vista y no en el
+servicio a propósito: el cliente activo es un concepto de **sesión**, y los
+servicios no conocen la sesión ni deberían.
+
+**Lo que NO se tocó:** `confirmar_venta_view`, que un compañero reescribió
+para el flujo del cajero (RF058). El cajero opera sin cliente activo, así que
+aplicarle el mismo filtro habría roto su historia. Queda dicho en el
+docstring del helper.
+
+### 6.3. «Una prueba que escribí mal, y lo que enseñó»
+
+Escribí una prueba esperando que al desactivar el cliente activo el sistema
+volviera a pedir elegir. Falló: el sistema había pasado solo al otro cliente.
+
+**La prueba estaba mal, no el código.** RF008 define que con un solo cliente
+disponible no se pregunta nada. Se corrigió para verificar el comportamiento
+real, y se agregó una segunda que cubre el caso que yo creía estar probando:
+desactivar **todos** los clientes, ahí sí se vuelve a pedir.
+
+### 6.4. Lo que ya estaba y no se tocó
+
+El ticket pedía no reescribir lo de RF008, y efectivamente no hizo falta:
+el enlace **Cambiar** en la barra, `puede_cambiar_cliente` (que se calcula
+con `cantidad_clientes > 1`, así que con uno solo no se ofrece), la vista de
+selección reutilizada, y la revalidación contra la base en cada request.
+
+Sobre el "selector" que menciona el ERS: hoy es un enlace a una pantalla.
+**Decisión de la integrante:** dejarlo así. Cumple la intención —cambiar de
+cliente sin cerrar sesión, en dos clics— y la pantalla muestra el documento y
+la categoría de cada cliente, que un desplegable escondería.
+
+## 6.5. Verificaciones realizadas
+
+- **13 pruebas nuevas**, ninguna de las cuales existía: las 10 de
+  `test_cliente_activo.py` cubren RF008 (la primera elección), no el cambio.
+- Suite completa: **356 aprobadas** (eran 343), sin regresiones.
+- Casos cubiertos: el cambio mantiene la **misma sesión**; el encabezado
+  muestra el cliente nuevo y ya no el anterior; el enlace sólo aparece con más
+  de un cliente; se vuelve a la pantalla de origen; **cuatro formas de
+  redirección externa quedan rechazadas**, por POST y por query string; no se
+  puede cambiar a un cliente ajeno; una operación pendiente del cliente
+  anterior deja de ser operable; al desactivar un cliente se pasa al que
+  queda, y al desactivarlos todos se vuelve a pedir.
+- `manage.py check` sin errores y Sphinx genera sin warnings.
+
+---

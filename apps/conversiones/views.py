@@ -153,6 +153,22 @@ def comprobante_compra(request, pk):
     )
 
 
+def _es_del_cliente_activo(request, modelo, pk):
+    """¿Esa operación pertenece al cliente con el que se está operando?
+
+    El servicio ya verifica que la operación sea de **algún** cliente del
+    usuario. Esto es más estricto: tiene que ser del cliente **activo**
+    (RF009 — GEG9-19). Sin esto, alguien asociado a dos clientes podía
+    cambiar de cliente y seguir confirmando o cancelando las operaciones del
+    anterior — justo lo que la conmutación no debe permitir: lo que se elige
+    en la barra superior delimita sobre qué se puede actuar.
+
+    No se aplica a `confirmar_venta_view`: esa es del cajero (RF058), que
+    opera sin cliente activo.
+    """
+    return modelo.objects.filter(pk=pk, cliente=request.cliente_activo).exists()
+
+
 @login_required
 @requiere_cliente
 @requiere_cliente_activo
@@ -160,6 +176,8 @@ def confirmar_compra_view(request, pk):
     """Confirma el pago de una compra pendiente (RF051 — GEG9-51)."""
     if request.method != "POST":
         return redirect("conversiones:comprobante_compra", pk=pk)
+    if not _es_del_cliente_activo(request, CompraDivisa, pk):
+        raise PermissionDenied
 
     try:
         compra = confirmar_pago_compra(pk=pk, usuario=request.user)
@@ -185,6 +203,8 @@ def cancelar_compra_view(request, pk):
     """Cancela una compra pendiente por decisión del cliente (RF051)."""
     if request.method != "POST":
         return redirect("conversiones:comprobante_compra", pk=pk)
+    if not _es_del_cliente_activo(request, CompraDivisa, pk):
+        raise PermissionDenied
 
     try:
         compra = cancelar_compra(pk=pk, usuario=request.user)
@@ -387,6 +407,8 @@ def cancelar_venta_view(request, pk):
     """Cancela una venta pendiente por decisión del cliente (RF051)."""
     if request.method != "POST":
         return redirect("conversiones:comprobante_venta", pk=pk)
+    if not _es_del_cliente_activo(request, VentaDivisa, pk):
+        raise PermissionDenied
 
     try:
         venta = cancelar_venta(pk=pk, usuario=request.user)
