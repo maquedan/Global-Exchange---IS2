@@ -10,6 +10,13 @@
   "resetPasswordAllowed": true,
   "editUsernameAllowed": false,
 
+  "internationalizationEnabled": true,
+  "supportedLocales": ["es"],
+  "defaultLocale": "es",
+
+  "accessCodeLifespanUserAction": 300,
+  "actionTokenGeneratedByUserLifespan": 300,
+
   "smtpServer": {
     "host": "mailpit",
     "port": "1025",

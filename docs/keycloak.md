@@ -64,13 +64,30 @@ Keycloak con estas credenciales y su rol, o rehacer el contenedor para que
 importe el realm de nuevo:
 
 ```bash
-docker compose down -v keycloak keycloak-db
+# 1. Averiguá el nombre del volumen de Keycloak (el prefijo depende de la
+#    carpeta donde esté clonado el proyecto):
+docker volume ls | grep keycloak
+
+# 2. Parar y borrar SOLO los contenedores de Keycloak:
+docker compose stop keycloak keycloak-db
+docker compose rm -f keycloak keycloak-db
+
+# 3. Borrar SOLO el volumen de Keycloak, con el nombre del paso 1:
+docker volume rm global-exchange---is2_keycloak_pgdata
+
+# 4. Levantarlo de nuevo: ahí reimporta el realm.
 docker compose up -d keycloak
 ```
 
-> Ojo: `-v` borra el volumen de Keycloak, así que se pierden los usuarios y
-> roles creados a mano desde la consola (los del archivo del realm vuelven
-> solos). Los datos de la aplicación están en otra base y no se tocan.
+> ⚠️ **No uses `docker compose down -v`**, ni siquiera nombrando los servicios
+> de Keycloak. Ese `-v` borra **todos** los volúmenes declarados en el
+> compose, incluido `pgdata`, que es la base de datos de la aplicación:
+> perderías clientes, operaciones y facturas. Por eso los pasos de arriba
+> nombran el volumen de Keycloak uno por uno.
+
+> Al rehacer el volumen se pierden los usuarios y roles que hayas creado a
+> mano desde la consola de Keycloak. Los que están en el archivo del realm
+> (`admin.demo`, `cliente.demo`, etc.) vuelven solos.
 
 > La opción **Clientes** aparece sola en el menú de `administrador` y
 > `analista_cambiario` cuando se implemente el CRUD (GEG9-11): el menú
@@ -197,3 +214,85 @@ agrega `cajero` desde **Roles y permisos** en Global Exchange o desde
 **Dos URLs para Keycloak** — `KEYCLOAK_SERVER_URL` es la que abre el navegador
 (siempre `localhost`); `KEYCLOAK_INTERNAL_URL` es la que usa Django por dentro
 (`keycloak` en Docker). Son caminos distintos al mismo servidor.
+
+## Recuperación de acceso (RF012 — GEG9-22)
+
+La contraseña la gestiona **Keycloak**, no Django (RNF003). El flujo ya viene
+en Keycloak y está habilitado con `resetPasswordAllowed: true`; lo que se
+versionó en esta historia son los ajustes de los que depende.
+
+### Cómo probarlo
+
+1. Asegurate de que Keycloak le hable a **Mailpit**, el buzón falso que atrapa
+   los correos sin mandarlos a internet:
+
+   ```bash
+   python3 scripts/configurar_smtp.py --mailpit
+   ```
+
+2. Abrí http://localhost:8000 → **Iniciar sesión**. En la pantalla de Keycloak,
+   tocá **"¿Olvidaste tu contraseña?"**.
+3. Escribí `cliente.demo` (o su correo) y enviá.
+4. Abrí **http://localhost:8025**: ahí está el correo *"Reiniciar contraseña"*.
+5. Seguí el enlace, definí la contraseña nueva y entrá a Global Exchange.
+
+### Lo que se comprobó contra el servidor real
+
+| Qué | Resultado |
+|---|---|
+| ¿El enlace se puede reutilizar? | **No.** Al reintentarlo: *"Action expired. Please continue with login now."* |
+| ¿Cuánto dura? | **5 minutos** (`actionTokenGeneratedByUserLifespan`), fijado en el realm |
+| ¿Se puede averiguar qué correos existen? | **No.** Usuario verificado, sin verificar e inexistente dan el **mismo** mensaje |
+| ¿Manda el enlace si el correo NO está verificado? | **Sí, lo manda igual** |
+
+### Sobre el correo sin verificar
+
+El ERS dice "enviados al correo verificado", pero Keycloak manda el enlace
+aunque el correo no esté verificado. Se comprobó pidiendo la recuperación para
+un usuario con `emailVerified: false`: el correo llegó igual.
+
+Keycloak no tiene una opción para condicionar el envío a que el correo esté
+verificado; hacerlo requeriría un autenticador propio, que es justamente el
+tipo de código que RNF003 evita. Lo que protege la cuenta es **`verifyEmail:
+true`**: mientras el correo no esté verificado, Keycloak exige verificarlo
+para poder usar la cuenta, así que cambiar la contraseña por sí solo no
+alcanza para entrar.
+
+> No está verificado en este relevamiento que Keycloak bloquee el ingreso
+> después de restablecer con un correo sin verificar: es lo que indica la
+> configuración, pero no se probó ese caso punta a punta.
+
+### Usar un correo real en lugar de Mailpit
+
+Para que los correos salgan de verdad, completá en el `.env` (nunca en el
+repositorio):
+
+```
+EMAIL_HOST=smtp.gmail.com
+EMAIL_PORT=587
+EMAIL_HOST_USER=la-cuenta@gmail.com
+EMAIL_HOST_PASSWORD=la-contraseña-de-aplicación-de-16-letras
+EMAIL_FROM=la-cuenta@gmail.com
+```
+
+y aplicalo con:
+
+```bash
+python3 scripts/configurar_smtp.py
+```
+
+Gmail exige verificación en dos pasos y una **contraseña de aplicación**: no
+acepta la contraseña normal de la cuenta.
+
+> ⚠️ **El archivo del realm y el Keycloak que corre se desincronizan.** El
+> realm se importa **solo en el primer arranque** del contenedor; después,
+> cualquier cambio hecho a mano o con `configurar_smtp.py` vive únicamente en
+> el servidor. Durante esta historia el archivo decía Mailpit y el servidor
+> apuntaba a Gmail, y por eso los correos de prueba no aparecían por ningún
+> lado. Si algo no coincide con lo que esperás, comparalo con:
+>
+> ```bash
+> docker compose exec web python manage.py shell -c "
+> from apps.usuarios.keycloak_admin import KeycloakAdmin
+> kc = KeycloakAdmin(); print(kc._request(kc._admin_url).get('smtpServer'))"
+> ```
