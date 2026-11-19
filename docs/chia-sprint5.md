@@ -1083,3 +1083,113 @@ vive en el archivo que ya se acordó de ponerla no protege de los olvidos.
   en el repositorio.
 
 ---
+
+## 5. Leyda Fleitas — RF012, Recuperación de Acceso (GEG9-22)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que la recuperación ya funcionaba y que lo que faltaba
+era comprobarlo. Era casi cierto, pero el relevamiento destapó otra cosa.
+
+### 5.1. «No contestes de memoria: probá el flujo de verdad»
+
+**Lo que aprendimos.** La pregunta del ticket —si Keycloak manda el enlace
+cuando el correo **no** está verificado— se podía responder de memoria y
+equivocarse. Se probó pidiendo la recuperación para tres usuarios distintos y
+mirando qué correos llegaban realmente:
+
+| Usuario | Mensaje en pantalla | ¿Llegó el correo? |
+|---|---|---|
+| `cliente.demo` (verificado) | *"En breve deberías recibir…"* | **Sí** |
+| `sinverificar.demo` (sin verificar) | *"En breve deberías recibir…"* | **Sí** |
+| `noexiste@ejemplo.com` | *"En breve deberías recibir…"* | No |
+
+Dos conclusiones: **Keycloak manda el enlace aunque el correo no esté
+verificado**, y el mensaje es **idéntico en los tres casos**, así que no se
+puede averiguar qué correos están registrados. El punto 3 del ticket ya se
+cumplía sin tocar nada.
+
+### 5.2. «El mensaje genérico no prueba que se haya mandado el correo»
+
+**Lo que aprendimos**, y casi lleva a una conclusión falsa: en el primer
+intento los tres casos mostraron *"You should receive an email shortly"* y
+**Mailpit estaba vacío**. La tentación era concluir "no manda nada".
+
+Pero ese mensaje Keycloak lo muestra igual aunque no mande nada —es
+justamente así como evita revelar si el usuario existe—, o sea que **no
+prueba nada**. Tampoco los logs: los eventos exitosos no se registran por
+defecto, solo los de error.
+
+Lo que sí probó algo fue mandarle un correo a Mailpit desde Django: llegó al
+instante. Mailpit funcionaba; el que no le hablaba era Keycloak.
+
+### 5.3. «El archivo del realm y el Keycloak que corre no coincidían»
+
+**Lo que aprendimos**, y es el hallazgo de fondo:
+
+```
+keycloak/realm-global-exchange.json  ->  smtpServer: mailpit:1025
+Keycloak en ejecución                ->  smtpServer: smtp.gmail.com
+```
+
+El realm **se importa solo en el primer arranque** del contenedor. Después
+alguien corrió `scripts/configurar_smtp.py`, que toma `EMAIL_HOST` del `.env`
+y lo aplica al servidor. Desde ese momento el archivo versionado y el
+servidor cuentan historias distintas, y nada avisa.
+
+Consecuencia práctica: los correos de recuperación de los usuarios demo
+—direcciones `@globalexchange.local`— salían hacia Gmail, que no puede
+entregarlos a un dominio inexistente. Se perdían en silencio.
+
+**Decisión.** Volver el Keycloak local a Mailpit para probar, y documentar en
+`docs/keycloak.md` tanto la desincronización como el comando para comparar
+archivo contra servidor. Es el mismo tipo de problema que el `.env`: estado
+que vive fuera de git y que nadie recuerda.
+
+### 5.4. «¿Qué se puede arreglar con configuración y qué no?»
+
+**Lo que aprendimos.** El ERS pide que el enlace vaya "al correo verificado",
+pero Keycloak no tiene ninguna opción para condicionar el envío a eso.
+Lograrlo exigiría un autenticador propio, que es justo el tipo de código que
+RNF003 evita.
+
+**Decisión.** No escribir ese código. Lo que protege la cuenta es
+`verifyEmail: true`, que ya estaba: mientras el correo no se verifique,
+Keycloak exige verificarlo para poder usar la cuenta, así que restablecer la
+contraseña por sí solo no alcanza para entrar.
+
+Queda anotado como **no verificado punta a punta**: es lo que indica la
+configuración, pero no se probó ese caso completo, y en la documentación está
+dicho así y no como un hecho.
+
+### 5.5. «Lo que faltaba versionar»
+
+**Lo que aprendimos.** Tres cosas dependían de valores por defecto de
+Keycloak y no estaban en el archivo:
+
+- **El idioma.** `internationalizationEnabled: false`: pantallas y correos
+  salían en inglés.
+- **La vida del enlace.** `actionTokenGeneratedByUserLifespan` no estaba, así
+  que valía el default de 5 minutos por casualidad, no por decisión.
+- **El uso único.** Se comprobó completando el cambio de contraseña y
+  reintentando el mismo enlace: *"Action expired. Please continue with login
+  now."* Funciona, y es comportamiento propio de Keycloak.
+
+**Decisión de la integrante:** dejar los **5 minutos**, pero **fijados en el
+archivo**, no heredados. Más el idioma español. Siete líneas de diff.
+
+## 5.6. Verificaciones realizadas
+
+- **7 pruebas nuevas** que leen el realm versionado (Keycloak no se puede
+  levantar dentro de pytest): recuperación habilitada, `verifyEmail`, SMTP
+  definido, **sin credenciales en el archivo**, vencimiento fijado, idioma
+  español y que los usuarios demo tengan correo.
+- Suite completa: **343 aprobadas** (eran 336).
+- Flujo recorrido a mano de punta a punta: pedido → correo en Mailpit
+  (*"Reiniciar contraseña"*) → enlace → contraseña nueva → el mismo enlace ya
+  no sirve.
+- Tras aplicar el idioma, el mensaje pasó a *"En breve deberías recibir un
+  mensaje con más instrucciones"* y el asunto a *"Reiniciar contraseña"*.
+- `sphinx-build` sin warnings.
+
+---

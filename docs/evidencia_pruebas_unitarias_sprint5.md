@@ -542,3 +542,52 @@ regresiones en las historias de los compañeros ni en las propias.
 
 ---
 
+## Leyda Fleitas — RF012, Recuperación de Acceso (GEG9-22)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | lunes 16 de noviembre de 2026, 11:02:53 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/usuarios/tests/test_realm_keycloak.py` |
+| **Comando** | `docker compose exec web pytest apps/usuarios/tests/test_realm_keycloak.py -v` |
+| **Resultado** | **7 passed** en 0.11s |
+
+```text
+$ date
+Mon Nov 16 11:02:53 -03 2026
+
+$ docker compose exec web pytest apps/usuarios/tests/test_realm_keycloak.py -v
+apps/usuarios/tests/test_realm_keycloak.py .......                       [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 7 passed, 1 warning in 0.11s =========================
+```
+
+Keycloak no se puede levantar dentro de pytest, así que las pruebas leen el
+**archivo del realm versionado** y verifican que la configuración de la que
+depende la recuperación esté efectivamente ahí y no librada a los valores por
+defecto: recuperación habilitada, verificación de correo exigida, servidor
+SMTP definido, **ningún usuario ni contraseña en el archivo**, vencimiento del
+enlace fijado en 5 minutos, idioma español y que todos los usuarios de prueba
+tengan dirección de correo.
+
+El flujo en sí se recorrió **a mano contra el Keycloak real**, porque es lo
+único que lo demuestra:
+
+| Comprobación | Resultado |
+|---|---|
+| Pedido de recuperación → correo | Llega a Mailpit con asunto *"Reiniciar contraseña"* |
+| Enlace → contraseña nueva → ingreso | Funciona |
+| Reutilizar el mismo enlace | **Rechazado:** *"Action expired. Please continue with login now."* |
+| Mensaje para usuario inexistente | **Idéntico** al de uno existente: no se puede enumerar correos |
+| Correo sin verificar | Keycloak **manda el enlace igual** (ver `docs/chia-sprint5.md` 5.4) |
+
+También se corrió la suite completa: **343 passed** (eran 336), sin
+regresiones.
+
+---
+
