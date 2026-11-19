@@ -1299,3 +1299,85 @@ la categoría de cada cliente, que un desplegable escondería.
 - `manage.py check` sin errores y Sphinx genera sin warnings.
 
 ---
+
+## 7. Leyda Fleitas — RF016, Gráficos de Evolución de Tasas (GEG9-68)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket anticipaba que la historia ya estaba hecha y pedía relevar contra
+seis criterios antes de tocar nada. Lo estaba: el panel de cotizaciones ya
+tenía el gráfico SVG con dos líneas, el selector de período y el tooltip.
+
+### 7.1. «Revisar contra los criterios, uno por uno»
+
+| Criterio | Estado |
+|---|---|
+| Gráfico de evolución por par | ✅ SVG propio, líneas de compra y venta |
+| Selector de período | ✅ 7D / 1M / 3M / Todo, filtra sin recargar |
+| Muestra compra y venta | ✅ ambas líneas y ambas filas de estadísticas |
+| Historial real (`TasaCambio`) | ✅ `_historial_del_par` |
+| Visible para todos los roles | ✅ solo `@login_required`, sin control de rol |
+| Par sin historial / una sola tasa | ✅ estado vacío con sugerencias; con una tasa no dibuja el gráfico pero muestra las estadísticas |
+
+El acceso del usuario **sin cliente asociado** ya estaba cubierto por dos
+pruebas propias de RF008 y RF010, que verifican que `/tasas/` responde 200 sin
+ningún cliente. No se duplicó.
+
+**Decisión: no se tocó el gráfico ni se agregó ninguna librería**, que es lo
+que el ticket pedía explícitamente.
+
+### 7.2. «El selector decía "7 días" y mostraba datos de hace 74»
+
+**Lo que aprendimos** al mirar el criterio 3 —cómo se ve con los datos de
+demo— y que no se veía leyendo solo el código: **todas las tasas del fixture
+tienen entre 74 y 101 días**.
+
+| Par | Puntos | En 7D | En 1M | En 3M |
+|---|---|---|---|---|
+| USD/PYG | 4 | **0** | **0** | 4 |
+| EUR/PYG | 4 | **0** | **0** | 3 |
+
+Al tocar **7D** no queda ningún punto en el rango. El código tiene un guard
+deliberado:
+
+```js
+if (puntosFiltrados.length < 2) puntosFiltrados = puntosCompletos.slice(-2);
+```
+
+O sea que el botón queda marcado como activo y el gráfico dibuja **los dos
+registros más recientes, de hace 74 días**, sin decir nada. No se rompe:
+**informa mal**, que es peor, porque no hay forma de notarlo.
+
+Conviene separar las dos cosas: **el código está bien** —el filtro funciona y
+el fallback evita un gráfico vacío— y **lo que faltaba era avisar**.
+
+**Decisión.** Un aviso que aparece solo cuando el rango elegido se quedó sin
+datos: *"No hay registros en los últimos 7 días. Se muestran los 2 más
+recientes."* Ocho líneas de JavaScript, sin librerías nuevas y sin tocar el
+dibujo. Se distingue además el caso de **un solo** registro en el rango, que
+tampoco alcanza para trazar una línea.
+
+### 7.3. «Bug propio en las pruebas: una sola tasa activa por par»
+
+Las primeras pruebas nuevas fallaron con `IntegrityError`: el modelo tiene una
+restricción `tasa_cambio_unica_activa_por_par`, y el helper de pruebas crea
+las tasas con `activo=True` por defecto. Creé varias activas del mismo par.
+
+**La restricción estaba bien; mis pruebas estaban mal.** Se corrigieron para
+crear el historial con `activo=False` y dejar activa solo la última, que es lo
+que pasa en la realidad: una tasa vigente y las anteriores como histórico.
+
+## 7.4. Verificaciones realizadas
+
+- **8 pruebas nuevas**, que llevan el archivo de 12 a **20**. El selector de
+  período no tenía ninguna, y es la mitad del segundo criterio.
+- Suite completa sin regresiones.
+- Casos cubiertos: los cuatro rangos están en la página; el filtro es del lado
+  del navegador (el historial completo viaja en `historial_json`, así que
+  ningún botón recarga); cada punto lleva fecha, compra y venta, ordenados de
+  más viejo a más nuevo; el JSON embebido es válido; el aviso de rango vacío
+  está presente; las dos líneas del gráfico son compra y venta; el usuario sin
+  cliente ve el panel; y el servidor no recorta el historial.
+- `sphinx-build` sin warnings.
+
+---
