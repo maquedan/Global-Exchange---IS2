@@ -643,3 +643,61 @@ secciones 6.1 y 6.2.
 
 ---
 
+## Leyda Fleitas — RF016, Gráficos de Evolución de Tasas (GEG9-68)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 17:15:10 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/tasas/tests/test_tasas.py` |
+| **Comando** | `docker compose exec web pytest apps/tasas/ -v` |
+| **Resultado** | **20 passed** en 42.96s |
+
+```text
+$ date
+Thu Nov 19 17:15:10 -03 2026
+
+$ docker compose exec web pytest apps/tasas/ -v
+apps/tasas/tests/test_tasas.py ....................                      [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 20 passed, 1 warning in 42.96s ========================
+```
+
+El gráfico ya existía y cumple los seis criterios de la historia, así que
+**no se cambió el gráfico ni se agregó ninguna librería**. Se sumaron las
+**8 pruebas** que faltaban (de 12 a 20) y un aviso que corrige un problema de
+información, no de funcionamiento.
+
+**Lo que ya cumplía:** gráfico de evolución por par con líneas de compra y
+venta, selector de período (7D / 1M / 3M / Todo), datos del historial real de
+`TasaCambio`, acceso para cualquier rol autenticado —incluido el usuario sin
+cliente asociado, ya cubierto por pruebas de RF008 y RF010—, y estados
+razonables para un par sin historial o con una sola tasa.
+
+**Lo que faltaba y se agregó:**
+
+- **El aviso de rango sin datos.** Con los datos de demostración, todas las
+  tasas tienen entre 74 y 101 días: al tocar **7D** no queda ningún punto en
+  el rango y el gráfico caía a los dos más recientes **sin decirlo**, con el
+  botón marcado como activo. Parecía dato de la última semana. Ahora aparece
+  *"No hay registros en los últimos 7 días. Se muestran los 2 más recientes."*
+- **Las pruebas del selector de período**, que no tenía ninguna: los cuatro
+  rangos presentes; el filtrado es del lado del navegador (el historial
+  completo viaja embebido, así que ningún botón recarga la página); cada punto
+  lleva fecha, compra y venta, ordenados de más viejo a más nuevo; el JSON
+  embebido es válido; las dos líneas del gráfico son compra y venta; el
+  usuario sin cliente ve el panel; y el servidor no recorta el historial.
+
+Durante el trabajo, las pruebas nuevas destaparon un error propio: el modelo
+tiene una restricción de **una sola tasa activa por par**, y las primeras
+versiones creaban varias activas del mismo par. Se corrigieron para armar el
+historial con `activo=False` y dejar activa solo la última, que es lo que
+ocurre en la realidad. Detalle en `docs/chia-sprint5.md`, sección 7.3.
+
+---
+
