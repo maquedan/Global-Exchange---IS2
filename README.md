@@ -107,6 +107,31 @@ ausentes; no actualiza tasas ni comisiones que ya existan ni borra datos.
   deben revisar y definir en `.env.prod` (`INITIAL_USD_PYG_*` y
   `INITIAL_COMMISSION_*`). No se cargan clientes ni sucursales/cajas demo.
 
+### Asociar un usuario a los clientes demo
+
+`cargar_datos_iniciales` crea los clientes, pero **no** puede asociarlos a
+ningún usuario: los usuarios de Django los crea Keycloak la primera vez que
+cada persona inicia sesión, así que su id es distinto en cada máquina y no
+puede quedar escrito en un fixture. Sin la asociación, el usuario no puede
+operar (RF010) y en el menú no ve *Comprar divisas* ni *Mis medios de pago*.
+
+Entonces, en una instalación nueva:
+
+```bash
+# 1. Iniciá sesión UNA vez en la web con cliente.demo / Demo1234!
+#    (eso crea el usuario en Django y le copia los roles del realm)
+# 2. Después, asociá:
+docker compose exec web python manage.py asociar_cliente_demo
+```
+
+Es idempotente y busca por nombre de usuario y documento, nunca por id. Para
+otro usuario u otros clientes:
+
+```bash
+docker compose exec web python manage.py asociar_cliente_demo \
+  --usuario otro.demo --documento DEMO-000001
+```
+
 Al ejecutar de nuevo el comando no se duplican datos ni se sobrescriben
 configuraciones existentes. Las tasas de demostración no representan precios
 de mercado; en producción, confirmá la cotización y las comisiones antes de

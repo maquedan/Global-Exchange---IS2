@@ -866,3 +866,633 @@ administrativa. `manage.py check` no reportó problemas. La evidencia está en
 `docs/evidencia_pruebas_unitarias_sprint5.md`.
 
 ---
+
+## 13. Daniela González — RF056, Comprobante de la Terminal (GEG9-57)
+
+**Herramienta:** Codex (OpenAI), integrado en VS Code sobre WSL2.
+
+### 13.1. «¿Cuándo debe mostrarse el comprobante final?»
+
+**Lo que aprendimos.** La terminal no confirma directamente el pago ni
+registra efectivo: RF055 crea una compra o venta en estado `PENDIENTE` y la
+deriva al cajero. Mostrar un comprobante final en ese punto sería engañoso,
+porque la operación todavía puede vencer, cancelarse por cambio de cotización
+o no completarse en caja.
+
+**Decisión.** Se mantuvo la pantalla de operación pendiente como comprobante
+temporal de la reserva de cotización. El comprobante de RF056 solo se habilita cuando la operación cambia al estado `CONFIRMADA`. Si aún está pendiente, la ruta del comprobante vuelve a la pantalla que indica continuar con el cajero.
+
+### 13.2. «¿Cómo volver al comprobante después de ser atendido por caja?»
+
+**Lo que aprendimos.** La operación se confirma desde una sesión distinta,
+correspondiente al cajero. Sin embargo, la terminal conserva temporalmente en
+su sesión el identificador de compra o venta que creó, por lo que puede volver a consultar el estado de esa misma operación sin exponer las de otros
+clientes.
+
+**Decisión.** Se agregó el botón **Ya completé mi operación en caja**. La
+terminal recupera exclusivamente la operación guardada en su propia sesión y
+verifica además que pertenezca al cliente identificado. Solo entonces muestra
+el comprobante final. Al finalizar o alcanzar el tiempo de inactividad, se
+limpia la sesión y desaparecen los datos mostrados.
+
+### 13.3. «¿Qué datos debe contener el comprobante?»
+
+**Decisión.** El comprobante muestra el número y fecha de operación, tipo
+(compra o venta), monedas de origen y destino, tasa aplicada, porcentaje e
+importe de comisión, monto pagado o entregado y el monto final recibido. Los
+campos se obtienen de `CompraDivisa` o `VentaDivisa`, que almacenan la
+fotografía histórica de tasa y comisión tomada al iniciar la operación; no se
+recalcula la cotización al imprimir.
+
+La impresión se realiza desde el navegador mediante `window.print()`. Los
+botones funcionales se excluyen de la versión impresa mediante `print:hidden`.
+
+### 13.4. «¿Cómo se integra la factura electrónica sin exponer facturas ajenas?»
+
+**Lo que aprendimos.** Las rutas normales de facturación están destinadas a
+clientes asociados y administradores. El usuario autenticado de una terminal
+es técnico y no representa directamente al cliente que utiliza la pantalla.
+
+**Decisión.** Se agregaron rutas específicas de terminal para descargar PDF o
+XML. Estas verifican simultáneamente el rol `terminal`, la operación guardada
+en la sesión, la pertenencia al cliente identificado, el estado confirmado y
+la existencia de una factura con CDC. Así, no se acepta un identificador de
+factura en la URL y una terminal no puede descargar documentos ajenos.
+
+Si la factura no existe, no tiene CDC o su emisión falló, el comprobante sigue mostrando la operación realizada, pero informa claramente que la factura aún no está disponible para descargar.
+
+### 13.5. Cambios realizados
+
+- Helper para recuperar de manera segura la operación asociada a la sesión de
+  terminal.
+- Comprobante final exclusivo para compras y ventas confirmadas.
+- Datos históricos de monedas, importes, tasa y comisión para ambos tipos de
+  operación.
+- Botón de impresión desde el navegador.
+- Integración condicional con PDF/XML de factura electrónica cuando existe CDC.
+- Protección de descarga por rol, sesión, cliente y estado de operación.
+- Cinco pruebas unitarias nuevas de RF056.
+
+No se crearon modelos ni migraciones: se reutilizan `CompraDivisa`,
+`VentaDivisa`, `Factura`, los servicios de facturación y las sesiones de
+terminal existentes.
+
+### 13.6. Verificaciones realizadas
+
+Se ejecutó:
+
+```text
+docker compose exec web pytest apps/terminal/tests/test_terminal.py -v
+```
+
+**Resultado:** 15 pruebas aprobadas. Las pruebas nuevas verifican comprobantes de compra y venta confirmadas, bloqueo de comprobantes para operaciones pendientes, aviso cuando no hay factura disponible y descarga de PDF/XML cuando la factura posee CDC. Las descargas se probaron con un doble del proveedor de facturación, por lo que no realizaron llamadas reales a Factura Segura.
+
+---
+
+## 4. Leyda Fleitas — RF025, Conciliación Manual (GEG9-75)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket pedía reportar el diseño y las decisiones abiertas antes de
+implementar.
+
+### 4.1. «El ticket pide pasar por `confirmar_pago_compra`, pero un administrador no puede»
+
+**Lo que aprendimos.** `confirmar_pago_compra` filtra así:
+
+```python
+.filter(pk=pk,
+        cliente__asociaciones_usuarios__usuario=usuario,
+        cliente__activo=True)
+```
+
+Ese filtro es el control de dueño que agregaron RF008 y RF010. Un
+administrador **no está asociado** al cliente, así que el filtro devuelve
+`None` y el servicio responde "la operación no existe o no te pertenece".
+Pasar por ahí tal cual era imposible.
+
+**Decisión.** Extraer el núcleo a `_confirmar_compra_pendiente(compra, *,
+usuario, motivo)` y dejar dos puertas de entrada que solo se diferencian en
+el control de acceso: `confirmar_pago_compra` (dueño) y `conciliar_compra`
+(rol `administrador`). Así la revalidación de tasa de RF051, la trazabilidad
+de RF023 y la facturación de RF026 son idénticas por los dos caminos, que es
+lo que el ticket pedía con "no dupliques lógica", y el historial registra al
+administrador real y no al cliente.
+
+Había **precedente en el repo**: `anular_venta` (RF059, de un compañero) ya
+valida el grupo `administrador` dentro del servicio y busca sin filtro de
+dueño. Se siguió esa misma forma.
+
+### 4.2. «La función no serviría: la ventana es de 15 minutos»
+
+**Lo que aprendimos**, y fue el hallazgo que cambió el alcance:
+`MINUTOS_EXPIRACION_PENDIENTE = 15`, y `confirmar_pago_compra` llama a
+`expirar_compra_si_corresponde` **antes** de confirmar. Verificar una
+transferencia bancaria lleva horas o días: para cuando el administrador
+entrara a conciliar, **toda** compra pendiente ya se habría cancelado sola.
+La pantalla habría estado siempre vacía.
+
+**Decisión de la integrante** (entre tres opciones planteadas): un campo
+nuevo `espera_transferencia` en `CompraDivisa`. El cliente lo marca al elegir
+cómo pagar, y esa compra deja de vencerse.
+
+La protección de RF051 **no se pierde**: al conciliar se revalida la
+cotización igual, y si cambió la operación se cancela en vez de confirmarse.
+Lo que se suspende es el vencimiento por tiempo, no el control de tasa.
+
+### 4.3. «¿Alcanza con el cambio de estado, o se registra un `Pago`?»
+
+**Decisión de la integrante:** registrar también un `Pago` con proveedor
+`"manual"` y estado `APROBADO`. `Pago.proveedor` es texto libre, así que no
+hizo falta migrar nada, y el comprobante ya muestra un bloque "Pago" leyendo
+`compra.pagos.first`: la conciliación aparece ahí **sin tocar esa
+plantilla**. La referencia bancaria va en `id_externo` y quién concilió en
+`respuesta_cruda`.
+
+Se registra el importe **tal como lo transfirió el cliente** (el total en la
+moneda de la operación), no el convertido para la pasarela: acá no hubo
+pasarela que convirtiera nada.
+
+### 4.4. «Bug propio: lanzar una excepción revertía la cancelación»
+
+**Lo que aprendimos.** `conciliar_compra` está decorado con
+`@transaction.atomic`. Cuando RF051 detectaba que la cotización había
+cambiado, el servicio cancelaba la compra y después **lanzaba** una excepción
+para avisarle al administrador. Resultado: la transacción revertía la
+cancelación que se acababa de registrar, y la compra quedaba pendiente como
+si nada hubiera pasado.
+
+Lo destapó una prueba que esperaba `CANCELADA` y encontró `PENDIENTE`.
+
+**Decisión.** El servicio **devuelve** la compra en vez de lanzar, y la vista
+mira el estado para mostrar el mensaje. Así la cancelación persiste, igual
+que en el pago normal. Queda documentado en el docstring, porque es un
+contrato fácil de romper: *no alcanza con que no haya excepción, hay que
+mirar el estado*.
+
+### 4.5. «Incidente: una prueba llamó a la API real de Factura Segura»
+
+**Lo que aprendimos.** Al correr las pruebas nuevas, una de ellas emitió
+contra Factura Segura **de verdad**. La causa es la ya conocida de la sección
+2.9: `config.settings.dev` lee el `.env`, que en esta máquina tiene
+`FACTURACION_PROVEEDOR=facturasegura`. Las pruebas de `apps/facturacion` se
+protegían con un fixture propio, pero esa protección **no alcanzaba a un
+archivo de pruebas de otra app**.
+
+No se perdió ningún número: la API rechazó el intento con `NUMDOC_APROBADO`
+—el número ya estaba aprobado— y la secuencia real quedó intacta. Fue suerte,
+no diseño.
+
+**Decisión.** Mover la protección a un **`conftest.py` en la raíz** del
+proyecto, con fixtures `autouse` que fuerzan el proveedor simulado de
+facturación **y** de pagos en todas las pruebas. Ahora ninguna prueba del
+proyecto puede salir a la red, la escriba quien la escriba y esté donde esté.
+La lección de 2.9 estaba bien aprendida pero mal ubicada: una salvaguarda que
+vive en el archivo que ya se acordó de ponerla no protege de los olvidos.
+
+### 4.6. Hallazgos del ambiente (no son de esta historia, pero se verificaron)
+
+- El certificado TLS de Factura Segura, que entre el 28/10 y mediados de
+  noviembre fue emitido por una CA interna de un FortiGate y rompía toda
+  llamada, **está corregido**: ahora lo emite Amazon y la conexión valida.
+- Con la API otra vez disponible se consultó `get_estado_sifen` de las tres
+  facturas emitidas: las **tres figuran `0260 - Aprobado`**, incluida la de
+  una compra. Es decir, la emisión automática de RF026 produce documentos
+  fiscalmente válidos, y los datos de prueba del emisor no impidieron la
+  aprobación: Factura Segura valida la identidad contra el RUC y el timbrado
+  registrados en la cuenta ESI, no contra el nombre y la dirección enviados.
+
+## 4.7. Verificaciones realizadas
+
+- **16 pruebas nuevas.** Suite completa: **328 aprobadas** (eran 312), sin
+  regresiones en las historias de los compañeros (RF028, RF029, RF053, RF055,
+  RF056, RF059) ni en las propias.
+- Casos cubiertos: conciliar deja la compra confirmada y con factura
+  generada; queda registrado quién concilió y con qué referencia; se crea el
+  `Pago` manual con la referencia y el importe correctos; no se puede
+  conciliar una cancelada; conciliar dos veces no duplica pago, factura ni
+  cambio de estado; la referencia es obligatoria; si la cotización cambió se
+  cancela y **no** se registra pago; la compra por transferencia no se vence
+  ni a los dos días mientras que una normal sí; la lista solo trae las que
+  esperan transferencia; el servicio y las vistas rechazan a quien no es
+  administrador (GET y POST); y un fallo de la facturación no deshace la
+  conciliación (RNF011).
+- `python manage.py check` sin errores, migración `conversiones.0011`
+  aplicada y Sphinx genera **sin warnings** — de paso se repuso
+  `docs/sphinx/notificaciones.rst`, que el `index` referenciaba y no existía
+  en el repositorio.
+
+---
+
+## 5. Leyda Fleitas — RF012, Recuperación de Acceso (GEG9-22)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que la recuperación ya funcionaba y que lo que faltaba
+era comprobarlo. Era casi cierto, pero el relevamiento destapó otra cosa.
+
+### 5.1. «No contestes de memoria: probá el flujo de verdad»
+
+**Lo que aprendimos.** La pregunta del ticket —si Keycloak manda el enlace
+cuando el correo **no** está verificado— se podía responder de memoria y
+equivocarse. Se probó pidiendo la recuperación para tres usuarios distintos y
+mirando qué correos llegaban realmente:
+
+| Usuario | Mensaje en pantalla | ¿Llegó el correo? |
+|---|---|---|
+| `cliente.demo` (verificado) | *"En breve deberías recibir…"* | **Sí** |
+| `sinverificar.demo` (sin verificar) | *"En breve deberías recibir…"* | **Sí** |
+| `noexiste@ejemplo.com` | *"En breve deberías recibir…"* | No |
+
+Dos conclusiones: **Keycloak manda el enlace aunque el correo no esté
+verificado**, y el mensaje es **idéntico en los tres casos**, así que no se
+puede averiguar qué correos están registrados. El punto 3 del ticket ya se
+cumplía sin tocar nada.
+
+### 5.2. «El mensaje genérico no prueba que se haya mandado el correo»
+
+**Lo que aprendimos**, y casi lleva a una conclusión falsa: en el primer
+intento los tres casos mostraron *"You should receive an email shortly"* y
+**Mailpit estaba vacío**. La tentación era concluir "no manda nada".
+
+Pero ese mensaje Keycloak lo muestra igual aunque no mande nada —es
+justamente así como evita revelar si el usuario existe—, o sea que **no
+prueba nada**. Tampoco los logs: los eventos exitosos no se registran por
+defecto, solo los de error.
+
+Lo que sí probó algo fue mandarle un correo a Mailpit desde Django: llegó al
+instante. Mailpit funcionaba; el que no le hablaba era Keycloak.
+
+### 5.3. «El archivo del realm y el Keycloak que corre no coincidían»
+
+**Lo que aprendimos**, y es el hallazgo de fondo:
+
+```
+keycloak/realm-global-exchange.json  ->  smtpServer: mailpit:1025
+Keycloak en ejecución                ->  smtpServer: smtp.gmail.com
+```
+
+El realm **se importa solo en el primer arranque** del contenedor. Después
+alguien corrió `scripts/configurar_smtp.py`, que toma `EMAIL_HOST` del `.env`
+y lo aplica al servidor. Desde ese momento el archivo versionado y el
+servidor cuentan historias distintas, y nada avisa.
+
+Consecuencia práctica: los correos de recuperación de los usuarios demo
+—direcciones `@globalexchange.local`— salían hacia Gmail, que no puede
+entregarlos a un dominio inexistente. Se perdían en silencio.
+
+**Decisión.** Volver el Keycloak local a Mailpit para probar, y documentar en
+`docs/keycloak.md` tanto la desincronización como el comando para comparar
+archivo contra servidor. Es el mismo tipo de problema que el `.env`: estado
+que vive fuera de git y que nadie recuerda.
+
+### 5.4. «¿Qué se puede arreglar con configuración y qué no?»
+
+**Lo que aprendimos.** El ERS pide que el enlace vaya "al correo verificado",
+pero Keycloak no tiene ninguna opción para condicionar el envío a eso.
+Lograrlo exigiría un autenticador propio, que es justo el tipo de código que
+RNF003 evita.
+
+**Decisión.** No escribir ese código. Lo que protege la cuenta es
+`verifyEmail: true`, que ya estaba: mientras el correo no se verifique,
+Keycloak exige verificarlo para poder usar la cuenta, así que restablecer la
+contraseña por sí solo no alcanza para entrar.
+
+Queda anotado como **no verificado punta a punta**: es lo que indica la
+configuración, pero no se probó ese caso completo, y en la documentación está
+dicho así y no como un hecho.
+
+### 5.5. «Lo que faltaba versionar»
+
+**Lo que aprendimos.** Tres cosas dependían de valores por defecto de
+Keycloak y no estaban en el archivo:
+
+- **El idioma.** `internationalizationEnabled: false`: pantallas y correos
+  salían en inglés.
+- **La vida del enlace.** `actionTokenGeneratedByUserLifespan` no estaba, así
+  que valía el default de 5 minutos por casualidad, no por decisión.
+- **El uso único.** Se comprobó completando el cambio de contraseña y
+  reintentando el mismo enlace: *"Action expired. Please continue with login
+  now."* Funciona, y es comportamiento propio de Keycloak.
+
+**Decisión de la integrante:** dejar los **5 minutos**, pero **fijados en el
+archivo**, no heredados. Más el idioma español. Siete líneas de diff.
+
+## 5.6. Verificaciones realizadas
+
+- **7 pruebas nuevas** que leen el realm versionado (Keycloak no se puede
+  levantar dentro de pytest): recuperación habilitada, `verifyEmail`, SMTP
+  definido, **sin credenciales en el archivo**, vencimiento fijado, idioma
+  español y que los usuarios demo tengan correo.
+- Suite completa: **343 aprobadas** (eran 336).
+- Flujo recorrido a mano de punta a punta: pedido → correo en Mailpit
+  (*"Reiniciar contraseña"*) → enlace → contraseña nueva → el mismo enlace ya
+  no sirve.
+- Tras aplicar el idioma, el mensaje pasó a *"En breve deberías recibir un
+  mensaje con más instrucciones"* y el asunto a *"Reiniciar contraseña"*.
+- `sphinx-build` sin warnings.
+
+---
+
+## 6. Leyda Fleitas — RF009, Conmutación de Cliente en Sesión (GEG9-19)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket anticipaba que la historia ya estaba casi hecha por RF008 y pedía
+relevar antes de tocar nada. Era cierto en lo funcional, pero el relevamiento
+destapó un agujero de seguridad.
+
+### 6.1. «Bug propio: redirección abierta en el parámetro `siguiente`»
+
+**Lo que aprendimos.** La vista de selección volvía a donde estabas con:
+
+```python
+siguiente = request.POST.get("siguiente") or request.GET.get("siguiente")
+...
+return redirect(siguiente or "usuarios:panel")
+```
+
+Ese valor **lo controla quien arma el enlace** y no se validaba. Se comprobó:
+
+```
+POST /elegir-cliente/  siguiente=https://sitio-malicioso.example.com/phishing
+302 → https://sitio-malicioso.example.com/phishing
+```
+
+Es una **redirección abierta**. Sirve para engañar: alguien manda un enlace
+que empieza con el dominio real de la aplicación, la víctima elige su cliente
+con toda normalidad y termina en una página ajena que imita la nuestra y le
+pide la contraseña. El enlace que compartió era legítimo.
+
+Lo escribí yo en RF008 y pasó desapercibido porque **funcionaba bien**: el
+caso normal —volver a `/conversiones/comprar/`— anda igual con o sin
+validación. El error solo aparece si alguien busca abusarlo.
+
+**Decisión.** Validar con `url_has_allowed_host_and_scheme` de Django, que
+es la función que el propio framework usa para el `next` del login, y exigir
+además que la ruta empiece con `/` para no dejar pasar algo como
+`javascript:`. Ante cualquier duda, al panel.
+
+La prueba es parametrizada con cuatro formas distintas del ataque: URL
+absoluta, `//dominio` (que el navegador interpreta como externa), otro
+dominio por `http` y `javascript:`.
+
+### 6.2. «Cambiar de cliente dejaba operable lo del cliente anterior»
+
+**Lo que aprendimos**, y no lo esperaba: estando asociada a dos clientes, se
+podía elegir el cliente B y **confirmar igual una compra pendiente del
+cliente A**. Lo destapó una prueba escrita justamente para descartarlo.
+
+No es un robo de datos —el usuario está asociado a los dos clientes—, pero
+contradice lo que RF008 le promete: *"todas las operaciones que hagas se van
+a registrar en nombre del que elijas acá"*. Si lo que elegís en la barra no
+delimita sobre qué podés actuar, el selector es decorativo.
+
+La causa: los servicios filtran por *"alguno de los clientes del usuario"*,
+que es el control de dueño correcto, pero ninguna capa miraba el cliente
+**activo**.
+
+**Decisión.** Un helper `_es_del_cliente_activo()` en las vistas, aplicado a
+confirmar y cancelar compra y a cancelar venta. Va en la vista y no en el
+servicio a propósito: el cliente activo es un concepto de **sesión**, y los
+servicios no conocen la sesión ni deberían.
+
+**Lo que NO se tocó:** `confirmar_venta_view`, que un compañero reescribió
+para el flujo del cajero (RF058). El cajero opera sin cliente activo, así que
+aplicarle el mismo filtro habría roto su historia. Queda dicho en el
+docstring del helper.
+
+### 6.3. «Una prueba que escribí mal, y lo que enseñó»
+
+Escribí una prueba esperando que al desactivar el cliente activo el sistema
+volviera a pedir elegir. Falló: el sistema había pasado solo al otro cliente.
+
+**La prueba estaba mal, no el código.** RF008 define que con un solo cliente
+disponible no se pregunta nada. Se corrigió para verificar el comportamiento
+real, y se agregó una segunda que cubre el caso que yo creía estar probando:
+desactivar **todos** los clientes, ahí sí se vuelve a pedir.
+
+### 6.4. Lo que ya estaba y no se tocó
+
+El ticket pedía no reescribir lo de RF008, y efectivamente no hizo falta:
+el enlace **Cambiar** en la barra, `puede_cambiar_cliente` (que se calcula
+con `cantidad_clientes > 1`, así que con uno solo no se ofrece), la vista de
+selección reutilizada, y la revalidación contra la base en cada request.
+
+Sobre el "selector" que menciona el ERS: hoy es un enlace a una pantalla.
+**Decisión de la integrante:** dejarlo así. Cumple la intención —cambiar de
+cliente sin cerrar sesión, en dos clics— y la pantalla muestra el documento y
+la categoría de cada cliente, que un desplegable escondería.
+
+## 6.5. Verificaciones realizadas
+
+- **13 pruebas nuevas**, ninguna de las cuales existía: las 10 de
+  `test_cliente_activo.py` cubren RF008 (la primera elección), no el cambio.
+- Suite completa: **356 aprobadas** (eran 343), sin regresiones.
+- Casos cubiertos: el cambio mantiene la **misma sesión**; el encabezado
+  muestra el cliente nuevo y ya no el anterior; el enlace sólo aparece con más
+  de un cliente; se vuelve a la pantalla de origen; **cuatro formas de
+  redirección externa quedan rechazadas**, por POST y por query string; no se
+  puede cambiar a un cliente ajeno; una operación pendiente del cliente
+  anterior deja de ser operable; al desactivar un cliente se pasa al que
+  queda, y al desactivarlos todos se vuelve a pedir.
+- `manage.py check` sin errores y Sphinx genera sin warnings.
+
+---
+
+## 7. Leyda Fleitas — RF016, Gráficos de Evolución de Tasas (GEG9-68)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket anticipaba que la historia ya estaba hecha y pedía relevar contra
+seis criterios antes de tocar nada. Lo estaba: el panel de cotizaciones ya
+tenía el gráfico SVG con dos líneas, el selector de período y el tooltip.
+
+### 7.1. «Revisar contra los criterios, uno por uno»
+
+| Criterio | Estado |
+|---|---|
+| Gráfico de evolución por par | ✅ SVG propio, líneas de compra y venta |
+| Selector de período | ✅ 7D / 1M / 3M / Todo, filtra sin recargar |
+| Muestra compra y venta | ✅ ambas líneas y ambas filas de estadísticas |
+| Historial real (`TasaCambio`) | ✅ `_historial_del_par` |
+| Visible para todos los roles | ✅ solo `@login_required`, sin control de rol |
+| Par sin historial / una sola tasa | ✅ estado vacío con sugerencias; con una tasa no dibuja el gráfico pero muestra las estadísticas |
+
+El acceso del usuario **sin cliente asociado** ya estaba cubierto por dos
+pruebas propias de RF008 y RF010, que verifican que `/tasas/` responde 200 sin
+ningún cliente. No se duplicó.
+
+**Decisión: no se tocó el gráfico ni se agregó ninguna librería**, que es lo
+que el ticket pedía explícitamente.
+
+### 7.2. «El selector decía "7 días" y mostraba datos de hace 74»
+
+**Lo que aprendimos** al mirar el criterio 3 —cómo se ve con los datos de
+demo— y que no se veía leyendo solo el código: **todas las tasas del fixture
+tienen entre 74 y 101 días**.
+
+| Par | Puntos | En 7D | En 1M | En 3M |
+|---|---|---|---|---|
+| USD/PYG | 4 | **0** | **0** | 4 |
+| EUR/PYG | 4 | **0** | **0** | 3 |
+
+Al tocar **7D** no queda ningún punto en el rango. El código tiene un guard
+deliberado:
+
+```js
+if (puntosFiltrados.length < 2) puntosFiltrados = puntosCompletos.slice(-2);
+```
+
+O sea que el botón queda marcado como activo y el gráfico dibuja **los dos
+registros más recientes, de hace 74 días**, sin decir nada. No se rompe:
+**informa mal**, que es peor, porque no hay forma de notarlo.
+
+Conviene separar las dos cosas: **el código está bien** —el filtro funciona y
+el fallback evita un gráfico vacío— y **lo que faltaba era avisar**.
+
+**Decisión.** Un aviso que aparece solo cuando el rango elegido se quedó sin
+datos: *"No hay registros en los últimos 7 días. Se muestran los 2 más
+recientes."* Ocho líneas de JavaScript, sin librerías nuevas y sin tocar el
+dibujo. Se distingue además el caso de **un solo** registro en el rango, que
+tampoco alcanza para trazar una línea.
+
+### 7.3. «Bug propio en las pruebas: una sola tasa activa por par»
+
+Las primeras pruebas nuevas fallaron con `IntegrityError`: el modelo tiene una
+restricción `tasa_cambio_unica_activa_por_par`, y el helper de pruebas crea
+las tasas con `activo=True` por defecto. Creé varias activas del mismo par.
+
+**La restricción estaba bien; mis pruebas estaban mal.** Se corrigieron para
+crear el historial con `activo=False` y dejar activa solo la última, que es lo
+que pasa en la realidad: una tasa vigente y las anteriores como histórico.
+
+## 7.4. Verificaciones realizadas
+
+- **8 pruebas nuevas**, que llevan el archivo de 12 a **20**. El selector de
+  período no tenía ninguna, y es la mitad del segundo criterio.
+- Suite completa sin regresiones.
+- Casos cubiertos: los cuatro rangos están en la página; el filtro es del lado
+  del navegador (el historial completo viaja en `historial_json`, así que
+  ningún botón recarga); cada punto lleva fecha, compra y venta, ordenados de
+  más viejo a más nuevo; el JSON embebido es válido; el aviso de rango vacío
+  está presente; las dos líneas del gráfico son compra y venta; el usuario sin
+  cliente ve el panel; y el servidor no recorta el historial.
+- `sphinx-build` sin warnings.
+
+---
+
+## 8. Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que el enganche era único y pedía confirmarlo leyendo el
+código antes de implementar.
+
+### 8.1. «¿De verdad hay un solo punto donde enganchar?»
+
+**Lo que aprendimos.** Sí: `registrar_cambio_estado` se llama en **once
+lugares**, todos dentro de `apps/conversiones/services.py` — iniciar compra y
+venta, vencimiento, cancelación por cambio de cotización, confirmación,
+cancelación por el cliente, anulación, y los flujos de terminal y
+conciliación manual, que reutilizan los mismos servicios.
+
+Enganchando **adentro** de esa función quedan cubiertas las once sin tocar
+ninguna, que es lo que RF023 había preparado sin saberlo.
+
+**Pero dos de esas once no deben avisar:** las que llaman con
+`estado_anterior=""`, que son el nacimiento de la operación. Avisarle a
+alguien "tu compra pasó de nada a pendiente" justo después de que la creó él
+mismo es ruido, no información.
+
+### 8.2. «La terminal rompía el enfoque obvio»
+
+**Lo que aprendimos**, y es el hallazgo que cambió el diseño: lo natural era
+avisarle al `usuario` que recibe `registrar_cambio_estado`. En el flujo de
+autoservicio (RF055) **ese usuario es la terminal**, no una persona: el
+cliente se identifica por documento o RUC.
+
+Tomando el destinatario de ahí, las notificaciones de las operaciones hechas
+en la terminal le habrían llegado **a la máquina**.
+
+**Decisión.** Los destinatarios salen del **cliente de la operación**, no de
+quien la disparó: `AsociacionUsuarioCliente.objects.filter(cliente=...)`.
+Y puede no haber ninguno —alguien que opera en la terminal sin cuenta—, lo
+cual **no es un error**: simplemente no hay a quién avisarle, y eso no puede
+romper la operación.
+
+### 8.3. «Los destinatarios no se resuelven como en RF033»
+
+**Lo que aprendimos.** `_destinatarios` de RF033 devuelve **todos** los
+usuarios con rol cliente, porque un cambio de tasa le interesa a cualquiera.
+Reutilizarlo acá habría sido un problema serio: el ticket exige que nadie
+reciba avisos de operaciones ajenas.
+
+**Decisión.** Una función aparte, `_usuarios_del_cliente`, acotada al cliente
+de esa operación. Se reutiliza la app, el modelo y la pantalla de RF033, pero
+no esa función: hacen cosas distintas aunque se parezcan.
+
+### 8.4. «Los duplicados: comprobar o hacerlos imposibles»
+
+El ticket pedía que registrar dos veces el mismo cambio no genere dos avisos.
+Se podía comparar el texto del mensaje, pero eso es frágil: cambia una coma y
+deja de detectarlos.
+
+**Decisión de la integrante:** una FK de `Notificacion` a `CambioEstado`, con
+una restricción de unicidad sobre (usuario, cambio de estado). El duplicado
+pasa a ser **imposible por construcción**, no algo que haya que acordarse de
+comprobar. De paso, el aviso queda ligado a la transición concreta, que le
+sirve a RF053.
+
+También decidió **tres tipos** (`OPERACION_CONFIRMADA`, `CANCELADA`,
+`ANULADA`) en vez de uno genérico, para poder distinguirlos en la lista sin
+otra migración. Esa decisión se aprovechó enseguida: ver 8.6.
+
+### 8.5. «Que avisar no pueda romper nada»
+
+Mismo criterio que la facturación (RF026): `transaction.on_commit` para no
+avisar de algo que luego se revierta, y un `except` amplio alrededor. El
+aviso es un efecto secundario; la transición es el hecho. Hay una prueba que
+tumba el servicio de notificaciones a propósito y verifica que la compra
+igual queda confirmada.
+
+### 8.6. «Color por tipo sin que quede chocante»
+
+**Lo que aprendimos** al colorear la lista: el borde izquierdo **ya estaba
+usado** para indicar leída o no leída. Agregar color por tipo encima habría
+dado dos significados al mismo elemento.
+
+**Decisión.** El borde pasa a indicar el **tipo** —que es el dato que cambia
+entre una fila y otra— y lo leído se sigue viendo por la opacidad y el badge
+"Nueva". Se agregó además una **etiqueta de texto** con el tipo: si el color
+fuera el único dato, quien no distingue verde de ámbar se quedaría sin esa
+información.
+
+Cancelada va en **ámbar y no en rojo**: merece atención, pero no es un error
+—muchas veces la canceló el propio cliente— y el rojo diría "algo salió mal".
+Queda anotado que la línea de tiempo del comprobante usa rojo para ese mismo
+estado desde RF023: son dos criterios distintos conviviendo, y conviene
+unificarlos en algún momento.
+
+### 8.7. Un error propio en las pruebas
+
+Una prueba fallaba con `TypeError: 'Cliente' object is not callable`: al
+desempaquetar el fixture con `usuario, _cliente = duenio`, la variable
+`_cliente` tapaba a la función `_cliente()` que crea clientes. Se renombró la
+variable.
+
+## 8.8. Verificaciones realizadas
+
+- **12 pruebas nuevas**, que llevan `apps/notificaciones` de 10 a **22**.
+- Suite completa: **377 aprobadas** (eran 364), sin regresiones.
+- Casos cubiertos: cada transición relevante (confirmar, cancelar, vencer,
+  anular) genera el aviso del tipo correcto y con el motivo; **crear la
+  operación no avisa**; un usuario de otro cliente no recibe nada; todos los
+  usuarios del cliente sí; un cliente **sin usuarios** no rompe; un fallo al
+  avisar **no deshace** la confirmación; registrar el mismo cambio dos veces
+  no duplica; el aviso aparece en la lista y en el contador del menú; se
+  puede marcar como leída; y el formateo de montos tiene un único punto.
+- `manage.py check` sin errores, migración `notificaciones.0002` aplicada y
+  Sphinx genera sin warnings.
+
+---

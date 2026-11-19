@@ -1,6 +1,7 @@
 """Pruebas de RF054 — Modo Terminal de Autoservicio (GEG9-55)."""
 import pytest
 
+from unittest.mock import patch
 from datetime import timedelta
 from decimal import Decimal
 
@@ -15,7 +16,7 @@ from apps.conversiones.models import CompraDivisa, VentaDivisa
 from apps.monedas.models import Moneda
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import construir_menu
-
+from apps.facturacion.models import Factura
 
 Usuario = get_user_model()
 
@@ -314,3 +315,245 @@ def test_terminal_no_crea_operacion_si_cambia_la_cotizacion(
     assert "La cotización cambió" in respuesta.content.decode()
     assert CompraDivisa.objects.count() == 0
     assert VentaDivisa.objects.count() == 0
+
+
+@pytest.fixture
+def compra_confirmada_terminal(
+    cliente_terminal,
+    monedas_terminal,
+    tasa_terminal,
+):
+    return CompraDivisa.objects.create(
+        cliente=cliente_terminal,
+        moneda_pagada=monedas_terminal[0],
+        moneda_adquirida=monedas_terminal[1],
+        tasa_cambio=tasa_terminal,
+        monto_pagado=Decimal("100.00"),
+        porcentaje_comision=Decimal("2.50"),
+        monto_comision=Decimal("2.50"),
+        total_a_pagar=Decimal("102.50"),
+        tasa_aplicada=Decimal("7.10"),
+        monto_recibido=Decimal("710.00"),
+        estado=CompraDivisa.Estado.CONFIRMADA,
+        confirmado_en=timezone.now(),
+    )
+
+
+@pytest.fixture
+def venta_confirmada_terminal(
+    cliente_terminal,
+    monedas_terminal,
+    tasa_terminal,
+):
+    return VentaDivisa.objects.create(
+        cliente=cliente_terminal,
+        moneda_entregada=monedas_terminal[0],
+        moneda_acreditada=monedas_terminal[1],
+        tasa_cambio=tasa_terminal,
+        monto_entregado=Decimal("100.00"),
+        porcentaje_comision=Decimal("2.50"),
+        monto_comision=Decimal("17.75"),
+        monto_convertido=Decimal("710.00"),
+        monto_acreditado=Decimal("692.25"),
+        tasa_aplicada=Decimal("7.10"),
+        estado=VentaDivisa.Estado.CONFIRMADA,
+        confirmado_en=timezone.now(),
+    )
+
+
+def preparar_sesion_comprobante(
+    client,
+    cliente,
+    *,
+    compra=None,
+    venta=None,
+):
+    """Guarda en sesión la operación finalizada por la terminal."""
+    sesion = client.session
+    sesion["terminal_cliente_id"] = cliente.pk
+
+    if compra is not None:
+        sesion["terminal_compra_id"] = compra.pk
+        sesion.pop("terminal_venta_id", None)
+
+    if venta is not None:
+        sesion["terminal_venta_id"] = venta.pk
+        sesion.pop("terminal_compra_id", None)
+
+    sesion.save()
+
+
+@pytest.mark.django_db
+def test_terminal_muestra_comprobante_de_compra_confirmada(
+    client,
+    cliente_terminal,
+    compra_confirmada_terminal,
+):
+    usuario = usuario_con_rol("terminal")
+    client.force_login(usuario)
+
+    preparar_sesion_comprobante(
+        client,
+        cliente_terminal,
+        compra=compra_confirmada_terminal,
+    )
+
+    respuesta = client.get(reverse("terminal:comprobante"))
+    contenido = respuesta.content.decode()
+
+    assert respuesta.status_code == 200
+    assert "Comprobante de operación" in contenido
+    assert "Compra de divisas" in contenido
+    assert respuesta.context["monto_origen"] == Decimal("102.50")
+    assert respuesta.context["monto_resultado"] == Decimal("710.00")
+    assert respuesta.context["moneda_origen"].codigo == "USD"
+    assert respuesta.context["moneda_destino"].codigo == "PYG"
+
+
+@pytest.mark.django_db
+def test_terminal_muestra_comprobante_de_venta_confirmada(
+    client,
+    cliente_terminal,
+    venta_confirmada_terminal,
+):
+    usuario = usuario_con_rol("terminal")
+    client.force_login(usuario)
+
+    preparar_sesion_comprobante(
+        client,
+        cliente_terminal,
+        venta=venta_confirmada_terminal,
+    )
+
+    respuesta = client.get(reverse("terminal:comprobante"))
+    contenido = respuesta.content.decode()
+
+    assert respuesta.status_code == 200
+    assert "Venta de divisas" in contenido
+    assert respuesta.context["monto_origen"] == Decimal("100.00")
+    assert respuesta.context["monto_resultado"] == Decimal("692.25")
+    assert respuesta.context["moneda_origen"].codigo == "USD"
+    assert respuesta.context["moneda_destino"].codigo == "PYG"
+
+
+@pytest.mark.django_db
+def test_terminal_no_muestra_comprobante_de_operacion_pendiente(
+    client,
+    cliente_terminal,
+    monedas_terminal,
+    tasa_terminal,
+):
+    usuario = usuario_con_rol("terminal")
+    client.force_login(usuario)
+
+    compra = CompraDivisa.objects.create(
+        cliente=cliente_terminal,
+        moneda_pagada=monedas_terminal[0],
+        moneda_adquirida=monedas_terminal[1],
+        tasa_cambio=tasa_terminal,
+        monto_pagado=Decimal("100.00"),
+        porcentaje_comision=Decimal("2.50"),
+        monto_comision=Decimal("2.50"),
+        total_a_pagar=Decimal("102.50"),
+        tasa_aplicada=Decimal("7.10"),
+        monto_recibido=Decimal("710.00"),
+    )
+
+    preparar_sesion_comprobante(
+        client,
+        cliente_terminal,
+        compra=compra,
+    )
+
+    respuesta = client.get(reverse("terminal:comprobante"))
+
+    assert respuesta.status_code == 302
+    assert respuesta.url == reverse("terminal:operacion_pendiente")
+
+
+@pytest.mark.django_db
+def test_terminal_indica_si_la_factura_no_esta_disponible(
+    client,
+    cliente_terminal,
+    compra_confirmada_terminal,
+):
+    usuario = usuario_con_rol("terminal")
+    client.force_login(usuario)
+
+    Factura.objects.create(
+        compra=compra_confirmada_terminal,
+        timbrado="12345678",
+        establecimiento="001",
+        punto_expedicion="003",
+        numero="0000494",
+        monto=Decimal("710.00"),
+        monto_origen=Decimal("102.50"),
+        moneda_origen="USD",
+        estado=Factura.Estado.ERROR,
+    )
+
+    preparar_sesion_comprobante(
+        client,
+        cliente_terminal,
+        compra=compra_confirmada_terminal,
+    )
+
+    respuesta = client.get(reverse("terminal:comprobante"))
+
+    assert respuesta.status_code == 200
+    assert "todavía no está disponible para descargar" in respuesta.content.decode()
+
+
+@pytest.mark.django_db
+def test_terminal_descarga_pdf_y_xml_de_factura_con_cdc(
+    client,
+    cliente_terminal,
+    compra_confirmada_terminal,
+):
+    usuario = usuario_con_rol("terminal")
+    client.force_login(usuario)
+
+    factura = Factura.objects.create(
+        compra=compra_confirmada_terminal,
+        timbrado="12345678",
+        establecimiento="001",
+        punto_expedicion="003",
+        numero="0000495",
+        monto=Decimal("710.00"),
+        monto_origen=Decimal("102.50"),
+        moneda_origen="USD",
+        estado=Factura.Estado.GENERADA,
+        cdc="9" * 44,
+    )
+
+    preparar_sesion_comprobante(
+        client,
+        cliente_terminal,
+        compra=compra_confirmada_terminal,
+    )
+
+    with patch("apps.terminal.views.cliente_configurado") as configurado:
+        proveedor = configurado.return_value[1]
+        configurado.return_value = ("simulado", proveedor)
+        proveedor.descargar_documento.side_effect = (
+            lambda cdc, formato: (
+                b"%PDF-1.4 comprobante"
+                if formato == "pdf"
+                else b"<FacturaSimulada />"
+            )
+        )
+
+        respuesta_pdf = client.get(
+            reverse("terminal:descargar_factura", args=["pdf"])
+        )
+        respuesta_xml = client.get(
+            reverse("terminal:descargar_factura", args=["xml"])
+        )
+
+    assert factura.cdc == "9" * 44
+    assert respuesta_pdf.status_code == 200
+    assert respuesta_pdf["Content-Type"] == "application/pdf"
+    assert respuesta_xml.status_code == 200
+    assert respuesta_xml["Content-Type"] == "application/xml"
+    proveedor.descargar_documento.assert_any_call("9" * 44, "pdf")
+    proveedor.descargar_documento.assert_any_call("9" * 44, "xml")

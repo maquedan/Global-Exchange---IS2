@@ -5,14 +5,77 @@
 {% block contenido %}
 <div class="tarjeta">
   <h1>Elegí cómo pagar</h1>
-  <p>Operación #{{ compra.pk }} — total a pagar: {{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}.</p>
+  <p>Operación #{{ compra.pk }} — total a pagar:
+    <strong>{{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}</strong>.</p>
 
   {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
 
-  <form method="post">
-    {% csrf_token %}
-    <button class="boton" type="submit">Pagar ahora</button>
-  </form>
-  <p class="mensaje">Te vamos a redirigir a la pasarela de pago para completar el cobro de forma segura.</p>
+  <ul class="medios-pago">
+    <li class="medio-pago">
+      <div>
+        <span class="medio-pago-nombre">Tarjeta</span>
+        <span class="medio-pago-detalle">Te llevamos a la pasarela para completar el cobro
+          de forma segura. La operación se confirma al instante.</span>
+      </div>
+      <form method="post">
+        {% csrf_token %}
+        <button class="boton" type="submit">Pagar ahora</button>
+      </form>
+    </li>
+
+    {# RF025 (GEG9-75): la compra queda esperando que un administrador #}
+    {# verifique la transferencia. Por eso esta no se vence a los 15 min. #}
+    <li class="medio-pago">
+      <div>
+        <span class="medio-pago-nombre">Transferencia bancaria</span>
+        <span class="medio-pago-detalle">Hacés la transferencia por tu banco y nosotros la
+          verificamos. La operación queda reservada, sin vencimiento, hasta que un
+          administrador la concilie.</span>
+      </div>
+      <form method="post" action="{% url 'pagos:esperar_transferencia' compra.pk %}">
+        {% csrf_token %}
+        <button class="boton boton-secundario" type="submit">Voy a transferir</button>
+      </form>
+    </li>
+  </ul>
 </div>
+
+<style>
+  .medios-pago {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .medio-pago {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #0ea5e9;
+    border-radius: 0.75rem;
+    background: #f8fafc;
+  }
+
+  .medio-pago form { margin: 0; }
+
+  .medio-pago-nombre {
+    display: block;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .medio-pago-detalle {
+    display: block;
+    margin-top: 0.15rem;
+    max-width: 34rem;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+</style>
 {% endblock %}

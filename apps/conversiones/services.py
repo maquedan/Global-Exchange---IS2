@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -18,6 +19,8 @@ from apps.usuarios.services import cliente_habilitado_para
 
 from .models import CambioEstado, CompraDivisa, VentaDivisa
 
+
+logger = logging.getLogger(__name__)
 
 DOS_DECIMALES = Decimal("0.01")
 
@@ -48,13 +51,40 @@ def registrar_cambio_estado(operacion, estado_anterior, estado_nuevo, *, motivo=
     debe pasar por acá, para que el historial quede completo.
     """
     campo_operacion = "compra" if isinstance(operacion, CompraDivisa) else "venta"
-    return CambioEstado.objects.create(
+    cambio = CambioEstado.objects.create(
         estado_anterior=estado_anterior,
         estado_nuevo=estado_nuevo,
         motivo=motivo,
         usuario=usuario,
         **{campo_operacion: operacion},
     )
+    _avisar_del_cambio(cambio)
+    return cambio
+
+
+def _avisar_del_cambio(cambio):
+    """Notifica a los usuarios del cliente que la operación cambió (RF034).
+
+    El import va adentro porque `apps.notificaciones` importa los modelos de
+    esta app: a nivel de módulo sería circular (mismo motivo que `_facturar`).
+
+    El `except` amplio es deliberado y es lo que pide el ERS: un fallo al
+    avisar **nunca** debe deshacer ni bloquear el cambio de estado. El aviso
+    es un efecto secundario; la transición es el hecho.
+
+    Quien decide a quién avisar —y si corresponde avisar— es el servicio de
+    notificaciones: acá no se filtra nada, para que este punto siga siendo
+    el único enganche.
+    """
+    from apps.notificaciones.services import notificar_cambio_de_estado
+
+    try:
+        notificar_cambio_de_estado(cambio)
+    except Exception:
+        logger.exception(
+            "No se pudo notificar el cambio de estado %s; la operación sigue igual",
+            cambio.pk,
+        )
 
 
 def _facturar(operacion):
@@ -179,7 +209,17 @@ def expirar_compra_si_corresponde(compra):
 
     Se llama tanto al mostrarla como al intentar confirmarla o cancelarla, para
     que una cotización vieja nunca quede disponible para pagar (RF051).
+
+    Excepción: si el cliente eligió pagar por transferencia bancaria, la
+    compra **no se vence** (RF025 — GEG9-75). Verificar una transferencia
+    lleva horas o días, y con los 15 minutos de siempre la operación se
+    cancelaría antes de que el administrador llegara a conciliarla. La
+    protección de RF051 no se pierde: al conciliar se revalida la tasa, y si
+    cambió la operación se cancela igual.
     """
+    if compra.espera_transferencia:
+        return compra
+
     if compra.estado == CompraDivisa.Estado.PENDIENTE and _vencio_el_plazo(compra):
         estado_anterior = compra.estado
         compra.estado = CompraDivisa.Estado.CANCELADA
@@ -218,6 +258,22 @@ def confirmar_pago_compra(*, pk, usuario):
     if compra.estado != CompraDivisa.Estado.PENDIENTE:
         raise CompraNoConfirmable("Esta operación ya fue confirmada o cancelada.")
 
+    return _confirmar_compra_pendiente(compra, usuario=usuario)
+
+
+def _confirmar_compra_pendiente(compra, *, usuario, motivo=""):
+    """Núcleo de la confirmación de una compra pendiente.
+
+    Lo comparten las dos puertas de entrada, que solo se diferencian en el
+    control de acceso: `confirmar_pago_compra` (el dueño, tras pagar) y
+    `conciliar_compra` (un administrador que verificó una transferencia,
+    RF025 — GEG9-75). Así la revalidación de tasa de RF051, la trazabilidad
+    de RF023 y la facturación de RF026 son exactamente las mismas por los
+    dos caminos, sin duplicar nada.
+
+    `motivo` queda en el historial de estados: vacío en el pago normal, y con
+    la referencia de la transferencia en la conciliación.
+    """
     compra = expirar_compra_si_corresponde(compra)
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         return compra
@@ -249,9 +305,137 @@ def confirmar_pago_compra(*, pk, usuario):
     compra.estado = CompraDivisa.Estado.CONFIRMADA
     compra.confirmado_en = timezone.now()
     compra.save(update_fields=["estado", "confirmado_en"])
-    registrar_cambio_estado(compra, estado_anterior, compra.estado, usuario=usuario)
+    registrar_cambio_estado(
+        compra, estado_anterior, compra.estado, motivo=motivo, usuario=usuario
+    )
     _facturar(compra)
     return compra
+
+
+class ConciliacionNoPermitida(Exception):
+    """La compra no se puede conciliar manualmente (RF025 — GEG9-75)."""
+
+
+# Lo que se guarda en `Pago.proveedor` cuando el cobro no pasó por ninguna
+# pasarela, sino por una transferencia que un administrador verificó a mano.
+PROVEEDOR_MANUAL = "manual"
+
+LARGO_MAXIMO_REFERENCIA = 100
+
+
+def compras_pendientes_de_conciliar():
+    """Compras que un administrador puede conciliar (RF025 — GEG9-75).
+
+    Son las que siguen pendientes y el cliente marcó para pagar por
+    transferencia. Las que esperan la pasarela no entran: esas las resuelve
+    dLocal, no una verificación manual.
+    """
+    return (
+        CompraDivisa.objects.filter(
+            estado=CompraDivisa.Estado.PENDIENTE,
+            espera_transferencia=True,
+        )
+        .select_related("cliente", "moneda_pagada", "moneda_adquirida")
+        .order_by("creado_en")
+    )
+
+
+@transaction.atomic
+def conciliar_compra(*, pk, usuario, referencia, observacion=""):
+    """Marca como pagada una compra tras verificar una transferencia (RF025).
+
+    Es la contraparte administrativa de `confirmar_pago_compra`: cambia el
+    control de acceso —acá el rol `administrador`, no el dueño de la
+    operación— pero la confirmación en sí pasa por el mismo núcleo, así que
+    se revalida la tasa (RF051), se registra el cambio de estado (RF023) y
+    se emite la factura (RF026) exactamente igual que en un pago normal.
+
+    Es idempotente: una compra que ya no está pendiente se rechaza con un
+    mensaje claro, sin tocar nada.
+
+    Devuelve la compra. Si la cotización cambió, viene **CANCELADA** y sin
+    pago registrado: hay que mirarle el estado, no alcanza con que no haya
+    excepción.
+    """
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="administrador").exists()
+    ):
+        raise ConciliacionNoPermitida(
+            "Solo un administrador puede conciliar una transferencia."
+        )
+
+    referencia = (referencia or "").strip()
+    if not referencia:
+        raise ConciliacionNoPermitida(
+            "Indicá la referencia de la transferencia bancaria."
+        )
+    if len(referencia) > LARGO_MAXIMO_REFERENCIA:
+        raise ConciliacionNoPermitida(
+            f"La referencia no puede superar los {LARGO_MAXIMO_REFERENCIA} caracteres."
+        )
+    observacion = (observacion or "").strip()
+
+    # Sin filtro de dueño: el administrador no está asociado al cliente.
+    compra = CompraDivisa.objects.select_for_update().filter(pk=pk).first()
+    if compra is None:
+        raise ConciliacionNoPermitida("La operación no existe.")
+    if compra.estado != CompraDivisa.Estado.PENDIENTE:
+        raise ConciliacionNoPermitida(
+            f"Esta operación ya no está pendiente (está {compra.get_estado_display()}): "
+            "no se puede conciliar."
+        )
+
+    motivo = f"Conciliación manual. Referencia: {referencia}."
+    if observacion:
+        motivo = f"{motivo} {observacion}"
+
+    compra = _confirmar_compra_pendiente(compra, usuario=usuario, motivo=motivo[:255])
+
+    if compra.estado != CompraDivisa.Estado.CONFIRMADA:
+        # La revalidación de RF051 la canceló: la cotización ya no es la que
+        # el cliente aceptó. No se registra ningún pago, y se **devuelve** la
+        # compra en vez de lanzar: lanzar revertiría la cancelación, porque
+        # todo esto corre dentro de una transacción. Quien llama mira el
+        # estado para avisarle al administrador.
+        return compra
+
+    _registrar_pago_manual(compra, usuario=usuario, referencia=referencia,
+                           observacion=observacion)
+    return compra
+
+
+def _registrar_pago_manual(compra, *, usuario, referencia, observacion):
+    """Deja el cobro asentado como un `Pago` más, con proveedor "manual".
+
+    El import va adentro porque `apps.pagos` importa esta app: a nivel de
+    módulo sería circular (mismo motivo que `_facturar`).
+
+    Se registra el importe tal como lo transfirió el cliente —el total en la
+    moneda de la operación—, no el convertido para la pasarela: acá no hubo
+    pasarela. Así el comprobante muestra la conciliación en el mismo bloque
+    de "Pago" que un cobro con tarjeta, sin tocar ninguna plantilla.
+    """
+    import uuid
+
+    from apps.pagos.models import Pago
+
+    return Pago.objects.create(
+        compra=compra,
+        proveedor=PROVEEDOR_MANUAL,
+        order_id=f"MAN-{compra.pk}-{uuid.uuid4().hex[:8]}",
+        id_externo=referencia,
+        monto=compra.total_a_pagar,
+        moneda=compra.moneda_pagada.codigo,
+        estado=Pago.Estado.APROBADO,
+        respuesta_cruda={
+            "conciliacion_manual": True,
+            "referencia": referencia,
+            "observacion": observacion,
+            "conciliado_por": usuario.get_username(),
+        },
+    )
 
 
 @transaction.atomic

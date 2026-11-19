@@ -6,14 +6,15 @@
 {% block contenido %}
 <div class="tarjeta">
   <h1>Notificaciones</h1>
-  <p>Te avisamos acá cuando cambia una tasa de cambio.</p>
+  <p>Te avisamos acá cuando cambia una tasa de cambio y cuando cambia el
+    estado de alguna de tus operaciones.</p>
 
   {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
 
   {% if notificaciones %}
     <ul class="lista-notificaciones">
       {% for notificacion in notificaciones %}
-        <li class="notificacion-tarjeta{% if not notificacion.leida %} no-leida{% else %} leida{% endif %}">
+        <li class="notificacion-tarjeta tipo-{{ notificacion.tipo }}{% if not notificacion.leida %} no-leida{% else %} leida{% endif %}">
           <div class="notificacion-encabezado">
             {% if notificacion.tasa %}
               <span class="notificacion-par">
@@ -22,6 +23,7 @@
                 {{ notificacion.tasa.moneda_destino.codigo|bandera }}{{ notificacion.tasa.moneda_destino.codigo }}
               </span>
             {% endif %}
+            <span class="notificacion-tipo">{{ notificacion.get_tipo_display }}</span>
             {% if not notificacion.leida %}<span class="notificacion-badge">Nueva</span>{% endif %}
           </div>
           <span class="notificacion-fecha">{{ notificacion.creada_en|date:"d/m/Y H:i" }}</span>
@@ -57,24 +59,58 @@
     box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
   }
 
+  /* El borde izquierdo indica el TIPO de aviso; que esté leída o no se ve
+     por la opacidad y por el badge "Nueva". Antes el borde decía lo leído,
+     pero con cuatro tipos de aviso conviene que el color diga de qué se
+     trata: es el dato que cambia entre una fila y otra. */
+  .notificacion-tarjeta { border-left: 4px solid #cbd5e1; }
+
   .notificacion-tarjeta.leida {
     background: #f8fafc;
-    border-left: 4px solid #cbd5e1;
-    opacity: 0.85;
+    opacity: 0.8;
   }
 
   .notificacion-tarjeta.no-leida {
-    background: #f0f9ff;
-    border-left: 4px solid #0ea5e9;
-    box-shadow: 0 4px 10px -4px rgba(14, 165, 233, 0.35);
+    box-shadow: 0 4px 10px -4px rgba(15, 23, 42, 0.2);
+  }
+
+  .tipo-CAMBIO_TASA { border-left-color: #0ea5e9; }
+  .tipo-CAMBIO_TASA.no-leida { background: #f0f9ff; }
+  .tipo-CAMBIO_TASA .notificacion-tipo { background: #e0f2fe; color: #075985; }
+
+  .tipo-OPERACION_CONFIRMADA { border-left-color: #047857; }
+  .tipo-OPERACION_CONFIRMADA.no-leida { background: #f0fdf7; }
+  .tipo-OPERACION_CONFIRMADA .notificacion-tipo { background: #d1fae5; color: #065f46; }
+
+  /* Ámbar y no rojo: que te cancelen una operación merece atención, pero no
+     es un error — muchas veces la cancelaste vos. */
+  .tipo-OPERACION_CANCELADA { border-left-color: #d97706; }
+  .tipo-OPERACION_CANCELADA.no-leida { background: #fffbeb; }
+  .tipo-OPERACION_CANCELADA .notificacion-tipo { background: #fef3c7; color: #78350f; }
+
+  .tipo-OPERACION_ANULADA { border-left-color: #64748b; }
+  .tipo-OPERACION_ANULADA.no-leida { background: #f8fafc; }
+  .tipo-OPERACION_ANULADA .notificacion-tipo { background: #e2e8f0; color: #334155; }
+
+  .notificacion-tipo {
+    display: inline-block;
+    padding: 0.15rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
   }
 
   .notificacion-encabezado {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.6rem;
+    flex-wrap: wrap;
   }
+
+  /* Empuja el badge "Nueva" al extremo derecho. */
+  .notificacion-badge { margin-left: auto; }
 
   .notificacion-par {
     display: inline-flex;

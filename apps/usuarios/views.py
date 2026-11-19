@@ -2,6 +2,7 @@
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required, user_passes_test
 from django.shortcuts import redirect, render
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods
 
 from .keycloak_admin import KeycloakAdmin, KeycloakAdminError
@@ -33,13 +34,43 @@ def panel(request):
 
 
 @login_required
+def _destino_seguro(request, siguiente):
+    """Valida a dónde volver después de elegir cliente (RF009 — GEG9-19).
+
+    `siguiente` llega del navegador, así que no se puede usar tal cual: con
+    una dirección externa la aplicación redirigiría fuera del sitio. Eso es
+    una **redirección abierta**, y sirve para engañar a alguien con un enlace
+    que empieza con nuestro propio dominio y termina en una página ajena que
+    imita la nuestra.
+
+    Se acepta únicamente una ruta de este mismo sitio. Ante cualquier duda se
+    devuelve `None` y quien llama manda al panel.
+    """
+    if not siguiente:
+        return None
+
+    if not url_has_allowed_host_and_scheme(
+        url=siguiente,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return None
+
+    # `url_has_allowed_host_and_scheme` acepta rutas relativas; se exige
+    # además que arranque en "/" para no dejar pasar algo como "javascript:".
+    return siguiente if siguiente.startswith("/") else None
+
+
 def seleccionar_cliente(request):
     """Pantalla "Elegí el cliente con el que vas a operar" (RF008 — GEG9-18).
 
-    La reutiliza RF009 para cambiar de cliente sin cerrar sesión: es la
-    misma pantalla, solo que llegando a propósito en vez de por redirección.
+    La reutiliza RF009 (GEG9-19) para cambiar de cliente sin cerrar sesión:
+    es la misma pantalla, solo que llegando a propósito en vez de por
+    redirección.
     """
-    siguiente = request.POST.get("siguiente") or request.GET.get("siguiente")
+    siguiente = _destino_seguro(
+        request, request.POST.get("siguiente") or request.GET.get("siguiente")
+    )
 
     if request.method == "POST":
         try:

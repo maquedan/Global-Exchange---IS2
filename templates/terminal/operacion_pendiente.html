@@ -31,8 +31,12 @@
       <form method="post" action="{% url 'terminal:reiniciar' %}" class="mt-10">
         {% csrf_token %}
 
+      <a href="{% url 'terminal:comprobante' %}"
+        class="mt-6 inline-block rounded-xl border-2 border-slate-400 px-6 py-4 font-bold text-slate-800 transition hover:border-cyan-500 hover:bg-cyan-50">
+        Ya completé mi operación en caja
+      </a>
         <button type="submit"
-                class="w-full rounded-xl bg-cyan-400 px-6 py-4 text-lg font-black text-slate-950 transition hover:bg-cyan-300 sm:w-72">
+          class="w-full rounded-xl bg-cyan-400 px-6 py-4 text-lg font-black text-slate-950 transition hover:bg-cyan-300 sm:w-72">
           Finalizar
         </button>
       </form>

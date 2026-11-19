@@ -46,6 +46,16 @@
     cursor: pointer;
   }
   .rango-tiempo button.activo { background: #0369a1; color: #fff; border-color: #0369a1; }
+
+  .aviso-rango {
+    margin: .6rem 0 0;
+    padding: .5rem .75rem;
+    border-left: 3px solid #d97706;
+    border-radius: .375rem;
+    background: #fffbeb;
+    color: #78350f;
+    font-size: .85rem;
+  }
   .grafico-envoltorio { position: relative; margin-top: 1rem; }
   .grafico-historial { width: 100%; height: 260px; display: block; overflow: visible; }
   .tooltip-grafico {
@@ -146,6 +156,9 @@
       <button type="button" data-dias="90">3M</button>
       <button type="button" data-dias="0" class="activo">Todo</button>
     </div>
+    {# Avisa cuando el rango elegido no tiene registros: sin esto el gráfico #}
+    {# muestra los más recientes como si fueran del período pedido (RF016).  #}
+    <p id="aviso-rango" class="aviso-rango" hidden></p>
 
     {% if historial|length > 1 %}
       <div class="grafico-envoltorio">
@@ -325,13 +338,38 @@
     svg.innerHTML = svgHtml;
   }
 
+  var aviso = document.getElementById("aviso-rango");
+
+  function avisar(texto) {
+    if (!aviso) return;
+    aviso.textContent = texto || "";
+    aviso.hidden = !texto;
+  }
+
   function aplicarRango(dias) {
     if (!dias) {
       puntosFiltrados = puntosCompletos;
+      avisar("");
+      dibujar();
+      return;
+    }
+
+    var limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
+    var enRango = puntosCompletos.filter(function (p) { return p.fechaObj >= limite; });
+
+    if (enRango.length >= 2) {
+      puntosFiltrados = enRango;
+      avisar("");
     } else {
-      var limite = new Date(Date.now() - dias * 24 * 60 * 60 * 1000);
-      puntosFiltrados = puntosCompletos.filter(function (p) { return p.fechaObj >= limite; });
-      if (puntosFiltrados.length < 2) puntosFiltrados = puntosCompletos.slice(-2); // no dejar el gráfico vacío
+      // No alcanza para trazar una línea. Se muestran los dos más recientes
+      // para no dejar el gráfico vacío, pero hay que decirlo: si no, parece
+      // que esos valores son del período pedido.
+      puntosFiltrados = puntosCompletos.slice(-2);
+      avisar(
+        enRango.length === 0
+          ? "No hay registros en los últimos " + dias + " días. Se muestran los 2 más recientes."
+          : "Hay un solo registro en los últimos " + dias + " días, y hacen falta dos para trazar la línea. Se muestran los 2 más recientes."
+      );
     }
     dibujar();
   }
