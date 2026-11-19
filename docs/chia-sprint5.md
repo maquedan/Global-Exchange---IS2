@@ -1381,3 +1381,118 @@ que pasa en la realidad: una tasa vigente y las anteriores como histórico.
 - `sphinx-build` sin warnings.
 
 ---
+
+## 8. Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que el enganche era único y pedía confirmarlo leyendo el
+código antes de implementar.
+
+### 8.1. «¿De verdad hay un solo punto donde enganchar?»
+
+**Lo que aprendimos.** Sí: `registrar_cambio_estado` se llama en **once
+lugares**, todos dentro de `apps/conversiones/services.py` — iniciar compra y
+venta, vencimiento, cancelación por cambio de cotización, confirmación,
+cancelación por el cliente, anulación, y los flujos de terminal y
+conciliación manual, que reutilizan los mismos servicios.
+
+Enganchando **adentro** de esa función quedan cubiertas las once sin tocar
+ninguna, que es lo que RF023 había preparado sin saberlo.
+
+**Pero dos de esas once no deben avisar:** las que llaman con
+`estado_anterior=""`, que son el nacimiento de la operación. Avisarle a
+alguien "tu compra pasó de nada a pendiente" justo después de que la creó él
+mismo es ruido, no información.
+
+### 8.2. «La terminal rompía el enfoque obvio»
+
+**Lo que aprendimos**, y es el hallazgo que cambió el diseño: lo natural era
+avisarle al `usuario` que recibe `registrar_cambio_estado`. En el flujo de
+autoservicio (RF055) **ese usuario es la terminal**, no una persona: el
+cliente se identifica por documento o RUC.
+
+Tomando el destinatario de ahí, las notificaciones de las operaciones hechas
+en la terminal le habrían llegado **a la máquina**.
+
+**Decisión.** Los destinatarios salen del **cliente de la operación**, no de
+quien la disparó: `AsociacionUsuarioCliente.objects.filter(cliente=...)`.
+Y puede no haber ninguno —alguien que opera en la terminal sin cuenta—, lo
+cual **no es un error**: simplemente no hay a quién avisarle, y eso no puede
+romper la operación.
+
+### 8.3. «Los destinatarios no se resuelven como en RF033»
+
+**Lo que aprendimos.** `_destinatarios` de RF033 devuelve **todos** los
+usuarios con rol cliente, porque un cambio de tasa le interesa a cualquiera.
+Reutilizarlo acá habría sido un problema serio: el ticket exige que nadie
+reciba avisos de operaciones ajenas.
+
+**Decisión.** Una función aparte, `_usuarios_del_cliente`, acotada al cliente
+de esa operación. Se reutiliza la app, el modelo y la pantalla de RF033, pero
+no esa función: hacen cosas distintas aunque se parezcan.
+
+### 8.4. «Los duplicados: comprobar o hacerlos imposibles»
+
+El ticket pedía que registrar dos veces el mismo cambio no genere dos avisos.
+Se podía comparar el texto del mensaje, pero eso es frágil: cambia una coma y
+deja de detectarlos.
+
+**Decisión de la integrante:** una FK de `Notificacion` a `CambioEstado`, con
+una restricción de unicidad sobre (usuario, cambio de estado). El duplicado
+pasa a ser **imposible por construcción**, no algo que haya que acordarse de
+comprobar. De paso, el aviso queda ligado a la transición concreta, que le
+sirve a RF053.
+
+También decidió **tres tipos** (`OPERACION_CONFIRMADA`, `CANCELADA`,
+`ANULADA`) en vez de uno genérico, para poder distinguirlos en la lista sin
+otra migración. Esa decisión se aprovechó enseguida: ver 8.6.
+
+### 8.5. «Que avisar no pueda romper nada»
+
+Mismo criterio que la facturación (RF026): `transaction.on_commit` para no
+avisar de algo que luego se revierta, y un `except` amplio alrededor. El
+aviso es un efecto secundario; la transición es el hecho. Hay una prueba que
+tumba el servicio de notificaciones a propósito y verifica que la compra
+igual queda confirmada.
+
+### 8.6. «Color por tipo sin que quede chocante»
+
+**Lo que aprendimos** al colorear la lista: el borde izquierdo **ya estaba
+usado** para indicar leída o no leída. Agregar color por tipo encima habría
+dado dos significados al mismo elemento.
+
+**Decisión.** El borde pasa a indicar el **tipo** —que es el dato que cambia
+entre una fila y otra— y lo leído se sigue viendo por la opacidad y el badge
+"Nueva". Se agregó además una **etiqueta de texto** con el tipo: si el color
+fuera el único dato, quien no distingue verde de ámbar se quedaría sin esa
+información.
+
+Cancelada va en **ámbar y no en rojo**: merece atención, pero no es un error
+—muchas veces la canceló el propio cliente— y el rojo diría "algo salió mal".
+Queda anotado que la línea de tiempo del comprobante usa rojo para ese mismo
+estado desde RF023: son dos criterios distintos conviviendo, y conviene
+unificarlos en algún momento.
+
+### 8.7. Un error propio en las pruebas
+
+Una prueba fallaba con `TypeError: 'Cliente' object is not callable`: al
+desempaquetar el fixture con `usuario, _cliente = duenio`, la variable
+`_cliente` tapaba a la función `_cliente()` que crea clientes. Se renombró la
+variable.
+
+## 8.8. Verificaciones realizadas
+
+- **12 pruebas nuevas**, que llevan `apps/notificaciones` de 10 a **22**.
+- Suite completa: **377 aprobadas** (eran 364), sin regresiones.
+- Casos cubiertos: cada transición relevante (confirmar, cancelar, vencer,
+  anular) genera el aviso del tipo correcto y con el motivo; **crear la
+  operación no avisa**; un usuario de otro cliente no recibe nada; todos los
+  usuarios del cliente sí; un cliente **sin usuarios** no rompe; un fallo al
+  avisar **no deshace** la confirmación; registrar el mismo cambio dos veces
+  no duplica; el aviso aparece en la lista y en el contador del menú; se
+  puede marcar como leída; y el formateo de montos tiene un único punto.
+- `manage.py check` sin errores, migración `notificaciones.0002` aplicada y
+  Sphinx genera sin warnings.
+
+---

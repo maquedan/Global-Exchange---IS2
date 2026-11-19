@@ -701,3 +701,62 @@ ocurre en la realidad. Detalle en `docs/chia-sprint5.md`, sección 7.3.
 
 ---
 
+## Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 17:56:10 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/notificaciones/tests/test_alertas_operacion.py` |
+| **Comando** | `docker compose exec web pytest apps/notificaciones/ -v` |
+| **Resultado** | **22 passed** en 9.83s |
+
+```text
+$ date
+Thu Nov 19 17:56:10 -03 2026
+
+$ docker compose exec web pytest apps/notificaciones/ -v
+apps/notificaciones/tests/test_alertas_operacion.py ............         [ 54%]
+apps/notificaciones/tests/test_notificaciones.py ..........              [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 22 passed, 1 warning in 9.83s =========================
+```
+
+Las 12 pruebas nuevas llaman a los **servicios de negocio de verdad**
+—confirmar, cancelar, vencer, anular— y no al servicio de notificaciones
+directamente: así verifican también que el enganche esté puesto en
+`registrar_cambio_estado`, que es el único punto por donde pasan los once
+cambios de estado del proyecto.
+
+- **Cada transición avisa con su tipo:** confirmar genera
+  `OPERACION_CONFIRMADA`; cancelar y vencer generan `OPERACION_CANCELADA` con
+  el motivo dentro del mensaje; anular genera `OPERACION_ANULADA`.
+- **Crear la operación no avisa:** `estado_anterior` vacío es el nacimiento,
+  no un cambio.
+- **Solo al dueño:** un usuario asociado a otro cliente no recibe nada, y
+  todos los usuarios del cliente de la operación sí reciben.
+- **Cliente sin usuarios no rompe:** es el caso de la terminal de
+  autoservicio, donde el cliente puede no tener cuenta. No se crea ningún
+  aviso y la operación sigue su curso.
+- **Un fallo al avisar no deshace la confirmación:** se tumba el servicio de
+  notificaciones a propósito y la compra queda `CONFIRMADA` igual.
+- **Sin duplicados:** registrar el mismo cambio dos veces genera un solo
+  aviso, garantizado por la restricción de unicidad en la base.
+- **Se ve y se usa:** aparece en la lista, suma al contador del menú (que no
+  filtra por tipo, así que los tipos nuevos entran solos) y se puede marcar
+  como leída.
+- **Formato de montos:** un único punto (`formatear_monto`), listo para
+  cuando se integre GEG9-82.
+
+También se corrió la suite completa: **377 passed** (eran 364), sin
+regresiones. Las decisiones de diseño están en `docs/chia-sprint5.md`,
+sección 8 — en particular por qué los destinatarios salen del cliente de la
+operación y no de quien la disparó (8.2).
+
+---
+

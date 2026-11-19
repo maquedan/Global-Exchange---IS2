@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -18,6 +19,8 @@ from apps.usuarios.services import cliente_habilitado_para
 
 from .models import CambioEstado, CompraDivisa, VentaDivisa
 
+
+logger = logging.getLogger(__name__)
 
 DOS_DECIMALES = Decimal("0.01")
 
@@ -48,13 +51,40 @@ def registrar_cambio_estado(operacion, estado_anterior, estado_nuevo, *, motivo=
     debe pasar por acá, para que el historial quede completo.
     """
     campo_operacion = "compra" if isinstance(operacion, CompraDivisa) else "venta"
-    return CambioEstado.objects.create(
+    cambio = CambioEstado.objects.create(
         estado_anterior=estado_anterior,
         estado_nuevo=estado_nuevo,
         motivo=motivo,
         usuario=usuario,
         **{campo_operacion: operacion},
     )
+    _avisar_del_cambio(cambio)
+    return cambio
+
+
+def _avisar_del_cambio(cambio):
+    """Notifica a los usuarios del cliente que la operación cambió (RF034).
+
+    El import va adentro porque `apps.notificaciones` importa los modelos de
+    esta app: a nivel de módulo sería circular (mismo motivo que `_facturar`).
+
+    El `except` amplio es deliberado y es lo que pide el ERS: un fallo al
+    avisar **nunca** debe deshacer ni bloquear el cambio de estado. El aviso
+    es un efecto secundario; la transición es el hecho.
+
+    Quien decide a quién avisar —y si corresponde avisar— es el servicio de
+    notificaciones: acá no se filtra nada, para que este punto siga siendo
+    el único enganche.
+    """
+    from apps.notificaciones.services import notificar_cambio_de_estado
+
+    try:
+        notificar_cambio_de_estado(cambio)
+    except Exception:
+        logger.exception(
+            "No se pudo notificar el cambio de estado %s; la operación sigue igual",
+            cambio.pk,
+        )
 
 
 def _facturar(operacion):
