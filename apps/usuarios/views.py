@@ -1,10 +1,13 @@
 """Vistas de autenticación y panel principal (GEG9-24, GEG9-25)."""
 from django.contrib import messages
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_http_methods, require_POST
 
+from .auth import cerrar_sesion_en_keycloak
 from .keycloak_admin import KeycloakAdmin, KeycloakAdminError
 from .menu import roles_de
 from .models import PermisoRol, PermisoSistema
@@ -31,6 +34,14 @@ def panel(request):
         "usuarios/panel.html",
         {"roles": sorted(roles_de(request.user))},
     )
+
+
+@require_POST
+def cerrar_sesion_por_inactividad(request):
+    """Cierra Django y Keycloak incluso si Django ya venció la sesión."""
+    url_keycloak = cerrar_sesion_en_keycloak(request)
+    logout(request)
+    return HttpResponseRedirect(url_keycloak)
 
 
 @login_required
