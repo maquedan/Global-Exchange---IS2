@@ -29,6 +29,11 @@ Accesos locales:
 - Keycloak: http://localhost:8080
 - Mailpit: http://localhost:8025
 
+Las sesiones de la aplicación vencen después de 15 minutos sin actividad; cada
+solicitud renueva ese plazo. Se puede ajustar en segundos con
+`DJANGO_SESSION_IDLE_TIMEOUT`. El botón **Cerrar sesión** también finaliza la
+sesión de Keycloak.
+
 La contraseña generada para el administrador inicial de Keycloak se guarda en
 `KC_ADMIN_PASSWORD` dentro de `.env`. Para crear un superusuario de Django:
 
