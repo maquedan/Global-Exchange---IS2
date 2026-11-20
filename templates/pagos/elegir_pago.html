@@ -10,34 +10,36 @@
 
   {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
 
-  <ul class="medios-pago">
-    <li class="medio-pago">
-      <div>
-        <span class="medio-pago-nombre">Tarjeta</span>
-        <span class="medio-pago-detalle">Te llevamos a la pasarela para completar el cobro
-          de forma segura. La operación se confirma al instante.</span>
-      </div>
-      <form method="post">
-        {% csrf_token %}
-        <button class="boton" type="submit">Pagar ahora</button>
-      </form>
-    </li>
-
-    {# RF025 (GEG9-75): la compra queda esperando que un administrador #}
-    {# verifique la transferencia. Por eso esta no se vence a los 15 min. #}
-    <li class="medio-pago">
-      <div>
-        <span class="medio-pago-nombre">Transferencia bancaria</span>
-        <span class="medio-pago-detalle">Hacés la transferencia por tu banco y nosotros la
-          verificamos. La operación queda reservada, sin vencimiento, hasta que un
-          administrador la concilie.</span>
-      </div>
-      <form method="post" action="{% url 'pagos:esperar_transferencia' compra.pk %}">
-        {% csrf_token %}
-        <button class="boton boton-secundario" type="submit">Voy a transferir</button>
-      </form>
-    </li>
-  </ul>
+  {% if metodos %}
+    <ul class="medios-pago">
+      {# Los metodos salen de la base (RF035): el administrador los habilita #}
+      {# o deshabilita sin que haya que tocar esta plantilla.                #}
+      {% for metodo in metodos %}
+        <li class="medio-pago">
+          <div>
+            <span class="medio-pago-nombre">{{ metodo.nombre }}</span>
+            <span class="medio-pago-detalle">{{ metodo.descripcion }}</span>
+          </div>
+          {% if metodo.flujo == "PASARELA" %}
+            <form method="post">
+              {% csrf_token %}
+              <button class="boton" type="submit">Pagar ahora</button>
+            </form>
+          {% else %}
+            <form method="post" action="{% url 'pagos:esperar_transferencia' compra.pk %}">
+              {% csrf_token %}
+              <button class="boton boton-secundario" type="submit">Voy a transferir</button>
+            </form>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p class="mensaje error">No hay ningún método de pago disponible en este
+      momento. Tu operación sigue reservada: probá más tarde o comunicate con
+      nosotros.</p>
+    <a class="boton boton-secundario" href="{% url 'conversiones:comprobante_compra' compra.pk %}">Volver a la operación</a>
+  {% endif %}
 </div>
 
 <style>

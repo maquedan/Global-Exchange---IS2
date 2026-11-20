@@ -5,6 +5,8 @@ from . import views
 app_name = "pagos"
 
 urlpatterns = [
+    path("metodos/", views.metodos, name="metodos"),
+    path("metodos/<slug:codigo>/cambiar/", views.cambiar_metodo, name="cambiar_metodo"),
     path("elegir/<int:compra_pk>/", views.elegir_pago, name="elegir_pago"),
     path(
         "elegir/<int:compra_pk>/transferencia/",
