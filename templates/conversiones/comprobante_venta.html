@@ -147,6 +147,8 @@
   {% else %}
     {% if es_cajero %}
       <a class="boton" href="{% url 'conversiones:ventas_pendientes' %}">Volver a ventas pendientes</a>
+    {% elif es_administrador %}
+      <a class="boton boton-secundario" href="{% url 'conversiones:ventas_administracion' %}">Volver a Ventas y anulaciones</a>
     {% else %}
       <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}">Realizar otra venta</a>
       <a class="boton boton-secundario" href="{% url 'conversiones:vender' %}?moneda_entregada={{ venta.moneda_entregada_id }}&moneda_acreditada={{ venta.moneda_acreditada_id }}&monto_entregado={{ venta.monto_entregado|stringformat:'.2f' }}">Repetir esta operación</a>

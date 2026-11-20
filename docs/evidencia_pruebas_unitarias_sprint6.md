@@ -644,9 +644,6 @@ Las decisiones están en `docs/chia-sprint6.md`, sección 12 — en particular
 por qué se descartó `USE_THOUSAND_SEPARATOR` (12.1) y el riesgo de leer una
 tasa de `7.120` como siete mil ciento veinte (12.3).
 
-<<<<<<< HEAD
----
-=======
 ---
 
 ## Fabrizio Cardozo — RF031, Monitoreo de Ganancias en Tiempo Real (GEG9-64)
@@ -672,11 +669,11 @@ tasa de `7.120` como siete mil ciento veinte (12.3).
   cambiario.
 
 La ejecución debe completarse en Docker antes de registrar una cantidad de
-pruebas aprobadas. RF031 no requiere migraciones porque el cálculo utiliza los
-datos ya almacenados en `CompraDivisa` y `VentaDivisa`.
->>>>>>> 228221b (feature/GEG9-64: Monitoreo de Ganancias en Tiempo Real (RF031))
+pruebas aprobadas. RF031 no requiere migraciones porque el cálculo utiliza los datos ya almacenados en `CompraDivisa` y `VentaDivisa`.
 
-## Daniela González — RF030, Reporte de Transacciones para la Administración (GEG9-66)
+---
+
+## Fabrizio Cardozo — RF030, Reporte de Transacciones para la Administración (GEG9-66)
 
 | Campo | Valor |
 |---|---|
@@ -707,3 +704,48 @@ También se ejecutó la suite de conversiones: **95 passed**, y
 `.venv/bin/python manage.py check` terminó sin errores. Las dos advertencias
 corresponden a la deprecación de `EMAIL_BACKEND` de Django y a permisos
 preexistentes de escritura de `.pytest_cache`.
+
+---
+
+## Daniela González — Corrección de comprobantes administrativos
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 03:50:48 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_conversiones.py` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v` |
+| **Resultado** | **66 passed**, 1 warning en 12.63s |
+
+```text
+$ date
+Fri Nov 20 03:50:48 -03 2026
+
+$ docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v
+==================================== test session starts ====================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 66 items                                                                          
+
+apps/conversiones/tests/test_conversiones.py ........................................ [ 60%]
+..........................                                                            [100%]
+
+===================================== warnings summary ======================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+============================== 66 passed, 1 warning in 12.63s ===============================
+```
+
+- El administrador ve «Volver a Compras y anulaciones» en un comprobante de
+  compra y no ve acciones para repetirla.
+- El administrador ve «Volver a Ventas y anulaciones» en un comprobante de
+  venta y no ve acciones para repetirla.
+- El cliente conserva el flujo de repetición y el cajero conserva su retorno 
+  a ventas pendientes.
+
+---
