@@ -1005,3 +1005,46 @@ de confirmación, porque es el momento en que la operación genera rendimiento.
 - La ejecución de las pruebas queda pendiente de validación en el contenedor
   Docker del proyecto.
 >>>>>>> 228221b (feature/GEG9-64: Monitoreo de Ganancias en Tiempo Real (RF031))
+
+## Daniela González — RF030, Reporte de Transacciones para la Administración (GEG9-66)
+
+### 14.1. «¿Cómo complementar el historial por cliente?»
+
+**Lo que aprendimos.** El historial existente está deliberadamente limitado al
+cliente activo y a operaciones confirmadas. Cambiarlo para que un administrador
+vea todos los clientes rompería ese límite de privacidad y el propósito de RF030
+original.
+
+**Decisión.** Crear una pantalla independiente de reporte global. El historial
+por cliente se conserva sin cambios; el nuevo reporte consulta compras y ventas
+por separado, las transforma a una estructura común y las ordena por fecha de
+creación.
+
+### 14.2. «¿Las operaciones de la terminal necesitan otro registro?»
+
+**Lo que aprendimos.** La terminal inicia operaciones mediante los mismos
+servicios `iniciar_compra` e `iniciar_venta`, con `desde_terminal=True`, y las
+guarda en `CompraDivisa` y `VentaDivisa`. No existe un modelo separado de
+transacciones de terminal.
+
+**Decisión.** Reutilizar esas fuentes históricas. De esta forma el reporte
+incluye también operaciones iniciadas desde autoservicio sin duplicar datos ni
+agregar una migración.
+
+### 14.3. «¿Qué filtros necesita la auditoría?»
+
+**Decisión.** Agregar filtros combinables por cliente, moneda —en cualquiera
+de los extremos de la conversión—, tipo de operación, estado y rango inclusivo
+de fechas. La fecha mostrada y filtrada es `creado_en`, para que también puedan
+auditarse operaciones pendientes, canceladas y anuladas.
+
+### 14.4. Verificaciones realizadas
+
+- Se agregó `/conversiones/reporte-transacciones/` como pantalla de consulta
+  independiente.
+- El acceso está restringido a `administrador` y `analista_cambiario`.
+- Se agregaron 6 pruebas unitarias para listado, estados, filtros, monedas,
+  permisos y coexistencia con el historial por cliente.
+- No se agregó migración: el reporte utiliza `CompraDivisa` y `VentaDivisa`.
+- `manage.py check` no reporta errores y las pruebas de `apps/conversiones/`
+  pasan.

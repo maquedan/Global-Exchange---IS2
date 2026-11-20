@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
 from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -27,6 +28,7 @@ from .forms import (
     VentaDivisaForm,
     construir_resultado,
     RecepcionEfectivoCompraForm,
+    ReporteTransaccionesForm,
 )
 
 from .models import CompraDivisa, VentaDivisa
@@ -80,6 +82,17 @@ def requiere_administrador(vista):
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if not tiene_rol(request.user, "administrador"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_administracion(vista):
+    """Permite consultar reportes a administración y al analista cambiario."""
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "administrador", "analista_cambiario"):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
@@ -751,6 +764,100 @@ def historial(request):
         request,
         "conversiones/historial.html",
         {"transacciones": transacciones},
+    )
+
+
+@login_required
+@requiere_administracion
+def reporte_transacciones(request):
+    """Reporte global de compras y ventas para auditoría (RF030 — GEG9-66).
+
+    Se mantiene separado de ``historial``, que representa únicamente al
+    cliente activo y solo muestra operaciones confirmadas.
+    """
+    formulario = ReporteTransaccionesForm(request.GET or None)
+    compras = CompraDivisa.objects.select_related(
+        "cliente", "moneda_pagada", "moneda_adquirida"
+    )
+    ventas = VentaDivisa.objects.select_related(
+        "cliente", "moneda_entregada", "moneda_acreditada"
+    )
+
+    if formulario.is_valid():
+        datos = formulario.cleaned_data
+        if datos["cliente"]:
+            compras = compras.filter(cliente=datos["cliente"])
+            ventas = ventas.filter(cliente=datos["cliente"])
+        if datos["moneda"]:
+            compras = compras.filter(
+                Q(moneda_pagada=datos["moneda"])
+                | Q(moneda_adquirida=datos["moneda"])
+            )
+            ventas = ventas.filter(
+                Q(moneda_entregada=datos["moneda"])
+                | Q(moneda_acreditada=datos["moneda"])
+            )
+        if datos["estado"]:
+            compras = compras.filter(estado=datos["estado"])
+            ventas = ventas.filter(estado=datos["estado"])
+        if datos["fecha_desde"]:
+            compras = compras.filter(creado_en__date__gte=datos["fecha_desde"])
+            ventas = ventas.filter(creado_en__date__gte=datos["fecha_desde"])
+        if datos["fecha_hasta"]:
+            compras = compras.filter(creado_en__date__lte=datos["fecha_hasta"])
+            ventas = ventas.filter(creado_en__date__lte=datos["fecha_hasta"])
+
+        tipo = datos["tipo_operacion"]
+        if tipo == "compra":
+            ventas = ventas.none()
+        elif tipo == "venta":
+            compras = compras.none()
+
+    transacciones = []
+    for compra in compras:
+        transacciones.append(
+            {
+                "id": compra.pk,
+                "tipo": "Compra",
+                "tipo_codigo": "compra",
+                "fecha": compra.creado_en,
+                "cliente": compra.cliente,
+                "origen": compra.moneda_pagada,
+                "destino": compra.moneda_adquirida,
+                "monto_origen": compra.total_a_pagar,
+                "monto_final": compra.monto_recibido,
+                "comision": compra.monto_comision,
+                "moneda_comision": compra.moneda_pagada,
+                "porcentaje_comision": compra.porcentaje_comision,
+                "tasa": compra.tasa_aplicada,
+                "estado": compra.get_estado_display(),
+            }
+        )
+    for venta in ventas:
+        transacciones.append(
+            {
+                "id": venta.pk,
+                "tipo": "Venta",
+                "tipo_codigo": "venta",
+                "fecha": venta.creado_en,
+                "cliente": venta.cliente,
+                "origen": venta.moneda_entregada,
+                "destino": venta.moneda_acreditada,
+                "monto_origen": venta.monto_entregado,
+                "monto_final": venta.monto_acreditado,
+                "comision": venta.monto_comision,
+                "moneda_comision": venta.moneda_acreditada,
+                "porcentaje_comision": venta.porcentaje_comision,
+                "tasa": venta.tasa_aplicada,
+                "estado": venta.get_estado_display(),
+            }
+        )
+
+    transacciones.sort(key=lambda transaccion: transaccion["fecha"], reverse=True)
+    return render(
+        request,
+        "conversiones/reporte_transacciones.html",
+        {"formulario": formulario, "transacciones": transacciones},
     )
 
 @login_required

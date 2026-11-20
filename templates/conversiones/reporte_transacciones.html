@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% load formato_extras %}
+
+{% block titulo %}Reporte de transacciones | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Reporte de transacciones</h1>
+  <p>Consultá todas las compras y ventas para auditar la operación, incluidas las iniciadas desde la terminal de autoservicio.</p>
+
+  <form method="get" class="grid gap-4 md:grid-cols-3 mb-6">
+    {% for campo in formulario %}
+      <div>
+        {{ campo.label_tag }}
+        {{ campo }}
+        {% for error in campo.errors %}<p class="error">{{ error }}</p>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="md:col-span-3">
+      <button type="submit">Aplicar filtros</button>
+      <a href="{% url 'conversiones:reporte_transacciones' %}">Limpiar</a>
+    </div>
+  </form>
+
+  {% if transacciones %}
+    <div style="overflow-x:auto;">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Tipo</th>
+            <th>Cliente</th>
+            <th>Monto</th>
+            <th>Tasa aplicada</th>
+            <th>Comisión</th>
+            <th>Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for transaccion in transacciones %}
+            <tr>
+              <td>{{ transaccion.fecha|date:"d/m/Y H:i" }}</td>
+              <td><span class="etiqueta">{{ transaccion.tipo }}</span></td>
+              <td>{{ transaccion.cliente }}</td>
+              <td>
+                {{ transaccion.monto_origen|monto:transaccion.origen }} {{ transaccion.origen.codigo }}
+                → {{ transaccion.monto_final|monto:transaccion.destino }} {{ transaccion.destino.codigo }}
+              </td>
+              <td class="num">{{ transaccion.tasa|tasa }}</td>
+              <td class="num">
+                {{ transaccion.comision|monto:transaccion.moneda_comision }} {{ transaccion.moneda_comision.codigo }}
+                ({{ transaccion.porcentaje_comision|numero:2 }}%)
+              </td>
+              <td>{{ transaccion.estado }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay transacciones que coincidan con los filtros.</p>
+  {% endif %}
+</div>
+{% endblock %}

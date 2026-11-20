@@ -675,3 +675,35 @@ La ejecución debe completarse en Docker antes de registrar una cantidad de
 pruebas aprobadas. RF031 no requiere migraciones porque el cálculo utiliza los
 datos ya almacenados en `CompraDivisa` y `VentaDivisa`.
 >>>>>>> 228221b (feature/GEG9-64: Monitoreo de Ganancias en Tiempo Real (RF031))
+
+## Daniela González — RF030, Reporte de Transacciones para la Administración (GEG9-66)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 02:14:13 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_reporte_transacciones.py` |
+| **Comando** | `.venv/bin/pytest apps/conversiones/tests/test_reporte_transacciones.py -q` |
+| **Resultado** | **6 passed** |
+
+```text
+$ .venv/bin/pytest apps/conversiones/tests/test_reporte_transacciones.py -q
+......                                                                   [100%]
+6 passed, 2 warnings
+```
+
+Casos cubiertos:
+
+- El reporte lista compras y ventas, incluyendo estados pendientes y pagados.
+- Los filtros combinan cliente, moneda, tipo, estado y rango inclusivo de
+  fechas.
+- La moneda se encuentra tanto en el origen como en el destino de la
+  conversión.
+- `administrador` y `analista_cambiario` pueden consultar; cliente y cajero
+  reciben 403.
+- El endpoint del reporte es independiente del historial restringido al
+  cliente.
+
+También se ejecutó la suite de conversiones: **95 passed**, y
+`.venv/bin/python manage.py check` terminó sin errores. Las dos advertencias
+corresponden a la deprecación de `EMAIL_BACKEND` de Django y a permisos
+preexistentes de escritura de `.pytest_cache`.

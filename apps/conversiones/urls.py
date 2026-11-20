@@ -42,6 +42,11 @@ urlpatterns = [
     path("ventas/<int:pk>/cancelar/", views.cancelar_venta_view, name="cancelar_venta"),
     path("ventas/<int:pk>/anular/", views.anular_venta_view, name="anular_venta"),
     path("historial/", views.historial, name="historial"),
+    path(
+        "reporte-transacciones/",
+        views.reporte_transacciones,
+        name="reporte_transacciones",
+    ),
     path("conciliaciones/", views.conciliaciones, name="conciliaciones"),
     path("conciliaciones/<int:pk>/", views.conciliar, name="conciliar"),
 ]
