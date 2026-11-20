@@ -1025,3 +1025,20 @@ integración adicional confirma que anular una compra cobrada en efectivo crea
 su movimiento inverso y restablece el saldo e inventario del cajero.
 
 ---
+
+## 15. Daniela González — RF054/RF055, Corrección de terminal
+
+**Contexto.** La pantalla inicial de la Terminal de Autoservicio mostraba la
+opción «Ver cotizaciones», pero era un botón sin navegación.
+
+**Decisión.** Reutilizar el panel existente de RF016 mediante la ruta
+`tasas:panel`, en lugar de duplicar vistas, consultas o plantillas de tasas.
+El panel ya exige autenticación y permite su consulta a cualquier rol
+autenticado, incluido `terminal`; no expone acciones administrativas.
+
+**Verificación.** Se agregó una prueba que confirma que el enlace está presente
+en la pantalla de inicio y que un usuario con rol `terminal` puede abrir el
+panel de cotizaciones. Las pruebas de Terminal y Tasas aprobaron sin
+regresiones.
+
+---
