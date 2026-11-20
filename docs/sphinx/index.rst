@@ -17,6 +17,7 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    :maxdepth: 2
    :caption: Módulos del proyecto
 
+   comun
    usuarios
    clientes
    cuentas

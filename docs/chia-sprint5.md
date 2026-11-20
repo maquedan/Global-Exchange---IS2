@@ -1588,3 +1588,134 @@ exigir editar el HTML, que es justo lo que esta historia vino a sacar.
   y Sphinx genera sin warnings.
 
 ---
+
+## 10. Leyda Fleitas — GEG9-82, Formato de Números y Montos
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+Pedido transversal de la cátedra, no del ERS: separador de miles y columnas
+numéricas alineadas a la derecha.
+
+### 10.1. «La opción más obvia de Django no sirve, y se comprobó»
+
+**Lo que aprendimos.** Lo primero que se evaluó fue activar
+`USE_THOUSAND_SEPARATOR = True`, que parecía resolver todo con una línea. Se
+probó antes de decidir:
+
+```
+HOY                    : 1250000,5
+CON THOUSAND_SEPARATOR : 1 250 000,5      ← espacio fino, no punto
+```
+
+El locale `es` de Django es el de España y agrupa con **espacio**. La cátedra
+pidió `1.250.000`. Activarlo habría cambiado el formato de **todas** las
+pantallas de golpe, y al que no corresponde.
+
+Cambiar a `es_PY` habría arrastrado también el formato de fechas en todo el
+sistema.
+
+**Decisión: filtro propio.** Formato exacto, aplicado donde se quiere, sin
+efectos a distancia.
+
+De paso se comprobó algo que tranquilizó el resto del trabajo: Django **no
+localiza los `NumberInput`**, así que esa opción nunca habría roto los
+formularios. Era un riesgo que valía la pena descartar con una prueba y no
+con una suposición.
+
+### 10.2. «Los formularios: donde el criterio chocaba con el HTML»
+
+**Lo que aprendimos.** El criterio pedía que los formularios acepten el valor
+escrito con separadores. Los campos de monto eran `<input type="number">`, y
+ese tipo de campo **solo admite un número con punto decimal**: escribir
+`10.000` hace que el navegador lo rechace o vacíe el campo antes de que llegue
+al servidor.
+
+**Decisión de la integrante:** pasar a campo de texto con un parser propio
+(`MontoField`). Cumple el criterio al pie de la letra.
+
+El contrapeso, que quedó anotado en el código: se pierde el teclado numérico
+del celular y la validación del navegador. La validación de Django sigue
+intacta —`MontoField` hereda de `DecimalField`, así que mínimos, máximos y
+dígitos siguen valiendo— y **el valor guardado no cambia**.
+
+**Las comisiones se dejaron como estaban**: son porcentajes de 0 a 100, nunca
+llevan separador de miles, y el `max="100"` del navegador es útil. Cambiarlas
+habría sido perder algo sin ganar nada.
+
+### 10.3. «Un riesgo que apareció a mitad de camino: `7.120` como tasa»
+
+**Lo que aprendimos**, y casi se cuela sin que nadie lo note. La regla para
+desambiguar `10.000` —punto con exactamente tres dígitos detrás es separador
+de miles— es correcta para importes. **Para tasas es peligrosa:** una
+cotización de `7.120` significa siete coma doce, no siete mil ciento veinte,
+porque las tasas llevan hasta seis decimales.
+
+Con la regla aplicada a todo, alguien cargando una tasa de `1.234` habría
+guardado mil doscientos treinta y cuatro.
+
+**Decisión.** Un `TasaField` que desactiva esa regla: en una tasa, un punto
+suelto siempre es decimal, y para los miles hay que usar la coma
+(`7.120,00`). Quedó escrito en el docstring, porque es exactamente el tipo de
+diferencia que alguien "unificaría" de buena fe.
+
+### 10.4. «Dónde viven los decimales de cada moneda»
+
+**Lo que aprendimos.** `Moneda` guardaba código, nombre, símbolo y poco más.
+Que el guaraní no lleve decimales estaba **implícito y repartido**:
+`to_integral_value()` en facturación, `quantize(Decimal("0.01"))` en pagos, y
+`floatformat` sueltos con criterios distintos en seis plantillas.
+
+**Decisión de la integrante:** un campo `decimales` en `Moneda`, con
+migración de datos. Es una propiedad de la moneda y ahí corresponde; cuando
+el administrador cargue una moneda nueva, lo define en la misma pantalla.
+
+Se puso **JPY en 0** además del guaraní: el yen tampoco usa decimales.
+
+### 10.5. «Las descargas no tienen ninguna librería»
+
+**Lo que aprendimos** al llegar al criterio de alinear en Excel y PDF: no hay
+`openpyxl` ni `reportlab`. El "Excel" es **SpreadsheetML escrito a mano**, con
+todas las celdas como `ss:Type="String"` —Excel las mostraba pegadas a la
+izquierda y no se podían sumar— y el PDF se arma **byte a byte**, uniendo los
+campos con `" | "`.
+
+**Decisión.** No agregar librerías a esta altura de la entrega:
+
+- **Excel:** los importes pasan a `ss:Type="Number"` con un estilo
+  `ss:Horizontal="Right"` y formato `#.##0,00`. Ahora además **se pueden
+  sumar**, que era un problema que nadie había notado.
+- **PDF:** las columnas se rellenan con espacios hasta el ancho máximo, y las
+  numéricas se alinean a la derecha. Funciona porque el PDF usa una sola
+  tipografía; con una proporcional los espacios no alcanzarían.
+
+### 10.6. «Cifras tabulares, no solo `text-align: right`»
+
+Alinear a la derecha no alcanza: en la mayoría de las tipografías los dígitos
+tienen anchos distintos, así que las comas de una columna quedan desparejas
+aunque el borde derecho esté alineado. La clase `.num` agrega
+`font-variant-numeric: tabular-nums`, que hace que todos los dígitos ocupen
+lo mismo.
+
+Vive en `templates/base.html` y no en cada pantalla, porque Tailwind no se
+puede recompilar en este entorno (Node 18 contra el 20 que pide).
+
+## 10.7. Verificaciones realizadas
+
+- **42 pruebas nuevas.** Suite completa: **442 aprobadas** (eran 400), sin
+  regresiones.
+- Casos cubiertos: enteros, decimales, **cero, negativos y números grandes**;
+  cada moneda con sus decimales (PYG y JPY sin, USD y EUR con dos); que la
+  tasa conserve la precisión; que **no se use float** —`Decimal("1.005")`
+  redondea a `1,01`, que en float daría `1,00`—; que el formulario acepte las
+  dos formas de escribir y que **el valor guardado no cambie**; que siga
+  validando el mínimo; que las columnas numéricas lleven la clase de
+  alineación; que el Excel lleve los importes como número alineados a la
+  derecha; que el PDF los alinee rellenando con espacios; y que el gráfico
+  use el mismo formato.
+- Dos pruebas existentes de tasas se adaptaron: verificaban el atributo
+  `step` del `NumberInput`, que ya no existe. Ahora verifican lo que importa,
+  que es que siga aceptando seis decimales.
+- `manage.py check` sin errores, migraciones `monedas.0002` y `0003`
+  aplicadas y Sphinx genera sin warnings.
+
+---

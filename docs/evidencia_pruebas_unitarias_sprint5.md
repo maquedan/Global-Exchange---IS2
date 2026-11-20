@@ -809,3 +809,70 @@ particular por qué la comprobación va solo al iniciar el pago (9.3).
 
 ---
 
+## Leyda Fleitas — GEG9-82, Formato de Números y Montos
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 21:38:52 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/comun/tests/test_formato.py` |
+| **Comando** | `docker compose exec web pytest apps/comun/ -v` |
+| **Resultado** | **42 passed** en 2.44s |
+
+```text
+$ date
+Thu Nov 19 21:38:52 -03 2026
+
+$ docker compose exec web pytest apps/comun/ -v
+apps/comun/tests/test_formato.py ..........................................  [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 42 passed, 1 warning in 2.44s =========================
+```
+
+### El antes y el después
+
+| Dónde | Antes | Después |
+|---|---|---|
+| Historial de transacciones | `712000.0` | **`712.000`** |
+| Tasa aplicada | `7120.00` | **`7.120,00`** |
+| Factura en guaraníes | `72980000` | **`72.980.000`** |
+| Importe en dólares | `102.5` | **`102,50`** |
+| Columnas de montos | a la izquierda | **a la derecha**, con cifras tabulares |
+| Excel | todo texto, no se sumaba | **números alineados a la derecha** |
+
+### Lo que cubren las pruebas
+
+- **El formato:** enteros, decimales, **cero, negativos y números grandes**
+  (hasta `999.999.999.999,99`), y el redondeo hacia arriba en el medio exacto.
+- **Que no use float:** `Decimal("1.005")` redondea a `1,01`. En float daría
+  `1,00`, porque 1.005 en binario es en realidad 1.00499999999999989…
+- **Cada moneda con sus decimales:** PYG y JPY sin decimales, USD y EUR con
+  dos. Sale del campo `decimales` de cada moneda, no de una lista en el
+  código.
+- **Las tasas conservan su precisión:** `0,000125` no se redondea a `0,00`.
+- **Los formularios aceptan las dos formas** de escribir (`10.000` y `10000`,
+  `1.234,56` y `1234.56`) y **el valor guardado no cambia**: sigue siendo el
+  mismo `Decimal`. Se verifica además que siga validando el mínimo.
+- **La alineación llega a las pantallas:** la clase está definida una sola vez
+  y los encabezados numéricos del historial la llevan.
+- **Las descargas:** el Excel lleva los importes como `ss:Type="Number"` con
+  alineación derecha —antes iban como texto y ni se podían sumar— y el PDF
+  rellena las columnas con espacios para alinearlas.
+- **El gráfico de tasas** usa `Intl.NumberFormat("es-PY")`, el mismo formato
+  sin reimplementarlo.
+
+También se corrió la suite completa: **442 passed** (eran 400), sin
+regresiones. Dos pruebas existentes de tasas se adaptaron porque verificaban
+el atributo `step` del widget anterior.
+
+Las decisiones están en `docs/chia-sprint5.md`, sección 10 — en particular
+por qué se descartó `USE_THOUSAND_SEPARATOR` (10.1) y el riesgo de leer una
+tasa de `7.120` como siete mil ciento veinte (10.3).
+
+---
+

@@ -168,8 +168,29 @@ def descargar_xml(request, pk):
 
 
 def _filas_exportacion(facturas):
-    return [[f.numero_completo, f.generada_en or f.creada_en, f.operacion.cliente,
-             f.monto, f.moneda, f.estado_fiscal or "Sin consultar"] for f in facturas]
+    """Las filas del historial exportado.
+
+    El monto va como `Decimal` y no formateado: cada formato lo presenta a
+    su manera —Excel necesita el número crudo para poder sumarlo, el PDF lo
+    necesita formateado— y mezclar las dos cosas acá obligaría a deshacer el
+    formato después (GEG9-82).
+    """
+    return [
+        [
+            f.numero_completo,
+            f.generada_en or f.creada_en,
+            f.operacion.cliente,
+            f.monto,
+            f.moneda,
+            f.estado_fiscal or "Sin consultar",
+        ]
+        for f in facturas
+    ]
+
+
+# Qué columnas de la exportación son numéricas: se alinean a la derecha y,
+# en Excel, van como número para que se puedan sumar.
+COLUMNAS_NUMERICAS = {3}
 
 
 @login_required
@@ -180,19 +201,109 @@ def exportar_historial(request, formato):
     filas = _filas_exportacion(facturas)
     encabezados = ["Factura", "Fecha", "Cliente", "Monto", "Moneda", "Estado fiscal"]
     if formato == "excel":
-        import html
-        filas_html = "".join("<Row>" + "".join(f"<Cell><Data ss:Type=\"String\">{html.escape(str(v))}</Data></Cell>" for v in fila) + "</Row>" for fila in filas)
-        cuerpo = "<?xml version=\"1.0\"?><Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\" xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\"><Worksheet ss:Name=\"Facturación\"><Table><Row>" + "".join(f"<Cell><Data ss:Type=\"String\">{h}</Data></Cell>" for h in encabezados) + "</Row>" + filas_html + "</Table></Worksheet></Workbook>"
+        cuerpo = _planilla_excel(encabezados, filas)
         respuesta = HttpResponse(cuerpo, content_type="application/vnd.ms-excel")
         respuesta["Content-Disposition"] = 'attachment; filename="historial-facturacion.xls"'
         return respuesta
     if formato == "pdf":
-        texto = "Historial de facturación\n" + "\n".join(" | ".join(str(v) for v in fila) for fila in filas)
+        texto = _texto_pdf(encabezados, filas)
         contenido = _pdf_texto(texto)
         respuesta = HttpResponse(contenido, content_type="application/pdf")
         respuesta["Content-Disposition"] = 'attachment; filename="historial-facturacion.pdf"'
         return respuesta
     return HttpResponse("Formato no soportado.", status=404)
+
+
+def _celda_excel(indice, valor):
+    """Una celda de la planilla, numérica si la columna lo es (GEG9-82).
+
+    Las numéricas van como `ss:Type="Number"` con el estilo `moneda`, que
+    las alinea a la derecha y les pone separador de miles. Antes todas las
+    celdas iban como texto: Excel las mostraba pegadas a la izquierda y no
+    se podían sumar.
+    """
+    import html
+
+    if indice in COLUMNAS_NUMERICAS and valor is not None:
+        return (
+            f'<Cell ss:StyleID="moneda"><Data ss:Type="Number">{valor}</Data></Cell>'
+        )
+    return f'<Cell><Data ss:Type="String">{html.escape(str(valor))}</Data></Cell>'
+
+
+def _planilla_excel(encabezados, filas):
+    """Arma la planilla en SpreadsheetML, que es lo que entiende Excel."""
+    estilos = (
+        "<Styles>"
+        '<Style ss:ID="encabezado">'
+        '<Font ss:Bold="1"/><Alignment ss:Horizontal="Center"/>'
+        "</Style>"
+        '<Style ss:ID="moneda">'
+        '<NumberFormat ss:Format="#.##0,00"/>'
+        '<Alignment ss:Horizontal="Right"/>'
+        "</Style>"
+        "</Styles>"
+    )
+    fila_encabezados = "<Row>" + "".join(
+        f'<Cell ss:StyleID="encabezado"><Data ss:Type="String">{h}</Data></Cell>'
+        for h in encabezados
+    ) + "</Row>"
+    cuerpo_filas = "".join(
+        "<Row>"
+        + "".join(_celda_excel(i, valor) for i, valor in enumerate(fila))
+        + "</Row>"
+        for fila in filas
+    )
+    return (
+        '<?xml version="1.0"?>'
+        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" '
+        'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">'
+        f"{estilos}"
+        '<Worksheet ss:Name="Facturación"><Table>'
+        f"{fila_encabezados}{cuerpo_filas}"
+        "</Table></Worksheet></Workbook>"
+    )
+
+
+def _texto_pdf(encabezados, filas):
+    """Arma el historial como columnas de ancho fijo (GEG9-82).
+
+    El PDF se genera a mano, sin librería ni motor de tablas, así que
+    "alinear a la derecha" es rellenar con espacios hasta el ancho de la
+    columna. Funciona porque el PDF usa una sola tipografía: si fuera
+    proporcional, los espacios no alcanzarían para alinear.
+    """
+    from apps.comun.formato import formatear_monto
+
+    def texto_celda(indice, valor, fila):
+        if indice in COLUMNAS_NUMERICAS:
+            # La moneda de la fila está en la columna siguiente.
+            return formatear_monto(valor, fila[indice + 1])
+        return str(valor)
+
+    cuadricula = [list(encabezados)]
+    for fila in filas:
+        cuadricula.append(
+            [texto_celda(i, valor, fila) for i, valor in enumerate(fila)]
+        )
+
+    anchos = [
+        max(len(f[columna]) for f in cuadricula)
+        for columna in range(len(encabezados))
+    ]
+
+    lineas = []
+    for numero_fila, fila in enumerate(cuadricula):
+        celdas = [
+            # Las numéricas a la derecha, el resto a la izquierda.
+            valor.rjust(anchos[i]) if i in COLUMNAS_NUMERICAS else valor.ljust(anchos[i])
+            for i, valor in enumerate(fila)
+        ]
+        lineas.append(" | ".join(celdas))
+        if numero_fila == 0:
+            lineas.append("-" * len(lineas[0]))
+
+    return "Historial de facturación\n\n" + "\n".join(lineas)
 
 
 def _pdf_texto(texto):

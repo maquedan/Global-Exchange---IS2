@@ -32,6 +32,8 @@ INSTALLED_APPS = [
     "apps.notificaciones",
     "apps.cajas",
     "apps.pagos",
+    # Utilidades compartidas: formato de numeros y montos (GEG9-82).
+    "apps.comun",
     "apps.facturacion",
     "apps.terminal",
 ]

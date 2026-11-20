@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formato_extras %}
 
 {% block titulo %}Comisiones | Global Exchange{% endblock %}
 
@@ -35,7 +36,7 @@
             <td>{{ comision.get_categoria_display }}</td>
             <td>
               <span class="etiqueta">
-                {{ comision.porcentaje|floatformat:2 }} %
+                {{ comision.porcentaje|numero:2 }} %
               </span>
             </td>
             <td>{{ comision.actualizado_en|date:"d/m/Y H:i" }}</td>
