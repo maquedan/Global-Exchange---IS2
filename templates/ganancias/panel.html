@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+
+{% block titulo %}Monitoreo de ganancias | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="space-y-6" data-ganancias-url="{% url 'ganancias:datos' %}">
+  <div>
+    <p class="text-sm font-bold uppercase tracking-[0.18em] text-cyan-700">RF031</p>
+    <h1 class="mt-1 text-3xl font-black text-slate-900">Monitoreo de ganancias</h1>
+    <p class="mt-2 text-slate-600">Solo se consideran operaciones confirmadas. Los importes se muestran en la moneda de resultado.</p>
+  </div>
+
+  <form method="get" class="tarjeta flex flex-wrap items-end gap-4">
+    <label>Desde<input type="date" name="fecha_desde" value="{{ fecha_desde }}"></label>
+    <label>Hasta<input type="date" name="fecha_hasta" value="{{ fecha_hasta }}"></label>
+    <button class="boton" type="submit">Aplicar filtros</button>
+    <a href="{% url 'ganancias:panel' %}">Limpiar</a>
+  </form>
+
+  <section class="grid gap-4 md:grid-cols-4" aria-label="Resumen de ganancias">
+    <div class="tarjeta"><p class="text-sm text-slate-500">Ganancia global</p><p id="ganancia-total" class="mt-2 text-3xl font-black">{{ resumen.total.total|floatformat:2 }}</p><p class="text-xs text-slate-500">Suma de monedas del período</p></div>
+    <div class="tarjeta"><p class="text-sm text-slate-500">Comisiones</p><p id="ganancia-comision" class="mt-2 text-2xl font-bold">{{ resumen.total.comision|floatformat:2 }}</p></div>
+    <div class="tarjeta"><p class="text-sm text-slate-500">Diferencia de tasa</p><p id="ganancia-tasa" class="mt-2 text-2xl font-bold">{{ resumen.total.diferencia_tasa|floatformat:2 }}</p></div>
+    <div class="tarjeta"><p class="text-sm text-slate-500">Operaciones confirmadas</p><p id="ganancia-operaciones" class="mt-2 text-2xl font-bold">{{ resumen.operaciones }}</p></div>
+  </section>
+
+  <div class="tarjeta">
+    <h2 class="text-xl font-bold">Desglose por moneda</h2>
+    <div class="mt-4 overflow-x-auto">
+      <table class="datos w-full" id="desglose-ganancias">
+        <thead><tr><th>Moneda</th><th class="num">Comisiones</th><th class="num">Diferencia de tasa</th><th class="num">Total</th></tr></thead>
+        <tbody>
+          {% for item in resumen.desglose %}<tr><td>{{ item.moneda }}</td><td class="num">{{ item.comision|floatformat:2 }}</td><td class="num">{{ item.diferencia_tasa|floatformat:2 }}</td><td class="num font-bold">{{ item.total|floatformat:2 }}</td></tr>{% empty %}<tr><td colspan="4">No hay operaciones confirmadas en el período seleccionado.</td></tr>{% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="mt-4 text-xs text-slate-500">La información se actualiza automáticamente cada 15 segundos.</p>
+  </div>
+</div>
+<script>
+(() => {
+  const root = document.querySelector("[data-ganancias-url]");
+  const url = root.dataset.gananciasUrl + window.location.search;
+  const money = value => Number(value).toLocaleString("es-PY", {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  const refresh = async () => {
+    try {
+      const response = await fetch(url, {headers: {"Accept": "application/json"}});
+      if (!response.ok) return;
+      const data = await response.json();
+      document.querySelector("#ganancia-total").textContent = money(data.total.total);
+      document.querySelector("#ganancia-comision").textContent = money(data.total.comision);
+      document.querySelector("#ganancia-tasa").textContent = money(data.total.diferencia_tasa);
+      document.querySelector("#ganancia-operaciones").textContent = data.operaciones;
+      document.querySelector("#desglose-ganancias tbody").innerHTML = data.desglose.length
+        ? data.desglose.map(item => `<tr><td>${item.moneda}</td><td class="num">${money(item.comision)}</td><td class="num">${money(item.diferencia_tasa)}</td><td class="num font-bold">${money(item.total)}</td></tr>`).join("")
+        : '<tr><td colspan="4">No hay operaciones confirmadas en el período seleccionado.</td></tr>';
+    } catch (_) { /* La próxima actualización reintentará sin interrumpir el dashboard. */ }
+  };
+  window.setInterval(refresh, 15000);
+})();
+</script>
+{% endblock %}

@@ -28,6 +28,11 @@ MENU_PRINCIPAL = [
         "roles": ["administrador", "analista_cambiario"],
     },
     {
+        "texto": "Ganancias",
+        "url": "ganancias:panel",
+        "roles": ["administrador", "analista_cambiario"],
+    },
+    {
         "texto": "Roles y permisos",
         "url": "usuarios:roles_permisos",
         "roles": ["administrador"],
