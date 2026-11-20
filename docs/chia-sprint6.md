@@ -959,4 +959,49 @@ puede recompilar en este entorno (Node 18 contra el 20 que pide).
 - `manage.py check` sin errores, migraciones `monedas.0002` y `0003`
   aplicadas y Sphinx genera sin warnings.
 
+<<<<<<< HEAD
 ---
+=======
+---
+
+## 13. Fabrizio Cardozo — RF031, Monitoreo de Ganancias en Tiempo Real (GEG9-64)
+
+### 13.1. «¿Cómo calcular la ganancia de las operaciones?»
+
+**Lo que aprendimos.** Las compras y ventas ya conservan la comisión, la tasa
+aplicada, la tasa de compra y la tasa de venta utilizadas en la operación. No
+hace falta persistir un nuevo valor de ganancia ni crear una migración; el
+resumen puede calcularse con los datos históricos de cada operación.
+
+**Decisión.** Calcular la ganancia como la suma de la comisión cobrada y la
+diferencia entre la tasa de venta y la tasa de compra, aplicada al monto base.
+La comisión de una compra se convierte a la moneda recibida para que el
+desglose sea consistente. El resultado se agrupa por moneda y también se
+muestra como total global.
+
+### 13.2. «¿Qué operaciones deben incluirse?»
+
+**Decisión.** Consultar exclusivamente operaciones con estado `CONFIRMADA` y
+con `confirmado_en` registrado. Las operaciones `PENDIENTE`, `CANCELADA` y
+`ANULADA` quedan fuera del cálculo. El rango de fechas se aplica sobre la fecha
+de confirmación, porque es el momento en que la operación genera rendimiento.
+
+### 13.3. «¿Cómo se actualiza el dashboard?»
+
+- Se agregó la pantalla `/ganancias/` y el endpoint `/ganancias/datos/`.
+- El dashboard permite filtrar por fecha desde/hasta y muestra totales,
+  comisiones, diferencia de tasa, cantidad de operaciones y desglose por
+  moneda.
+- La pantalla consulta nuevamente el endpoint cada 15 segundos, por lo que
+  refleja nuevas operaciones confirmadas sin almacenar un resumen obsoleto.
+- El acceso está restringido a los roles `administrador` y
+  `analista_cambiario`; ambos roles ven la opción «Ganancias» en el menú.
+
+### 13.4. Verificaciones y alcance
+
+- Se agregaron pruebas para la suma de comisión y diferencia de tasa, exclusión
+  de operaciones canceladas, filtro por fecha y permisos de acceso.
+- RF031 no agrega modelos ni migraciones.
+- La ejecución de las pruebas queda pendiente de validación en el contenedor
+  Docker del proyecto.
+>>>>>>> 228221b (feature/GEG9-64: Monitoreo de Ganancias en Tiempo Real (RF031))

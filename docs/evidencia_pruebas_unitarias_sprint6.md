@@ -644,4 +644,34 @@ Las decisiones están en `docs/chia-sprint6.md`, sección 12 — en particular
 por qué se descartó `USE_THOUSAND_SEPARATOR` (12.1) y el riesgo de leer una
 tasa de `7.120` como siete mil ciento veinte (12.3).
 
+<<<<<<< HEAD
 ---
+=======
+---
+
+## Fabrizio Cardozo — RF031, Monitoreo de Ganancias en Tiempo Real (GEG9-64)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | Pendiente de ejecución en el entorno Docker |
+| **Ambiente** | Docker Compose, servicio `web` |
+| **Artefactos probados** | `apps/ganancias/tests/test_ganancias.py`, `apps/usuarios/tests/test_menu.py` |
+| **Comando** | `docker compose exec -T web python -m pytest -v apps/ganancias/tests/test_ganancias.py apps/usuarios/tests/test_menu.py` |
+| **Resultado** | Pendiente de ejecución |
+
+### Casos cubiertos
+
+- La ganancia suma la comisión y la diferencia entre la tasa de venta y la
+  tasa de compra.
+- Las operaciones canceladas no se incluyen en el resumen; el filtro utiliza
+  únicamente operaciones confirmadas.
+- El dashboard filtra por fecha de confirmación.
+- Un usuario sin rol no puede acceder al dashboard.
+- El rol `analista_cambiario` puede consultar el dashboard.
+- La opción «Ganancias» aparece en el menú para administrador y analista
+  cambiario.
+
+La ejecución debe completarse en Docker antes de registrar una cantidad de
+pruebas aprobadas. RF031 no requiere migraciones porque el cálculo utiliza los
+datos ya almacenados en `CompraDivisa` y `VentaDivisa`.
+>>>>>>> 228221b (feature/GEG9-64: Monitoreo de Ganancias en Tiempo Real (RF031))
