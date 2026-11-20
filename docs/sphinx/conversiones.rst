@@ -7,6 +7,8 @@ cotización antes de confirmar el pago (RF051), consulta de historial de
 transacciones en modo solo lectura (RF030), trazabilidad de cada cambio de
 estado por el que pasa una operación (RF023) y conciliación manual de
 transferencias bancarias por parte del administrador (RF025).
+También incluye el reporte administrativo exportable de transacciones y sus
+filtros (RF032 — GEG9-65).
 
 Modelos
 -------
@@ -57,3 +59,16 @@ Vistas
 
 .. automodule:: apps.conversiones.views
    :members:
+
+Reporte y exportación administrativa
+------------------------------------
+
+``/conversiones/reporte-transacciones/`` permite consultar compras y ventas
+de todos los clientes autorizados para administración, incluidas operaciones
+pendientes, pagadas, canceladas y anuladas. Sus filtros combinables abarcan
+cliente, moneda en cualquiera de los extremos, tipo, estado y rango de fecha.
+
+Las rutas ``/conversiones/reporte-transacciones/exportar/pdf/`` y
+``/conversiones/reporte-transacciones/exportar/excel/`` reutilizan esos mismos
+filtros y devuelven PDF o XLSX con totales y fecha de generación. Solo
+``administrador`` y ``analista_cambiario`` pueden acceder.

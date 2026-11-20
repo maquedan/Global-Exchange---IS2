@@ -1031,3 +1031,35 @@ La ejecución final confirma la corrección de QA-ROL-01 (GEG9-83): el analista 
 También incorpora la verificación del Tablero administrativo de GEG9-67: solamente el administrador puede abrirlo; los demás roles reciben `403` por URL directa.
 
 ---
+
+## Fabrizio Cardozo — RF032, Exportación de Reportes (GEG9-65)
+
+| Campo | Valor |
+|---|---|
+| **Fecha** | 20 de noviembre de 2026 |
+| **Artefactos probados** | `apps/conversiones/tests/test_reporte_transacciones.py`, `apps/ganancias/tests/test_ganancias.py` |
+| **Comando** | `.venv/bin/pytest -q apps/conversiones/tests/test_reporte_transacciones.py apps/ganancias/tests/test_ganancias.py` |
+| **Resultado** | **15 passed** |
+
+```text
+$ .venv/bin/pytest -q apps/conversiones/tests/test_reporte_transacciones.py apps/ganancias/tests/test_ganancias.py
+...............                                                          [100%]
+15 passed
+```
+
+Casos cubiertos:
+
+- Exportación de transacciones y ganancias en PDF y XLSX.
+- MIME y extensión correctos para cada formato.
+- Respeto de filtros aplicados: fechas, moneda, estado, cliente y tipo de
+  operación.
+- Inclusión de totales y fecha de generación.
+- Validación de la estructura interna del archivo `.xlsx`.
+- Acceso permitido a `administrador` y `analista_cambiario`.
+- Rechazo con `403` para usuarios sin rol.
+
+También se ejecutó `.venv/bin/python manage.py check`, sin errores. Las
+advertencias corresponden a la deprecación de `EMAIL_BACKEND` y a permisos
+preexistentes de escritura de `.pytest_cache`.
+
+---
