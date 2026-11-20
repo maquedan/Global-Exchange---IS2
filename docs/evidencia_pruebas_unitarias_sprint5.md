@@ -517,3 +517,44 @@ La integración con RF024 verifica además que, al anular una compra cobrada en
 efectivo, se registra un movimiento de retiro inverso con el mismo desglose de billetes. El saldo y el inventario del cajero vuelven a su estado anterior, sin dejar efectivo registrado en una operación anulada.
 
 ---
+
+## Daniela González — RF054/RF055, Corrección de terminal
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 00:14:06 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/terminal/tests/test_terminal.py`, `apps/tasas/tests/test_tasas.py` |
+| **Comando** | `docker compose exec web pytest apps/terminal/tests/test_terminal.py apps/tasas/tests/test_tasas.py -v` |
+| **Resultado** | **36 passed**, 1 warning en 24.81s |
+
+```text
+$ date
+Fri Nov 20 00:14:06 -03 2026
+
+$ docker compose exec web pytest apps/terminal/tests/test_terminal.py apps/tasas/tests/test_tasas.py -v
+======================================= test session starts ========================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 36 items
+
+apps/terminal/tests/test_terminal.py ................                                        [ 44%]
+apps/tasas/tests/test_tasas.py ....................                                          [100%]
+
+========================================= warnings summary =========================================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================== 36 passed, 1 warning in 24.81s ==================================
+
+```
+
+- La pantalla inicial de Terminal contiene un enlace funcional a `tasas:panel`.
+- Un usuario con rol `terminal` puede consultar las cotizaciones.
+- Las pruebas existentes de la Terminal y de visualización de tasas siguen aprobando.
+
+---
