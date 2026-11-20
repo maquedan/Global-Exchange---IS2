@@ -5,9 +5,11 @@ from apps.comun.campos import MontoField
 from django import forms
 
 from apps.cajas.models import DenominacionBillete
+from apps.clientes.models import Cliente
 from apps.monedas.models import Moneda
 
 from .services import calcular_conversion
+from .models import CompraDivisa
 
 
 class SimulacionConversionForm(forms.Form):
@@ -343,3 +345,56 @@ class ConciliacionForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"rows": 2}),
     )
+
+
+class ReporteTransaccionesForm(forms.Form):
+    """Filtros del reporte global de operaciones para administración (RF030)."""
+
+    cliente = forms.ModelChoiceField(
+        queryset=Cliente.objects.none(), required=False, label="Cliente"
+    )
+    moneda = forms.ModelChoiceField(
+        queryset=Moneda.objects.none(), required=False, label="Moneda"
+    )
+    tipo_operacion = forms.ChoiceField(
+        choices=(("", "Todas"), ("compra", "Compra"), ("venta", "Venta")),
+        required=False,
+        label="Tipo de operación",
+    )
+    estado = forms.ChoiceField(
+        choices=(("", "Todos"), *CompraDivisa.Estado.choices),
+        required=False,
+        label="Estado",
+    )
+    fecha_desde = forms.DateField(
+        required=False,
+        label="Fecha desde",
+        input_formats=["%Y-%m-%d"],
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    fecha_hasta = forms.DateField(
+        required=False,
+        label="Fecha hasta",
+        input_formats=["%Y-%m-%d"],
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cliente"].queryset = Cliente.objects.order_by(
+            "nombres", "apellidos", "pk"
+        )
+        self.fields["moneda"].queryset = Moneda.objects.filter(activo=True).order_by(
+            "codigo"
+        )
+
+    def clean(self):
+        datos = super().clean()
+        desde = datos.get("fecha_desde")
+        hasta = datos.get("fecha_hasta")
+        if desde and hasta and desde > hasta:
+            self.add_error(
+                "fecha_hasta",
+                "La fecha hasta no puede ser anterior a la fecha desde.",
+            )
+        return datos
