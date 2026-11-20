@@ -134,6 +134,11 @@ OIDC_OP_LOGOUT_URL_METHOD = "apps.usuarios.auth.cerrar_sesion_en_keycloak"
 # Guarda el id_token en la sesión; Keycloak lo pide para cerrar sesión.
 OIDC_STORE_ID_TOKEN = True
 
+# La sesión vence tras un período de inactividad; cada solicitud renueva el
+# vencimiento. El valor configurable está expresado en segundos.
+SESSION_COOKIE_AGE = env.int("DJANGO_SESSION_IDLE_TIMEOUT", default=15 * 60)
+SESSION_SAVE_EVERY_REQUEST = True
+
 # Crear el usuario en Django la primera vez que entra desde Keycloak.
 OIDC_CREATE_USER = True
 

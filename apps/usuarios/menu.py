@@ -73,11 +73,6 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
-        "texto": "Historial de caja",
-        "url": "cajas:historial_movimientos",
-        "roles": ["administrador"],
-    },
-    {
         "texto": "Ventas y anulaciones",
         "url": "conversiones:ventas_administracion",
         "roles": ["administrador"],
@@ -91,11 +86,6 @@ MENU_PRINCIPAL = [
         "texto": "Ventas pendientes",
         "url": "conversiones:ventas_pendientes",
         "roles": ["cajero"],
-    },
-    {
-        "texto": "Diferencias de caja",
-        "url": "cajas:diferencias",
-        "roles": ["administrador"],
     },
     {
         "texto": "Mis existencias",

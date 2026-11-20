@@ -69,7 +69,7 @@
     }
   </style>
 </head>
-<body class="min-h-screen bg-[#f2f6fb] text-slate-800 antialiased">
+<body class="min-h-screen bg-[#f2f6fb] text-slate-800 antialiased"{% if user.is_authenticated %} data-session-idle-timeout="{{ request.session.get_expiry_age }}"{% endif %}>
   <header class="relative overflow-hidden bg-[#071f36] text-white shadow-2xl">
     <div class="pointer-events-none absolute -right-24 -top-32 h-96 w-96 rounded-full border-[48px] border-cyan-300/10"></div>
     <div class="pointer-events-none absolute right-1/4 top-0 h-full w-px bg-white/10"></div>
@@ -129,5 +129,24 @@
     <span class="font-semibold tracking-wide text-slate-600">GLOBAL EXCHANGE</span>
     <span>Gestión segura de clientes y operaciones.</span>
   </footer>
+  {% if user.is_authenticated %}
+    <form id="logout-inactividad" method="post" action="{% url 'usuarios:cerrar_sesion_inactividad' %}" hidden>
+      {% csrf_token %}
+    </form>
+    <script>
+      (() => {
+        const logoutForm = document.getElementById("logout-inactividad");
+        const idleTimeoutMs = Number(document.body.dataset.sessionIdleTimeout) * 1000;
+        if (!logoutForm || !idleTimeoutMs) return;
+
+        const logoutDelayMs = Math.max(
+          0,
+          idleTimeoutMs - Math.min(2000, idleTimeoutMs * 0.1)
+        );
+        const cerrarSesion = () => logoutForm.requestSubmit();
+        window.setTimeout(cerrarSesion, logoutDelayMs);
+      })();
+    </script>
+  {% endif %}
 </body>
 </html>

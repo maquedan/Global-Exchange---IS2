@@ -62,6 +62,14 @@ def test_cajas_y_sucursales_solo_se_muestra_al_administrador():
 
 
 @pytest.mark.django_db
+def test_historial_y_diferencias_de_caja_no_aparecen_en_el_menu():
+    textos = textos_del_menu(usuario_con("administrador"))
+
+    assert "Historial de caja" not in textos
+    assert "Diferencias de caja" not in textos
+
+
+@pytest.mark.django_db
 def test_ventas_y_anulaciones_solo_se_muestra_al_administrador():
     assert "Ventas y anulaciones" in textos_del_menu(usuario_con("administrador"))
     assert "Ventas y anulaciones" not in textos_del_menu(usuario_con("cajero"))
