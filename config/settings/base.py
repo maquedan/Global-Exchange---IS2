@@ -38,6 +38,9 @@ INSTALLED_APPS = [
     "apps.comun",
     "apps.facturacion",
     "apps.terminal",
+    # Tablero de control del administrador (GEG9-67). Va al final porque solo
+    # consulta: no define modelos propios ni le aporta nada a las demas apps.
+    "apps.tablero",
 ]
 
 MIDDLEWARE = [

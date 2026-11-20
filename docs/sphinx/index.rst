@@ -30,6 +30,7 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    cajas
    pagos
    facturacion
+   tablero
 
 .. toctree::
    :maxdepth: 1
