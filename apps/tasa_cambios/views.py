@@ -2,13 +2,15 @@ from functools import wraps
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.core.exceptions import PermissionDenied
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from apps.notificaciones.services import notificar_cambio_de_tasa
+from apps.usuarios.auditoria import registrar_auditoria
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.models import RegistroAuditoria
 
 from .forms import TasaCambioForm
 from .models import TasaCambio
@@ -41,7 +43,14 @@ def crear(request):
     if request.method == "POST":
         formulario = TasaCambioForm(request.POST)
         if formulario.is_valid():
-            tasa = formulario.save()
+            with transaction.atomic():
+                tasa = formulario.save()
+                registrar_auditoria(
+                    request.user,
+                    RegistroAuditoria.Accion.TASA_CREADA,
+                    f"Tasa #{tasa.pk} ({tasa.moneda_origen.codigo}/{tasa.moneda_destino.codigo}); "
+                    f"compra {tasa.tasa_compra}; venta {tasa.tasa_venta}.",
+                )
             # Es una tasa nueva: siempre hay un cambio que avisar (RF033).
             notificar_cambio_de_tasa(tasa)
             messages.success(request, "Tasa de cambio registrada correctamente.")
@@ -64,13 +73,24 @@ def editar(request, pk):
     if request.method == "POST":
         tasa_compra_anterior = tasa.tasa_compra
         tasa_venta_anterior = tasa.tasa_venta
+        vigente_desde_anterior = tasa.vigente_desde
         formulario = TasaCambioForm(request.POST, instance=tasa)
         if formulario.is_valid():
             cambiaron_los_valores = (
                 formulario.cleaned_data["tasa_compra"] != tasa_compra_anterior
                 or formulario.cleaned_data["tasa_venta"] != tasa_venta_anterior
+                or formulario.cleaned_data["vigente_desde"] != vigente_desde_anterior
             )
-            formulario.save()
+            with transaction.atomic():
+                tasa = formulario.save()
+                if cambiaron_los_valores:
+                    registrar_auditoria(
+                        request.user,
+                        RegistroAuditoria.Accion.TASA_MODIFICADA,
+                        f"Tasa #{tasa.pk} ({tasa.moneda_origen.codigo}/{tasa.moneda_destino.codigo}); "
+                        f"compra {tasa_compra_anterior} → {tasa.tasa_compra}; "
+                        f"venta {tasa_venta_anterior} → {tasa.tasa_venta}.",
+                    )
             # Solo avisamos si de verdad cambió compra/venta — no por activar,
             # desactivar o tocar solo la fecha de vigencia (RF033).
             if cambiaron_los_valores:
@@ -97,7 +117,15 @@ def editar(request, pk):
 def desactivar(request, pk):
     """Deja una tasa de cambio fuera de vigencia."""
     tasa = get_object_or_404(TasaCambio, pk=pk)
-    tasa.desactivar()
+    estaba_activa = tasa.activo
+    with transaction.atomic():
+        tasa.desactivar()
+        if estaba_activa:
+            registrar_auditoria(
+                request.user,
+                RegistroAuditoria.Accion.TASA_DESACTIVADA,
+                f"Tasa #{tasa.pk} ({tasa.moneda_origen.codigo}/{tasa.moneda_destino.codigo}).",
+            )
     messages.success(request, "Tasa de cambio desactivada correctamente.")
     return redirect("tasa_cambios:lista")
 
@@ -109,7 +137,15 @@ def activar(request, pk):
     """Vuelve a poner una tasa de cambio en vigencia."""
     tasa = get_object_or_404(TasaCambio, pk=pk)
     try:
-        tasa.activar()
+        with transaction.atomic():
+            estaba_activa = tasa.activo
+            tasa.activar()
+            if not estaba_activa:
+                registrar_auditoria(
+                    request.user,
+                    RegistroAuditoria.Accion.TASA_ACTIVADA,
+                    f"Tasa #{tasa.pk} ({tasa.moneda_origen.codigo}/{tasa.moneda_destino.codigo}).",
+                )
     except ValidationError as error:
         messages.error(request, error.message)
         return redirect("tasa_cambios:lista")

@@ -7,10 +7,11 @@ from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
 from .auth import cerrar_sesion_en_keycloak
 from .forms import ConfiguracionSeguridadForm
+from .forms_auditoria import FiltroAuditoriaForm
 from .keycloak_admin import KeycloakAdmin, KeycloakAdminError
 from .menu import roles_de
 from .models import (
@@ -20,6 +21,7 @@ from .models import (
     ConfiguracionSeguridad,
     PermisoRol,
     PermisoSistema,
+    RegistroAuditoria,
 )
 from .services import ClienteNoDisponible, clientes_del_usuario, elegir_cliente
 
@@ -248,4 +250,31 @@ def configuracion_seguridad(request):
             "formulario": formulario,
             "cambios": CambioConfiguracionSeguridad.objects.select_related("usuario")[:20],
         },
+    )
+
+
+@login_required
+@user_passes_test(es_administrador)
+@require_GET
+def auditoria(request):
+    """Consulta filtrable del historial inmutable de operaciones críticas."""
+    formulario = FiltroAuditoriaForm(request.GET or None)
+    registros = RegistroAuditoria.objects.select_related("usuario")
+    if formulario.is_valid():
+        filtros = formulario.cleaned_data
+        if filtros["usuario"]:
+            registros = registros.filter(usuario_nombre=filtros["usuario"])
+        if filtros["accion"]:
+            registros = registros.filter(accion=filtros["accion"])
+        if filtros["fecha_desde"]:
+            registros = registros.filter(creado_en__date__gte=filtros["fecha_desde"])
+        if filtros["fecha_hasta"]:
+            registros = registros.filter(creado_en__date__lte=filtros["fecha_hasta"])
+    else:
+        registros = registros.none()
+
+    return render(
+        request,
+        "usuarios/auditoria.html",
+        {"formulario": formulario, "registros": registros},
     )

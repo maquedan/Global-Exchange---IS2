@@ -8,6 +8,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from apps.monedas.models import Moneda
+from apps.usuarios.models import RegistroAuditoria
 
 from .forms import TasaCambioForm
 from .models import TasaCambio
@@ -55,6 +56,7 @@ def test_analista_puede_crear_tasa(client, monedas):
 
 	assert respuesta.status_code == 302
 	assert TasaCambio.objects.filter(moneda_origen=monedas[0], moneda_destino=monedas[1]).exists()
+	assert RegistroAuditoria.objects.get().accion == RegistroAuditoria.Accion.TASA_CREADA
 
 
 @pytest.mark.django_db
@@ -129,6 +131,9 @@ def test_usuario_autorizado_puede_desactivar_tasa(client, monedas):
 	assert respuesta.url == reverse("tasa_cambios:lista")
 	tasa.refresh_from_db()
 	assert not tasa.activo
+	assert RegistroAuditoria.objects.get().accion == (
+		RegistroAuditoria.Accion.TASA_DESACTIVADA
+	)
 
 
 @pytest.mark.django_db
@@ -150,6 +155,7 @@ def test_usuario_autorizado_puede_activar_tasa(client, monedas):
 	assert respuesta.url == reverse("tasa_cambios:lista")
 	tasa.refresh_from_db()
 	assert tasa.activo
+	assert RegistroAuditoria.objects.get().accion == RegistroAuditoria.Accion.TASA_ACTIVADA
 
 
 @pytest.mark.django_db
@@ -179,5 +185,6 @@ def test_no_se_puede_activar_tasa_si_una_moneda_esta_inactiva(
 	tasa.refresh_from_db()
 	assert not tasa.activo
 	assert "No se puede activar una tasa con monedas inactivas." in respuesta.content.decode()
+	assert not RegistroAuditoria.objects.exists()
 
 # Create your tests here.

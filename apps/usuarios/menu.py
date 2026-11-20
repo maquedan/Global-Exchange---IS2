@@ -38,6 +38,11 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        "texto": "Auditoría",
+        "url": "usuarios:auditoria",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Mis medios de pago",
         "necesita_cliente": True,
         "url": "cuentas:lista",

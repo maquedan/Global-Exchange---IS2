@@ -25,6 +25,7 @@ from apps.cuentas.models import CuentaPago
 from apps.monedas.models import Moneda
 from apps.pagos.models import Pago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.models import RegistroAuditoria
 
 from apps.conversiones.models import CambioEstado, CompraDivisa, VentaDivisa
 from apps.conversiones.services import (
@@ -723,6 +724,9 @@ def test_administrador_anula_venta_y_registra_los_movimientos_inversos(
     assert reverso_entregado.reversion_de == movimiento_entregado
     assert reverso_recibido.importe == movimiento_recibido.importe
     assert reverso_entregado.importe == movimiento_entregado.importe
+    assert RegistroAuditoria.objects.get(
+        accion=RegistroAuditoria.Accion.VENTA_ANULADA
+    ).usuario == administrador
     assert dict(
         SaldoCaja.objects.filter(caja=movimiento_recibido.caja).values_list(
             "moneda_id", "saldo"
@@ -888,6 +892,9 @@ def test_administrador_reembolsa_y_anula_compra_de_pasarela(
     assert cambio.fecha is not None
     assert cambio.motivo == "Cobro duplicado"
     assert "Realizado por: admin-anula-compra" in respuesta.content.decode()
+    assert RegistroAuditoria.objects.get(
+        accion=RegistroAuditoria.Accion.COMPRA_ANULADA
+    ).usuario == administrador
     solicitar_reembolso.assert_called_once_with(pago)
 
     client.force_login(usuario_cliente)
