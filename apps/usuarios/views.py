@@ -56,7 +56,6 @@ def cerrar_sesion_por_inactividad(request):
     return HttpResponseRedirect(url_keycloak)
 
 
-@login_required
 def _destino_seguro(request, siguiente):
     """Valida a dónde volver después de elegir cliente (RF009 — GEG9-19).
 
@@ -84,6 +83,7 @@ def _destino_seguro(request, siguiente):
     return siguiente if siguiente.startswith("/") else None
 
 
+@login_required
 def seleccionar_cliente(request):
     """Pantalla "Elegí el cliente con el que vas a operar" (RF008 — GEG9-18).
 
