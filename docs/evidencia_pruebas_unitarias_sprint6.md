@@ -805,6 +805,7 @@ La ejecución cubre los flujos automatizados de simulación, tasa y comisión, c
 Las pruebas no llaman a dLocal ni a Factura Segura reales: esos proveedores se simulan o controlan dentro de la suite. La verificación contra servicios externos requiere credenciales y datos autorizados del ambiente correspondiente.
 
 ---
+<<<<<<< HEAD
 
 ## Daniela González — Verificación del manejo de roles (GEG9-71)
 
@@ -836,3 +837,163 @@ cambiario; y QA-ROL-02 (GEG9-84), referido al acceso anónimo a
 `/elegir-cliente/`. GEG9-71 permanece en curso hasta corregirlos y volver a ejecutar las pruebas correspondientes.
 
 ---
+=======
+## Leyda Fleitas — RF038, Panel de Control Central (GEG9-67)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 09:33:26 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/tablero/services.py`, `apps/tablero/views.py`, `templates/tablero/panel.html`, `apps/usuarios/menu.py` |
+| **Comando** | `docker compose exec web pytest apps/tablero -v` |
+| **Resultado** | **40 passed**, 1 warning en 3.75s |
+
+```text
+$ docker compose exec web pytest apps/tablero -v
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.1, settings: config.settings.dev (from env)
+collected 40 items
+
+apps/tablero/tests/test_tablero.py .......................................  [100%]
+
+======================== 40 passed, 1 warning in 3.75s =========================
+
+$ docker compose exec web python manage.py check
+System check identified no issues (0 silenced).
+
+$ docker compose exec web sphinx-build -b html docs/sphinx docs/sphinx/_build
+build succeeded.
+```
+
+### Suite completa del proyecto
+
+```text
+$ docker compose exec web pytest
+530 passed, 1 warning in 80.07s (0:01:20)
+```
+
+Antes de esta rama la suite tenía una falla en
+`apps/notificaciones/tests/test_notificaciones.py::test_editar_sin_cambiar_los_valores_no_notifica`,
+registrada como preexistente en la evidencia de GEG9-81. Se rastreó su origen
+y se arregló: el commit `8b816fb` había agregado `vigente_desde` a la
+condición `cambiaron_los_valores` de `apps/tasa_cambios/views.py`, que RF033
+usa para decidir si notificar, y el efecto era que cambiar solo la fecha de
+vigencia de una tasa le notificaba a todos los clientes asociados.
+
+El arreglo **separa la condición en dos**: `cambiaron_las_tasas` para la
+notificación y `hubo_cambios` para la auditoría. **La auditoría no cambia** —
+sigue registrando el cambio de fecha de vigencia. Se verificó con las 36
+pruebas de `apps/usuarios/tests/test_auditoria.py`, `apps/tasa_cambios` y
+`apps/notificaciones`, todas aprobadas.
+
+Se agregó `test_cambiar_solo_la_vigencia_se_audita_pero_no_notifica`, que fija
+las dos conductas en una sola prueba: cero notificaciones **y** un registro de
+auditoría. En archivos separados, arreglar una rompiendo la otra seguiría
+dando verde.
+
+### Casos cubiertos
+
+**Acceso exclusivo (criterio 1)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Rol `analista_cambiario` entra por URL directa | 403 | ✅ |
+| Rol `usuario_cliente` entra por URL directa | 403 | ✅ |
+| Rol `cajero` entra por URL directa | 403 | ✅ |
+| Rol `terminal` entra por URL directa | 403 | ✅ |
+| Usuario autenticado sin ningún rol | 403 | ✅ |
+| Rol `administrador` | 200 | ✅ |
+| Sin sesión | redirige a iniciar sesión | ✅ |
+| Opción «Tablero» en el menú | solo el administrador la ve | ✅ |
+
+**Métricas (criterio 2)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Conteos por estado, compras y ventas separadas | coinciden con los datos de prueba | ✅ |
+| Fila de total | suma compras más ventas en cada estado | ✅ |
+| Clientes activos e inactivos | 1 y 1 | ✅ |
+| Clientes con distintos períodos | el mismo número: es el estado de hoy | ✅ |
+| Saldos de caja | agrupados por moneda, con los decimales de cada una | ✅ |
+| Diferencias de arqueo | cantidad y monto por moneda | ✅ |
+| Sucursal | se informa la única que el modelo permite, sin contador | ✅ |
+| Facturas | error de emisión y rechazo de SIFEN contados separados | ✅ |
+| Ventas pendientes de entrega | no se filtran por período | ✅ |
+
+**Dinero y ganancias (criterios 2 y 5)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Compra confirmada, una cancelada y una anulada | solo la confirmada suma | ✅ |
+| La anulada lleva fecha de confirmación | tampoco suma: el filtro mira el estado | ✅ |
+| Ganancias del tablero contra `resumen_ganancias()` | idénticas, no un recálculo | ✅ |
+| Ganancias con período de 30 días | el mismo rango que el resto de la pantalla | ✅ |
+
+**Filtro de período (criterio 3)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Tres operaciones a 0, 3 y 40 días | hoy 1, 7 días 2, 30 días 2, todo 3 | ✅ |
+| «7 días» | incluye hoy y los seis anteriores, no el séptimo | ✅ |
+| `?periodo=cualquier-cosa` | cae en el valor por omisión | ✅ |
+| `?periodo=../../etc/passwd` | 200, sin error | ✅ |
+| `?periodo=`, texto con comillas y punto y coma | valor por omisión, sin error | ✅ |
+
+**Estado vacío (criterio 6)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Base sin datos | 200, todo en cero y listas vacías, sin error 500 | ✅ |
+
+**Rendimiento (criterio 7, RNF001)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Servicio con 2 operaciones y después con 42 | **la misma cantidad de consultas** | ✅ |
+| Cota del servicio | 12 consultas o menos | ✅ |
+| Pantalla completa con 10 operaciones | 25 consultas o menos, incluyendo sesión, roles y menú | ✅ |
+
+**Formato (criterio 8)**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Cifras en la pantalla | `17.750,00`, `10.000,00`, `27.750,00` | ✅ |
+| Formato de Django sin agrupar | `17750.00` y `17750,00` **no** aparecen | ✅ |
+
+**Ganancia en guaraníes**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Desglose con USD y PYG | cada moneda convertida y un total con unidad | ✅ |
+| Cotización usada | la tasa de **compra** vigente, no la de venta | ✅ |
+| Moneda sin tasa activa hacia el guaraní | queda fuera del total **y se la nombra** | ✅ |
+| Moneda sin tasa activa | no se le inventa cotización | ✅ |
+| Todo ya en guaraníes | no se muestra una columna de equivalencias repetida | ✅ |
+
+**Gráfico de evolución**
+
+| Caso | Esperado | Resultado |
+|---|---|---|
+| Suma de las barras | **idéntica al resumen de RF031** del período | ✅ |
+| Período de 7 días | una barra por día, con los días sin ganancia en cero | ✅ |
+| Período de 30 días | junta días, nunca más de 12 barras | ✅ |
+| El doble de ganancia | dibuja el doble de alto | ✅ |
+| Todas las barras | dentro del dibujo, sin alto ni posición negativos | ✅ |
+| Sin operaciones | gráfico vacío, sin error | ✅ |
+| Pantalla renderizada | muestra el total en guaraníes y el `<svg>` | ✅ |
+| Coordenadas del SVG renderizado | con punto decimal, **nunca con coma** | ✅ |
+| Barras renderizadas | al menos una con alto mayor que cero | ✅ |
+
+### Lo que las pruebas no cubren
+
+- **La apariencia.** Que la rejilla de tarjetas se acomode bien en el celular,
+  que las columnas queden alineadas y que el gráfico se lea se verifica
+  mirando la pantalla; las capturas acompañan esta evidencia.
+- **La cotización elegida.** Las pruebas verifican que se use la tasa de
+  compra vigente, no que ésa sea la cotización correcta para valuar: eso es
+  una decisión de negocio, no algo que un test pueda demostrar.
+- **El tiempo real de carga.** Las pruebas garantizan que el costo en
+  consultas no crece con los datos, que es la causa de una pantalla lenta,
+  pero no miden los 3 segundos de RNF001 contra un volumen de producción.
+
+---
+>>>>>>> origin/develop

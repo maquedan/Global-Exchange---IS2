@@ -11,11 +11,18 @@ from django.urls import NoReverseMatch, reverse
 # "url" es el NOMBRE de la ruta (el name= de urls.py), no la dirección.
 MENU_PRINCIPAL = [
     {"texto": "Panel", "url": "usuarios:panel", "roles": []},
+    {
+        # Tablero de control central (RF038 - GEG9-67). Sin "necesita_cliente":
+        # el administrador no opera en nombre de nadie, solo consulta.
+        "texto": "Tablero",
+        "url": "tablero:panel",
+        "roles": ["administrador"],
+    },
     {"texto": "Cotizaciones", "url": "tasas:panel", "roles": []},
     {
         "texto": "Clientes",
         "url": "clientes:lista",
-        "roles": ["administrador", "analista_cambiario"],
+        "roles": ["administrador"],
     },
         {
         "texto": "Monedas",

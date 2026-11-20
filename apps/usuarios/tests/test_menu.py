@@ -50,7 +50,7 @@ def test_todos_los_autenticados_ven_el_panel():
 def test_clientes_se_muestra_a_los_roles_autorizados():
     """La ruta de Clientes ya existe y respeta las reglas del menú."""
     assert "Clientes" in textos_del_menu(usuario_con("administrador"))
-    assert "Clientes" in textos_del_menu(usuario_con("analista_cambiario"))
+    assert "Clientes" not in textos_del_menu(usuario_con("analista_cambiario"))
     assert "Clientes" not in textos_del_menu(usuario_con("usuario_cliente"))
 
 

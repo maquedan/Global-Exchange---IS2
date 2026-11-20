@@ -76,14 +76,23 @@ def editar(request, pk):
         vigente_desde_anterior = tasa.vigente_desde
         formulario = TasaCambioForm(request.POST, instance=tasa)
         if formulario.is_valid():
-            cambiaron_los_valores = (
+            # Dos condiciones distintas porque son dos preguntas distintas.
+            # Estaban juntas en una sola variable, y eso hacia que tocar solo
+            # la fecha de vigencia le mandara una notificacion a todos los
+            # clientes asociados, justo lo contrario de lo que pide RF033.
+            cambiaron_las_tasas = (
                 formulario.cleaned_data["tasa_compra"] != tasa_compra_anterior
                 or formulario.cleaned_data["tasa_venta"] != tasa_venta_anterior
+            )
+            # La auditoria SI registra el cambio de fecha de vigencia: es un
+            # cambio sobre la tasa y tiene que quedar asentado (GEG9-81).
+            hubo_cambios = (
+                cambiaron_las_tasas
                 or formulario.cleaned_data["vigente_desde"] != vigente_desde_anterior
             )
             with transaction.atomic():
                 tasa = formulario.save()
-                if cambiaron_los_valores:
+                if hubo_cambios:
                     registrar_auditoria(
                         request.user,
                         RegistroAuditoria.Accion.TASA_MODIFICADA,
@@ -93,7 +102,7 @@ def editar(request, pk):
                     )
             # Solo avisamos si de verdad cambió compra/venta — no por activar,
             # desactivar o tocar solo la fecha de vigencia (RF033).
-            if cambiaron_los_valores:
+            if cambiaron_las_tasas:
                 notificar_cambio_de_tasa(
                     tasa,
                     compra_anterior=tasa_compra_anterior,

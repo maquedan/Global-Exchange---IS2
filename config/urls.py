@@ -21,4 +21,5 @@ urlpatterns = [
     path("pagos/", include("apps.pagos.urls")),  # Pago con pasarela (dLocal) - GEG9-36
     path("facturas/", include("apps.facturacion.urls")),  # Visualización de Facturas - GEG9-54
     path("terminal/", include("apps.terminal.urls")),  # Modo Terminal de Autoservicio - GEG9-55
+    path("tablero/", include("apps.tablero.urls")),  # Panel de Control Central - GEG9-67
 ]
