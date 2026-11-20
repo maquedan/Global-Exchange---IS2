@@ -1,0 +1,394 @@
+{% extends "base.html" %}
+{% load formato_extras l10n %}
+
+{% block titulo %}Tablero de control | Global Exchange{% endblock %}
+
+{% block contenido %}
+<style>
+  /* Tailwind no se puede recompilar en este entorno (Node 18 y pide 20 o
+     mas), y el CSS ya generado no trae `md:grid-cols-4`. Estas reglas van
+     en la plantilla por el mismo motivo que las de GEG9-82. La rejilla usa
+     auto-fit en vez de una cantidad fija de columnas: asi se acomoda sola
+     en el celular sin depender de clases que no existen. */
+  .tablero-rejilla {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+    gap: 1rem;
+  }
+  .metrica {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 0.75rem;
+    padding: 1rem 1.25rem;
+  }
+  .metrica-titulo {
+    font-size: 0.8rem;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 0;
+  }
+  .metrica-valor {
+    font-size: 2rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0.35rem 0 0;
+    font-variant-numeric: tabular-nums;
+  }
+  .metrica-nota {
+    font-size: 0.78rem;
+    color: #64748b;
+    margin: 0.3rem 0 0;
+  }
+  .metrica-valor.alerta { color: #b4233c; }
+  .periodo-filtro {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    align-items: center;
+  }
+  .periodo-opcion {
+    display: inline-block;
+    padding: 0.35rem 0.9rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 999px;
+    text-decoration: none;
+    color: #334155;
+    font-size: 0.9rem;
+  }
+  .periodo-opcion:hover,
+  .periodo-opcion:focus { border-color: #0891b2; color: #0e7490; }
+  .periodo-opcion[aria-current="page"] {
+    background: #0e7490;
+    border-color: #0e7490;
+    color: #fff;
+    font-weight: 600;
+  }
+  .tablero-aviso {
+    background: #fffbeb;
+    border: 1px solid #fcd34d;
+    border-radius: 0.6rem;
+    padding: 0.7rem 0.95rem;
+    font-size: 0.85rem;
+    color: #78350f;
+    margin: 0.75rem 0 0;
+  }
+  .tablero-accesos {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem;
+  }
+  .metrica.destacada {
+    border-color: #0e7490;
+    border-width: 2px;
+    background: #ecfeff;
+  }
+  /* El grafico es SVG escrito a mano, igual que el de RF016: no se agrega
+     ninguna libreria. La geometria la calcula el servicio en Python, asi
+     que se puede probar con pytest. */
+  .grafico-caja {
+    margin-top: 0.75rem;
+    overflow-x: auto;
+  }
+  .grafico-ganancias {
+    /* El alto sale solo del viewBox para que el dibujo no se deforme: con
+       un alto fijo y un contenedor ancho, el SVG se centra y deja medio
+       grafico de aire a cada lado. El minimo evita que en el celular las
+       fechas queden ilegibles; para eso .grafico-caja permite desplazar. */
+    display: block;
+    width: 100%;
+    min-width: 30rem;
+    max-width: 45rem;
+    height: auto;
+    margin: 0 auto;
+  }
+  .grafico-eje { stroke: #cbd5e1; stroke-width: 1; }
+  .grafico-barra {
+    fill: #0891b2;
+    transition: fill .15s;
+  }
+  .grafico-barra:hover { fill: #0e7490; }
+  .grafico-etiqueta {
+    font-size: 11px;
+    fill: #64748b;
+    text-anchor: middle;
+  }
+</style>
+
+<div class="space-y-6">
+  <div>
+    <p class="text-sm font-bold text-cyan-700">RF038</p>
+    <h1 class="text-3xl font-black">Tablero de control</h1>
+    <p>Métricas consolidadas del negocio. Solo las operaciones confirmadas aportan dinero: las canceladas y las anuladas no suman.</p>
+  </div>
+
+  <div class="tarjeta">
+    <p class="metrica-titulo">Período</p>
+    <nav class="periodo-filtro" style="margin-top:.6rem;" aria-label="Filtro de período">
+      {% for valor, etiqueta in tablero.periodos %}
+        <a class="periodo-opcion"
+           href="{% url 'tablero:panel' %}?periodo={{ valor }}"
+           {% if valor == tablero.periodo %}aria-current="page"{% endif %}>{{ etiqueta }}</a>
+      {% endfor %}
+    </nav>
+    {% if tablero.desde %}
+      <p class="metrica-nota">Del {{ tablero.desde|date:"d/m/Y" }} al {{ tablero.hasta|date:"d/m/Y" }}.</p>
+    {% else %}
+      <p class="metrica-nota">Sin límite de fechas.</p>
+    {% endif %}
+  </div>
+
+  <section aria-labelledby="titulo-ganancias">
+    <h2 id="titulo-ganancias" class="text-xl font-bold">Ganancias del período</h2>
+
+    <div class="tablero-rejilla" style="margin-top:.75rem;">
+      <div class="metrica destacada">
+        <p class="metrica-titulo">Ganancia total</p>
+        <p class="metrica-valor">{{ tablero.ganancias_pyg.total_pyg|numero:0 }}</p>
+        <p class="metrica-nota">Guaraníes</p>
+      </div>
+      <div class="metrica">
+        <p class="metrica-titulo">Comisiones</p>
+        <p class="metrica-valor">{{ tablero.ganancias_pyg.comision_pyg|numero:0 }}</p>
+        <p class="metrica-nota">Guaraníes</p>
+      </div>
+      <div class="metrica">
+        <p class="metrica-titulo">Diferencia de tasa</p>
+        <p class="metrica-valor">{{ tablero.ganancias_pyg.diferencia_tasa_pyg|numero:0 }}</p>
+        <p class="metrica-nota">Guaraníes</p>
+      </div>
+      <div class="metrica">
+        <p class="metrica-titulo">Operaciones confirmadas</p>
+        <p class="metrica-valor">{{ tablero.ganancias.operaciones|numero:0 }}</p>
+      </div>
+    </div>
+
+    {% if tablero.ganancias_pyg.sin_cotizacion %}
+      <p class="tablero-aviso">
+        <strong>Faltan monedas en ese total.</strong> No hay tasa de cambio
+        vigente hacia el guaraní para
+        {% for codigo in tablero.ganancias_pyg.sin_cotizacion %}<strong>{{ codigo }}</strong>{% if not forloop.last %}, {% endif %}{% endfor %},
+        así que su ganancia no se pudo convertir y quedó fuera. Figura igual
+        en el desglose de abajo, en su propia moneda.
+      </p>
+    {% endif %}
+
+    <div class="tarjeta" style="margin-top:1rem;">
+      <h3 class="text-lg font-bold">Evolución de la ganancia</h3>
+      {% if tablero.serie.barras %}
+        <p class="metrica-nota">
+          Guaraníes ·
+          {% if tablero.serie.dias_por_barra == 1 %}
+            un día por barra
+          {% else %}
+            {{ tablero.serie.dias_por_barra }} días por barra
+          {% endif %}
+          · máximo {{ tablero.serie.maximo|numero:0 }}
+        </p>
+        {# Las coordenadas van SIN localizar. El sitio esta en espanol, asi
+           que Django escribiria 44,64 en vez de 44.64, y SVG no entiende la
+           coma como decimal: ignora el atributo. En <text x> es peor, porque
+           la coma la lee como una lista de posiciones, una por letra, y
+           desarma la fecha. #}
+        {% localize off %}
+        <div class="grafico-caja">
+          <svg class="grafico-ganancias" viewBox="0 0 720 240" role="img"
+               aria-label="Evolución de la ganancia en guaraníes durante el período">
+            <line x1="0" y1="212" x2="720" y2="212" class="grafico-eje" />
+            {% for barra in tablero.serie.barras %}
+              <rect x="{{ barra.x }}" y="{{ barra.y }}"
+                    width="{{ barra.ancho }}" height="{{ barra.alto }}"
+                    rx="3" class="grafico-barra">
+                <title>{{ barra.titulo }}</title>
+              </rect>
+              <text x="{{ barra.centro_x }}" y="230" class="grafico-etiqueta">{{ barra.etiqueta }}</text>
+            {% endfor %}
+          </svg>
+        </div>
+        {% endlocalize %}
+      {% else %}
+        <p>No hubo operaciones confirmadas en el período, así que no hay nada que graficar.</p>
+      {% endif %}
+    </div>
+
+    <div class="tarjeta" style="margin-top:1rem;">
+      <h3 class="text-lg font-bold">Desglose por moneda</h3>
+      <table class="datos" style="width:100%;">
+        <thead>
+          <tr>
+            <th>Moneda</th>
+            <th class="num">Comisiones</th>
+            <th class="num">Diferencia de tasa</th>
+            <th class="num">Total</th>
+            {% if tablero.ganancias_pyg.hay_conversion %}<th class="num">Equivale en PYG</th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for fila in tablero.ganancias_pyg.desglose %}
+            <tr>
+              <td>{{ fila.moneda }}</td>
+              <td class="num">{{ fila.comision|numero:2 }}</td>
+              <td class="num">{{ fila.diferencia_tasa|numero:2 }}</td>
+              <td class="num"><strong>{{ fila.total|numero:2 }}</strong></td>
+              {% if tablero.ganancias_pyg.hay_conversion %}
+                <td class="num">
+                  {% if fila.equivalente_pyg is None %}
+                    <span title="Sin tasa de cambio vigente hacia el guaraní">sin cotización</span>
+                  {% else %}
+                    {{ fila.equivalente_pyg|numero:0 }}
+                  {% endif %}
+                </td>
+              {% endif %}
+            </tr>
+          {% empty %}
+            <tr><td colspan="5">No hubo operaciones confirmadas en el período.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <p class="metrica-nota" style="margin-top:.5rem;">
+        <a href="{% url 'ganancias:panel' %}">Ver el monitoreo de ganancias en tiempo real →</a>
+      </p>
+    </div>
+  </section>
+
+  <section aria-labelledby="titulo-operaciones">
+    <h2 id="titulo-operaciones" class="text-xl font-bold">Operaciones por estado</h2>
+    <p class="metrica-nota">Por fecha de creación.</p>
+
+    <div class="tarjeta" style="margin-top:.75rem;">
+      <table class="datos" style="width:100%;">
+        <thead>
+          <tr>
+            <th></th>
+            <th class="num">Pendientes</th>
+            <th class="num">Pagadas</th>
+            <th class="num">Canceladas</th>
+            <th class="num">Anuladas</th>
+            <th class="num">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">Compras</th>
+            <td class="num">{{ tablero.operaciones.compras.pendientes|numero:0 }}</td>
+            <td class="num">{{ tablero.operaciones.compras.pagadas|numero:0 }}</td>
+            <td class="num">{{ tablero.operaciones.compras.canceladas|numero:0 }}</td>
+            <td class="num">{{ tablero.operaciones.compras.anuladas|numero:0 }}</td>
+            <td class="num"><strong>{{ tablero.operaciones.compras.total|numero:0 }}</strong></td>
+          </tr>
+          <tr>
+            <th scope="row">Ventas</th>
+            <td class="num">{{ tablero.operaciones.ventas.pendientes|numero:0 }}</td>
+            <td class="num">{{ tablero.operaciones.ventas.pagadas|numero:0 }}</td>
+            <td class="num">{{ tablero.operaciones.ventas.canceladas|numero:0 }}</td>
+            <td class="num">{{ tablero.operaciones.ventas.anuladas|numero:0 }}</td>
+            <td class="num"><strong>{{ tablero.operaciones.ventas.total|numero:0 }}</strong></td>
+          </tr>
+          <tr>
+            <th scope="row">Total</th>
+            <td class="num"><strong>{{ tablero.operaciones.total.pendientes|numero:0 }}</strong></td>
+            <td class="num"><strong>{{ tablero.operaciones.total.pagadas|numero:0 }}</strong></td>
+            <td class="num"><strong>{{ tablero.operaciones.total.canceladas|numero:0 }}</strong></td>
+            <td class="num"><strong>{{ tablero.operaciones.total.anuladas|numero:0 }}</strong></td>
+            <td class="num"><strong>{{ tablero.operaciones.total.total|numero:0 }}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="titulo-clientes">
+    <h2 id="titulo-clientes" class="text-xl font-bold">Clientes, entregas y facturas</h2>
+    <div class="tablero-rejilla" style="margin-top:.75rem;">
+      <div class="metrica">
+        <p class="metrica-titulo">Clientes activos</p>
+        <p class="metrica-valor">{{ tablero.clientes.activos|numero:0 }}</p>
+        <p class="metrica-nota">{{ tablero.clientes.inactivos|numero:0 }} inactivos</p>
+      </div>
+      <div class="metrica">
+        <p class="metrica-titulo">Ventas pendientes de entrega</p>
+        <p class="metrica-valor {% if tablero.ventas_pendientes_de_entrega %}alerta{% endif %}">{{ tablero.ventas_pendientes_de_entrega|numero:0 }}</p>
+      </div>
+      <div class="metrica">
+        <p class="metrica-titulo">Facturas emitidas</p>
+        <p class="metrica-valor">{{ tablero.facturas.emitidas|numero:0 }}</p>
+        <p class="metrica-nota">{{ tablero.facturas.aprobadas|numero:0 }} aprobadas por SIFEN.</p>
+      </div>
+      <div class="metrica">
+        <p class="metrica-titulo">Facturas con problema</p>
+        <p class="metrica-valor {% if tablero.facturas.rechazadas or tablero.facturas.con_error or tablero.facturas.a_verificar %}alerta{% endif %}">{{ tablero.facturas.rechazadas|numero:0 }}</p>
+        <p class="metrica-nota">
+          Rechazadas por SIFEN · {{ tablero.facturas.con_error|numero:0 }} con error de emisión ·
+          {{ tablero.facturas.a_verificar|numero:0 }} a verificar
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <section aria-labelledby="titulo-caja">
+    <h2 id="titulo-caja" class="text-xl font-bold">Caja</h2>
+
+    <div class="tarjeta" style="margin-top:.75rem;">
+      {% if tablero.caja.sucursal %}
+        <p>
+          <strong>{{ tablero.caja.sucursal.nombre }}</strong> —
+          {% if tablero.caja.sucursal.activa %}
+            <span class="etiqueta">Activa</span>
+          {% else %}
+            <span class="etiqueta">Inactiva</span>
+          {% endif %}
+        </p>
+      {% else %}
+        <p>Todavía no hay una sucursal configurada.</p>
+      {% endif %}
+
+      <h3 class="text-lg font-bold" style="margin-top:1rem;">Saldos por moneda</h3>
+      <table class="datos" style="width:100%;">
+        <thead><tr><th>Moneda</th><th class="num">Saldo</th></tr></thead>
+        <tbody>
+          {% for fila in tablero.caja.saldos %}
+            <tr>
+              <td>{{ fila.moneda }}</td>
+              <td class="num">{{ fila.total|numero:fila.decimales }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="2">Sin saldos registrados.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+
+      <h3 class="text-lg font-bold" style="margin-top:1rem;">Diferencias de arqueo registradas</h3>
+      <table class="datos" style="width:100%;">
+        <thead><tr><th>Moneda</th><th class="num">Cantidad</th><th class="num">Monto</th></tr></thead>
+        <tbody>
+          {% for fila in tablero.caja.diferencias %}
+            <tr>
+              <td>{{ fila.moneda }}</td>
+              <td class="num">{{ fila.cantidad|numero:0 }}</td>
+              <td class="num">{{ fila.total|numero:fila.decimales }}</td>
+            </tr>
+          {% empty %}
+            <tr><td colspan="3">No se registraron diferencias en el período.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="titulo-accesos">
+    <h2 id="titulo-accesos" class="text-xl font-bold">Accesos directos</h2>
+    <div class="tablero-accesos" style="margin-top:.75rem;">
+      <a class="boton-secundario" href="{% url 'conversiones:reporte_transacciones' %}">Reporte de transacciones</a>
+      <a class="boton-secundario" href="{% url 'conversiones:compras_administracion' %}">Compras y anulaciones</a>
+      <a class="boton-secundario" href="{% url 'conversiones:ventas_administracion' %}">Ventas y anulaciones</a>
+      <a class="boton-secundario" href="{% url 'conversiones:conciliaciones' %}">Conciliar transferencias</a>
+      <a class="boton-secundario" href="{% url 'tasas:panel' %}">Cotizaciones</a>
+      <a class="boton-secundario" href="{% url 'clientes:lista' %}">Clientes</a>
+      <a class="boton-secundario" href="{% url 'cajas:lista' %}">Caja principal</a>
+      <a class="boton-secundario" href="{% url 'facturacion:lista' %}">Facturas</a>
+      <a class="boton-secundario" href="{% url 'usuarios:auditoria' %}">Auditoría</a>
+    </div>
+  </section>
+</div>
+{% endblock %}

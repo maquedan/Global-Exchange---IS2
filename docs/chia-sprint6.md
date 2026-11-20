@@ -1123,3 +1123,309 @@ cerrados.
 **Decisión.** Registrar el resultado exacto de la batería (`199 passed`) como evidencia del comportamiento controlado, y dejar explícito que la integración externa requiere credenciales, rango fiscal y ambiente autorizados. No se debe marcar como aprobada una pasarela o factura real solo por una prueba simulada.
 
 ---
+## 18. Leyda Fleitas — RF038, Panel de Control Central (GEG9-67)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+ERS RF038, Hito 8: una interfaz exclusiva del administrador que consolide las
+métricas del negocio.
+
+### 18.1. «Primero averiguá si RF031 ya está, y leelo»
+
+**Lo que aprendimos.** La historia depende del cálculo de ganancias de RF031
+(GEG9-64), hecho por otro integrante. Antes de escribir una línea se buscó en
+`develop` actualizado y se leyó completo `apps/ganancias/services.py`. Lo que
+se encontró:
+
+- **«Ganancia» son dos cosas, no una:** la comisión cobrada **más** la
+  diferencia entre la tasa de venta y la de compra.
+- **Estados:** solo `CONFIRMADA` y con `confirmado_en` cargado. Las canceladas
+  y las anuladas quedan afuera, que es justo lo que pedía el criterio 5 de
+  esta historia. No hubo que agregar nada.
+- **Período:** sí lo admite, por `confirmado_en__date`, así que el filtro del
+  tablero se traduce al mismo rango sin tocar RF031.
+
+**Decisión: no recalcular.** El tablero llama a `resumen_ganancias()`. Una
+prueba compara el resultado del tablero con el del servicio, así que si
+mañana alguien cambia la regla de ganancias, las dos pantallas siguen
+coincidiendo o la prueba se pone roja. Repetir la cuenta habría dado dos
+números distintos la primera vez que se tocara uno solo de los dos lados.
+
+### 18.2. «El total de ganancias suma monedas distintas»
+
+**Lo que aprendimos.** RF031 devuelve un desglose por moneda y además un
+`total`, pero ese total **suma aritméticamente importes en monedas
+distintas**: guaraníes más dólares más reales en un mismo número. El panel de
+RF031 lo muestra como «Ganancia global». Es un número sin unidad.
+
+**Primera decisión: no repetirlo.** No se tocó RF031 —es de otra historia y
+cambiarlo habría alterado los números de una pantalla ya entregada— y el
+tablero mostró al principio **solo el desglose por moneda**, con un aviso
+explicando que para dar un total hay que decidir con qué cotización se valúa
+cada ganancia.
+
+**La integrante pidió el total en guaraníes igual.** Es el pedido correcto:
+un tablero cuyo número principal sea «no se puede calcular» no sirve de
+tablero. Lo que faltaba no era el cálculo, era **elegir la cotización**, y esa
+elección se podía tomar y dejar escrita.
+
+**Decisión: tasa de compra vigente.** Se convierte cada moneda a guaraníes
+con la tasa que la casa de cambio **paga** por esa moneda, y recién ahí se
+suma. Tres cosas quedaron explícitas en la documentación en vez de
+escondidas:
+
+- **Por qué la de compra y no la de venta:** es la valuación conservadora,
+  nunca infla el resultado.
+- **Por qué la cotización de hoy y no la del día de cada operación:** RF031
+  entrega las ganancias ya sumadas por moneda, no operación por operación, y
+  sacar la cotización histórica habría obligado a recalcular todo por fuera
+  de RF031 —justo lo que se evitó en 18.1—. La consecuencia queda anotada:
+  el total de un período pasado se mueve si cambian las tasas.
+- **Una moneda sin tasa activa no se convierte:** queda fuera del total y la
+  pantalla la nombra. Inventarle una cotización daría un número falso;
+  callarla daría un total que parece completo y no lo está.
+
+El desglose por moneda se sigue mostrando entero, así que la conversión no
+tapa nada.
+
+### 18.2.b. «¿Y un gráfico con esas ganancias?»
+
+**Lo que aprendimos.** El pedido abría una trampa. Un gráfico de evolución
+necesita la ganancia **por fecha**, y `resumen_ganancias` la devuelve ya
+sumada por moneda para todo el período. Las dos salidas obvias eran malas:
+
+- **Reimplementar la fórmula** agrupando por día en la base: rápido, pero
+  deja dos versiones de la regla de ganancia y rompe todo lo decidido en
+  18.1.
+- **Llamar a `resumen_ganancias` una vez por barra:** no duplica nada, pero
+  son dos consultas por barra —veinticuatro para doce barras—.
+
+**Decisión: una tercera.** Se recorren las operaciones **una sola vez** —dos
+consultas— usando las mismas funciones por operación que usa RF031 para
+armar su resumen. La regla sigue viviendo en un solo lugar y el costo no se
+multiplica.
+
+El precio es una dependencia de funciones internas de RF031, y por eso la
+prueba que la cuida es la más importante del gráfico: **la suma de las barras
+tiene que dar exactamente lo mismo que `resumen_ganancias` del período
+completo**. Si allá cambia la fórmula o se renombra una función, esa prueba
+avisa.
+
+El gráfico es **SVG escrito a mano**, igual que el de tasas de RF016: no se
+agregó ninguna librería. La geometría se calcula en Python y no en la
+plantilla, para poder probarla —hay una prueba que verifica que el día con el
+doble de ganancia dibuje el doble de alto—. Y nunca pasa de doce barras: con
+períodos cortos va una por día, con períodos largos cada barra junta varios,
+así no se vuelve ilegible ni el costo depende del largo del período.
+
+### 18.3. «Dos fechas distintas para dos preguntas distintas»
+
+**Lo que aprendimos.** Al filtrar por período apareció una decisión que no era
+obvia. Las ganancias de RF031 se filtran por `confirmado_en`. Pero los conteos
+por estado **no pueden** usar ese campo: una operación cancelada nunca tiene
+fecha de confirmación y no aparecería nunca.
+
+**Decisión.** Los conteos por estado se filtran por `creado_en` —cuándo se
+inició la operación— y las ganancias siguen usando `confirmado_en`. Cada
+pregunta usa la fecha que le corresponde.
+
+El efecto raro queda documentado: una compra iniciada ayer y confirmada hoy
+cuenta como operación de ayer y como ganancia de hoy. La columna del tablero
+dice «por fecha de creación» para que se entienda de dónde sale el número.
+
+### 18.4. «Dos métricas que el ticket pedía y el modelo no permite»
+
+**Lo que aprendimos.** Al leer los modelos antes de implementar aparecieron
+dos pedidos que no se podían cumplir como estaban escritos:
+
+- **«Diferencias de arqueo pendientes».** `DiferenciaCaja` tiene monto,
+  moneda, motivo, responsable y fecha, pero **ningún campo de resuelta o
+  pendiente**. Las diferencias se anotan y nunca se cierran: el sistema no
+  distingue una ya resuelta de una abierta.
+- **«Sucursales activas».** `Sucursal` tiene
+  `es_unica = BooleanField(unique=True)`, o sea que el modelo **impone que
+  haya una sola**. El contador diría siempre «1».
+
+**Decisión.** Se avisó antes de implementar en vez de inventar. La primera
+métrica dice **«diferencias registradas»** y no «pendientes»; agregarle un
+campo de resolución a
+`DiferenciaCaja` sería diseñar un flujo de trabajo que nadie pidió, y en el
+modelo de otra historia. La segunda se reemplazó por el nombre de la caja y
+si está activa.
+
+### 18.5. «Dos formas de que una factura salga mal»
+
+**Lo que aprendimos.** `Factura` tiene dos campos de estado y por lo tanto dos
+maneras distintas de fallar: `estado=ERROR` es que Factura Segura rechazó la
+petición —el problema está en los datos que mandamos—, y
+`estado_fiscal=RECHAZADA` es que se emitió bien pero SIFEN la rechazó después
+—el problema está del lado del fisco—.
+
+**Decisión.** Se cuentan separadas. Un solo número de «facturas con problema»
+habría escondido en qué lado hay que mirar, que es lo único que un
+administrador necesita saber de esa tarjeta.
+
+### 18.6. «Que la pantalla sea rápida de verdad, no solo pocas consultas»
+
+**Lo que aprendimos.** RNF001 pide menos de 3 segundos. Lo fácil es escribir
+agregaciones con `Count(filter=Q(...))` y dar por cumplido el requisito, pero
+eso no se verifica solo: una métrica agregada después, dentro de un bucle,
+pasa desapercibida.
+
+**Decisión: una prueba que lo mida y no una que lo declare.** La prueba corre
+el servicio con 2 operaciones, después crea 20 más y lo vuelve a correr, y
+exige que la **cantidad de consultas sea la misma**. Un número fijo escrito a
+mano se rompería con cualquier cambio inocente; esto se rompe solo cuando el
+costo empieza a crecer con los datos, que es el problema real.
+
+Un detalle de implementación salió de ahí: el filtro de formato puede
+averiguar los decimales de una moneda solo, pero lo hace con una consulta por
+moneda. El servicio los trae junto con el saldo en la misma agregación, así
+que la plantilla no consulta nada.
+
+### 18.7. «Un acceso directo que le habría dado 403 al administrador»
+
+**Lo que aprendimos.** Al armar los accesos directos se iba a enlazar
+«Ventas pendientes» (`conversiones:ventas_pendientes`), que parecía lo lógico
+para la tarjeta de ventas pendientes de entrega. Se verificó la vista antes:
+está protegida con `requiere_cajero`. El administrador habría recibido un 403
+desde un botón del propio tablero.
+
+**Decisión.** La tarjeta muestra el número y el acceso directo va a «Ventas y
+anulaciones», que sí es del administrador. Se verificaron las once rutas
+enlazadas una por una antes de escribir la plantilla.
+
+### 18.8. «El CSS que no se puede recompilar, otra vez»
+
+**Lo que aprendimos.** Revisando el panel de RF031 se vio que usa
+`md:grid-cols-4`, y esa clase **no existe en el CSS ya compilado**: Tailwind
+no se puede recompilar en este entorno (Node 18, pide 20 o más). Las tarjetas
+de ese panel no se acomodan en cuatro columnas.
+
+**Decisión.** La plantilla del tablero lleva su propio `<style>`, igual que se
+hizo en GEG9-82. La rejilla usa `repeat(auto-fit, minmax(13rem, 1fr))` en vez
+de una cantidad fija de columnas: se acomoda sola en el celular y no depende
+de clases que puedan no estar generadas.
+
+### 18.8.b. «Bug propio: el gráfico salió vacío y las fechas desarmadas»
+
+**Lo que pasó.** El gráfico pasaba las 40 pruebas y en la pantalla **no se
+dibujaba ninguna barra**, con las fechas del eje partidas en cifras sueltas.
+Lo detectó la integrante mirando, no las pruebas.
+
+**La causa.** El sitio está en español, y Django **localiza los números al
+renderizar**: escribía `width="44,64"` en vez de `44.64`. SVG no entiende la
+coma como separador decimal, así que descartaba el atributo y la barra
+quedaba sin tamaño.
+
+En `<text x="36,0">` era peor, y es la parte que vale la pena recordar: ahí
+la coma **sí es válida en SVG**, pero significa otra cosa —una posición por
+letra—. Así que no fallaba: dibujaba la primera cifra de la fecha en un lugar
+y la segunda en otro. Un atributo mal formado se nota; uno que significa algo
+distinto de lo que uno cree, no.
+
+**La decisión.** El gráfico va dentro de `{% localize off %}`. La geometría
+no es texto para leer, es un dato para la máquina, y no se localiza.
+
+**Por qué las pruebas no lo agarraron.** Verificaban los números que calcula
+el servicio —que el doble de ganancia dibuje el doble de alto— y eso estaba
+bien. El error aparecía **al renderizar**, que era el único tramo que no
+estaba cubierto. La prueba nueva mira el SVG ya renderizado y exige que
+ninguna coordenada tenga coma y que haya al menos una barra con alto.
+
+Es la misma lección de GEG9-82 vista desde el otro lado: allá el problema era
+que Django **no** formateaba los números como queríamos, y acá que los
+formateaba donde no debía.
+
+### 18.8.c. «Sacale los textos al tablero»
+
+**Lo que aprendimos.** La primera versión explicaba en pantalla cada decisión:
+por qué la conversión usa la tasa de compra, por qué dice «registradas» y no
+«pendientes», por qué los conteos usan otra fecha que las ganancias. La
+integrante pidió sacarlos, y tenía razón: **un tablero se mira de un vistazo,
+no se lee**. Toda esa prosa competía con los números, que son lo único que
+alguien va a mirar ahí.
+
+**Decisión.** Las justificaciones se fueron a Sphinx y a este documento, que
+es donde se buscan. En la pantalla quedaron datos, unidades y enlaces.
+
+**Lo que NO se sacó, y por qué.** El aviso de las monedas sin cotización
+vigente. No explica una decisión: avisa que **el total está incompleto**.
+Sacarlo dejaría una cifra que parece completa y no lo está, que es distinto de
+sacar una explicación. Además es condicional —solo aparece cuando de verdad
+falta una cotización—, así que no ensucia la pantalla el resto del tiempo.
+
+La diferencia entre las dos cosas es la que importa: explicar una decisión es
+opcional, avisar que un número no es lo que aparenta no lo es.
+
+### 18.9. Un bug ajeno que apareció al correr la suite
+
+**Lo que aprendimos.** La suite completa dio una falla en
+`apps/notificaciones`, en una prueba que no toca nada de esta historia. Se
+rastreó antes de suponer: el commit `8b816fb` (GEG9-81, auditoría) agregó
+`vigente_desde` a la condición `cambiaron_los_valores`, que RF033 usaba para
+decidir **si notificar**. Resultado: cambiar solo la fecha de vigencia de una
+tasa ahora le manda una notificación a todos los clientes asociados, justo lo
+contrario de lo que dice el comentario dos líneas más abajo.
+
+**Decisión.** Primero se reportó con el diagnóstico en vez de tocarlo, porque
+es código de otra historia; la integrante pidió arreglarlo y preguntó
+expresamente si eso iba a afectar la auditoría. No: el arreglo **separa la
+condición en dos** y la auditoría queda igual. Sigue registrando el cambio de
+fecha de vigencia, que es un cambio sobre la tasa y tiene que quedar
+asentado; lo único que deja de pasar es la notificación.
+
+Se comprobó antes de responder: las 36 pruebas de auditoría, tasas y
+notificaciones pasan.
+
+**Y una prueba nueva que fija las dos conductas juntas.** Esto es lo que más
+valió la pena de todo el episodio: cambiar solo la vigencia tiene que dejar
+**cero notificaciones y un registro de auditoría**, verificado en una sola
+prueba. Separadas en sus archivos, arreglar una rompiendo la otra seguiría
+dando verde en el archivo de cada uno, que es exactamente cómo se colaron las
+dos juntas la primera vez.
+
+Queda anotado acá porque es un conflicto semántico de merge —dos ramas
+correctas por separado, rotas al juntarse— y ninguna de las dos lo podía
+detectar sola.
+
+**Un error propio, de paso.** La primera versión de esa prueba falló por mi
+culpa: comparaba `vigente_desde` con lo escrito en el formulario sin pasar de
+UTC a hora local, así que daba las 11:00 contra las 08:00. El código estaba
+bien; la aserción, mal.
+
+## 18.10. Verificaciones realizadas
+
+- **40 pruebas nuevas**, todas aprobadas.
+- Casos cubiertos: que **solo** el administrador entre y que analista,
+  cliente, cajero, terminal y un usuario sin rol reciban **403 escribiendo la
+  dirección**; que sin sesión mande a iniciar sesión; que la opción del menú
+  la vea solo el administrador; que los conteos por estado separen compras de
+  ventas y den el total; que **canceladas y anuladas no sumen dinero** —con
+  la anulada llevando fecha de confirmación a propósito, para probar que el
+  filtro mira el estado y no la presencia del campo—; que las ganancias
+  **coincidan con el servicio de RF031** y usen su mismo período; que
+  «7 días» incluya hoy y los seis anteriores; que un período inventado o
+  manipulado caiga en el valor por omisión y devuelva 200; que los clientes
+  no dependan del período; que los saldos se agrupen por moneda con sus
+  decimales; que las facturas separen el error de emisión del rechazo de
+  SIFEN; que las ventas pendientes de entrega **no** se filtren por período;
+  el estado vacío sin error 500 y todo en cero; que las cifras salgan con
+  separador de miles y **no** con el formato de Django; y que la cantidad de
+  consultas no crezca con los datos.
+- Sobre la conversión a guaraníes y el gráfico: que cada moneda se convierta
+  con su cotización y el total tenga unidad; que se use la tasa de **compra**
+  y no la de venta; que una moneda **sin tasa activa** quede fuera del total
+  y se la nombre en vez de inventarle un valor; que si todo ya está en
+  guaraníes no se muestre una columna de equivalencias repetida; que **la
+  suma de las barras sea igual al resumen de RF031**; que haya una barra por
+  día en períodos cortos y que junte días sin pasar del máximo en los largos;
+  que el día con el doble de ganancia dibuje el doble de alto y ninguna barra
+  se salga del dibujo; y que sin operaciones el gráfico quede vacío sin
+  romper.
+- **Suite completa: 530 aprobadas, ninguna falla.** La falla descrita en 18.9,
+  anterior a esta rama, quedó arreglada con una prueba nueva que la fija.
+- `manage.py check` sin errores. La app no define modelos, así que no hay
+  migraciones. Sphinx genera sin warnings.
+
+---
