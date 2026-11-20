@@ -110,3 +110,39 @@ se puede completar después de verificar manualmente la devolución.
 - Las compras actuales no generan movimientos de caja; por eso no hay un
   movimiento de efectivo de compra que este flujo pueda revertir. Si se agrega
   el pago de compras en efectivo, habrá que modelar ese movimiento.
+
+## 4. Ryuto Maehara - GEG9-78, Configuración de seguridad (RF036)
+
+### 4.1. «¿Cómo se configura el tiempo de inactividad?»
+
+**Decisión.** Agregar la pantalla «Seguridad», visible y accesible solo para el
+rol administrador. Allí se configura el tiempo máximo de inactividad entre 5
+minutos y 8 horas. El valor se guarda en la base de datos y el middleware lo
+aplica a las sesiones autenticadas en sus solicitudes, sin reiniciar Django.
+Los cambios se registran con el usuario, la fecha y los valores anterior y
+nuevo.
+
+### 4.2. «¿Sigue siendo necesaria `DJANGO_SESSION_IDLE_TIMEOUT`?»
+
+- La variable se expresa en segundos y sirve como valor inicial si todavía no
+  existe una configuración guardada; `900` equivale a 15 minutos.
+- Una vez creada la configuración en la base de datos, el valor guardado tiene
+  prioridad. Cambiar `.env` no reemplaza el parámetro configurado en la
+  pantalla.
+- Las sesiones activas adoptan el nuevo plazo en su siguiente solicitud. Una
+  pestaña abierta puede conservar su temporizador anterior hasta volver a
+  cargar o hacer otra solicitud.
+
+### 4.3. «¿Por qué aparecía `ProgrammingError` en `/panel/`?»
+
+**Causa y resolución.** El código consultaba la tabla nueva de configuración,
+pero la migración aún no se había aplicado en la base de datos del contenedor.
+Se ejecutó `python manage.py migrate usuarios`; luego se verificó que el panel
+y la pantalla de seguridad cargaran correctamente.
+
+### 4.4. Verificaciones realizadas
+
+- Las 460 pruebas del proyecto aprobaron con SQLite; `python manage.py check`
+  y `makemigrations --check --dry-run` no detectaron problemas.
+- Se verificó en el navegador el panel y la pantalla de seguridad después de
+  aplicar la migración `0002_cambioconfiguracionseguridad_configuracionseguridad`.
