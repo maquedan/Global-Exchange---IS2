@@ -1107,3 +1107,19 @@ cerrados.
   `apps/notificaciones/tests/test_notificaciones.py::test_editar_sin_cambiar_los_valores_no_notifica`.
 
 ---
+
+## 17. Daniela González — Revisión del flujo crítico de compra/venta y terminal (GEG9-70)
+
+### 17.1. «Una sola evidencia QA, no un documento por cada prueba»
+
+**Contexto.** La tarea pide recorrer varias historias ya implementadas: compra, venta, cancelaciones, caja, terminal, pagos y facturación. Documentar cada comprobación en un archivo aislado haría difícil encontrar el resultado de QA del sprint y duplicaría la constancia de pruebas unitarias.
+
+**Decisión.** Se creó `docs/qa-sprint6.md` como evidencia central de QA. El archivo diferencia lo que fue ejecutado automáticamente de los recorridos que requieren interfaz, usuarios de Keycloak, efectivo de demostración o servicios externos. La constancia PUN conserva el comando, fecha y resultado repetible.
+
+### 17.2. «Qué puede demostrar pytest y qué no»
+
+**Lo que aprendimos.** Las pruebas automatizadas pueden verificar el flujo de negocio completo con proveedores simulados: cálculo, congelamiento de tasa, cancelación, movimientos de caja, terminal y errores de facturación sin revertir una operación ya confirmada. Pero no prueban una transferencia de dinero real ni una emisión fiscal real contra dLocal o Factura Segura.
+
+**Decisión.** Registrar el resultado exacto de la batería (`199 passed`) como evidencia del comportamiento controlado, y dejar explícito que la integración externa requiere credenciales, rango fiscal y ambiente autorizados. No se debe marcar como aprobada una pasarela o factura real solo por una prueba simulada.
+
+---
