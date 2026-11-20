@@ -261,6 +261,132 @@ def confirmar_pago_compra(*, pk, usuario):
     return _confirmar_compra_pendiente(compra, usuario=usuario)
 
 
+@transaction.atomic
+def confirmar_pago_compra_efectivo(*, pk, usuario, billetes_recibidos):
+    """Confirma una compra cobrando efectivo por denominación (RF057).
+
+    El cajero recibe el efectivo exacto de la compra. El ingreso queda
+    registrado en su fondo, con detalle de billetes, y la compra se confirma
+    únicamente si la cotización congelada sigue vigente.
+    """
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="cajero").exists()
+    ):
+        raise CompraNoConfirmable(
+            "Solo un cajero puede recibir efectivo de una compra."
+        )
+
+    compra = (
+        CompraDivisa.objects.select_for_update()
+        .filter(
+            pk=pk,
+            cliente__activo=True,
+        )
+        .first()
+    )
+
+    if compra is None:
+        raise CompraNoConfirmable("La compra no existe o el cliente está inactivo.")
+
+    if compra.espera_transferencia:
+        raise CompraNoDisponible(
+            "Esta compra espera la conciliación de una transferencia y no puede "
+            "cobrarse en efectivo."
+        )
+
+    if compra.estado != CompraDivisa.Estado.PENDIENTE:
+        raise CompraNoConfirmable(
+            "Esta compra ya fue confirmada o cancelada."
+        )
+
+    compra = expirar_compra_si_corresponde(compra)
+
+    if compra.estado == CompraDivisa.Estado.CANCELADA:
+        return compra
+
+    tasa_vigente = (
+        TasaCambio.objects.filter(
+            moneda_origen=compra.moneda_pagada,
+            moneda_destino=compra.moneda_adquirida,
+            activo=True,
+            vigente_desde__lte=timezone.now(),
+        )
+        .order_by("-vigente_desde")
+        .first()
+    )
+
+    if tasa_vigente is None or tasa_vigente.pk != compra.tasa_cambio_id:
+        estado_anterior = compra.estado
+        compra.estado = CompraDivisa.Estado.CANCELADA
+        compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.CAMBIO_COTIZACION
+        compra.cancelado_en = timezone.now()
+        compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+
+        registrar_cambio_estado(
+            compra,
+            estado_anterior,
+            compra.estado,
+            motivo="La cotización cambió antes de recibir el efectivo.",
+            usuario=usuario,
+        )
+        return compra
+
+    caja = (
+        Caja.objects.select_for_update()
+        .filter(sucursal__activa=True)
+        .select_related("sucursal")
+        .first()
+    )
+
+    if caja is None:
+        raise CompraNoDisponible(
+            "No hay una caja activa configurada para recibir el efectivo."
+        )
+
+    try:
+        movimiento = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.INGRESO_CAJERO,
+            moneda_id=compra.moneda_pagada_id,
+            realizado_por=usuario,
+            cajero_id=usuario.pk,
+            nota=f"Efectivo recibido del cliente por compra #{compra.pk}",
+            billetes=billetes_recibidos,
+        )
+    except MovimientoNoPermitido as error:
+        raise CompraNoDisponible(str(error)) from error
+
+    if movimiento.importe != compra.total_a_pagar:
+        raise CompraNoDisponible(
+            "El desglose recibido debe sumar exactamente "
+            f"{compra.total_a_pagar:.2f} {compra.moneda_pagada.codigo}."
+        )
+
+    estado_anterior = compra.estado
+    compra.estado = CompraDivisa.Estado.CONFIRMADA
+    compra.confirmado_en = timezone.now()
+    compra.movimiento_efectivo_recibido = movimiento
+    compra.save(
+        update_fields=[
+            "estado",
+            "confirmado_en",
+            "movimiento_efectivo_recibido",
+        ]
+    )
+
+    registrar_cambio_estado(
+        compra,
+        estado_anterior,
+        compra.estado,
+        usuario=usuario,
+    )
+    _facturar(compra)
+
+    return compra
+
+
 def _confirmar_compra_pendiente(compra, *, usuario, motivo=""):
     """Núcleo de la confirmación de una compra pendiente.
 
@@ -638,6 +764,52 @@ def anular_compra(
                 "No hay un pago registrado para esta compra. Confirmá que la "
                 "devolución manual ya fue realizada antes de anularla."
             )
+
+    if compra.movimiento_efectivo_recibido_id:
+        movimiento = (
+            MovimientoCaja.objects.select_for_update()
+            .filter(pk=compra.movimiento_efectivo_recibido_id)
+            .prefetch_related("detalle_billetes")
+            .first()
+        )
+        if movimiento is None:
+            raise AnulacionCompraNoPermitida(
+                "No se encuentra el movimiento de efectivo de la compra."
+            )
+        if movimiento.tipo != MovimientoCaja.Tipo.INGRESO_CAJERO:
+            raise AnulacionCompraNoPermitida(
+                "El movimiento de efectivo de la compra no es un ingreso "
+                "válido para revertir."
+            )
+
+        billetes = dict(
+            movimiento.detalle_billetes.values_list(
+                "denominacion_id", "cantidad"
+            )
+        )
+        if not billetes:
+            raise AnulacionCompraNoPermitida(
+                "Falta el desglose de billetes del efectivo recibido."
+            )
+
+        try:
+            registrar_movimiento(
+                caja_id=movimiento.caja_id,
+                tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
+                moneda_id=movimiento.moneda_id,
+                realizado_por=usuario,
+                cajero_id=movimiento.cajero_id,
+                nota=(
+                    f"Anulación de compra #{compra.pk}; reversión del "
+                    f"movimiento #{movimiento.pk}: {motivo}"
+                ),
+                billetes=billetes,
+                reversion_de=movimiento,
+            )
+        except MovimientoNoPermitido as error:
+            raise AnulacionCompraNoPermitida(
+                f"No se puede completar la reversión de efectivo: {error}"
+            ) from error
 
     estado_anterior = compra.estado
     compra.estado = CompraDivisa.Estado.ANULADA

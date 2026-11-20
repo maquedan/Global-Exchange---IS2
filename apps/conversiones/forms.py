@@ -243,6 +243,69 @@ class EntregaEfectivoVentaForm(forms.Form):
         return cantidades
 
 
+class RecepcionEfectivoCompraForm(forms.Form):
+    """Desglose de billetes recibidos al cobrar una compra en efectivo."""
+
+    def __init__(self, *args, moneda_recibida, importe_esperado, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.moneda_recibida = moneda_recibida
+        self.importe_esperado = importe_esperado
+        self.campos_billetes_recibidos = []
+
+        denominaciones = DenominacionBillete.objects.filter(
+            moneda=moneda_recibida,
+            moneda__activo=True,
+        ).order_by("-valor")
+
+        for denominacion in denominaciones:
+            nombre = f"billete_recibido_{denominacion.pk}"
+
+            self.fields[nombre] = forms.IntegerField(
+                label=f"{moneda_recibida.codigo} {denominacion.valor}",
+                min_value=0,
+                required=False,
+                initial=0,
+                widget=forms.NumberInput(attrs={"min": "0", "step": "1"}),
+            )
+
+            self.campos_billetes_recibidos.append(
+                {
+                    "denominacion": denominacion,
+                    "campo": self[nombre],
+                }
+            )
+
+    def clean(self):
+        datos = super().clean()
+        billetes_recibidos = {}
+        total_recibido = Decimal("0.00")
+
+        for item in self.campos_billetes_recibidos:
+            denominacion = item["denominacion"]
+            cantidad = datos.get(
+                f"billete_recibido_{denominacion.pk}"
+            ) or 0
+
+            if cantidad:
+                billetes_recibidos[denominacion.pk] = cantidad
+                total_recibido += denominacion.valor * cantidad
+
+        if total_recibido != self.importe_esperado:
+            diferencia = abs(self.importe_esperado - total_recibido)
+            self.add_error(
+                None,
+                (
+                    "El desglose de billetes difiere por "
+                    f"{diferencia:.2f} {self.moneda_recibida.codigo}; debe sumar "
+                    f"exactamente {self.importe_esperado:.2f} "
+                    f"{self.moneda_recibida.codigo}."
+                ),
+            )
+
+        datos["billetes_recibidos"] = billetes_recibidos
+        return datos
+
+
 class AnularVentaForm(forms.Form):
     motivo = forms.CharField(
         label="Motivo de anulación",

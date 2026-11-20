@@ -26,8 +26,11 @@ from .forms import (
     SimulacionConversionForm,
     VentaDivisaForm,
     construir_resultado,
+    RecepcionEfectivoCompraForm,
 )
+
 from .models import CompraDivisa, VentaDivisa
+
 from .services import (
     AnulacionCompraNoPermitida,
     ConciliacionNoPermitida,
@@ -49,6 +52,7 @@ from .services import (
     expirar_venta_si_corresponde,
     iniciar_compra,
     iniciar_venta,
+    confirmar_pago_compra_efectivo,
 )
 
 
@@ -260,6 +264,95 @@ def cancelar_compra_view(request, pk):
 
 
 @login_required
+@requiere_cajero
+def compras_pendientes_view(request):
+    """Lista las compras pendientes de cobro en efectivo (RF057)."""
+    compras = (
+        CompraDivisa.objects.filter(
+            estado=CompraDivisa.Estado.PENDIENTE,
+            espera_transferencia=False,
+        )
+        .select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        )
+        .order_by("creado_en", "pk")
+    )
+
+    return render(
+        request,
+        "conversiones/compras_pendientes.html",
+        {"compras": compras},
+    )
+
+
+@login_required
+@requiere_cajero
+def confirmar_compra_efectivo_view(request, pk):
+    """Permite al cajero recibir efectivo y confirmar una compra (RF057)."""
+    compra = get_object_or_404(
+        CompraDivisa.objects.select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        ),
+        pk=pk,
+    )
+
+    compra = expirar_compra_si_corresponde(compra)
+
+    if compra.estado != CompraDivisa.Estado.PENDIENTE:
+        messages.info(
+            request,
+            "Esta compra ya fue procesada, cancelada o vencida.",
+        )
+        return redirect("conversiones:compras_pendientes")
+
+    formulario = RecepcionEfectivoCompraForm(
+        request.POST if request.method == "POST" else None,
+        moneda_recibida=compra.moneda_pagada,
+        importe_esperado=compra.total_a_pagar,
+    )
+
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            compra = confirmar_pago_compra_efectivo(
+                pk=compra.pk,
+                usuario=request.user,
+                billetes_recibidos=formulario.cleaned_data["billetes_recibidos"],
+            )
+        except CompraNoConfirmable as error:
+            raise PermissionDenied from error
+        except CompraNoDisponible as error:
+            formulario.add_error(None, str(error))
+        else:
+            if compra.estado == CompraDivisa.Estado.CANCELADA:
+                messages.error(
+                    request,
+                    "La cotización cambió o venció antes de recibir el efectivo; "
+                    "la compra fue cancelada.",
+                )
+            else:
+                messages.success(
+                    request,
+                    "La compra fue confirmada y el efectivo recibido quedó "
+                    "registrado en el fondo del cajero.",
+                )
+
+            return redirect("conversiones:compras_pendientes")
+
+    return render(
+        request,
+        "conversiones/recibir_efectivo_compra.html",
+        {
+            "compra": compra,
+            "formulario": formulario,
+        },
+    )
+
+
+@login_required
 @requiere_cliente
 @requiere_cliente_activo
 def vender(request):
@@ -294,9 +387,10 @@ def vender(request):
 @login_required
 def comprobante_venta(request, pk):
     """Muestra el estado de la venta (pendiente, confirmada o cancelada)."""
-    es_cajero = tiene_rol(request.user, "cajero", "administrador")
+    puede_consultar = tiene_rol(request.user, "cajero", "administrador")
+    es_cajero = tiene_rol(request.user, "cajero")
     filtros = {"pk": pk}
-    if not es_cajero:
+    if not puede_consultar:
         if not tiene_rol(request.user, "usuario_cliente"):
             raise PermissionDenied
         filtros["cliente__asociaciones_usuarios__usuario"] = request.user
@@ -328,6 +422,10 @@ def comprobante_venta(request, pk):
             "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE,
             "es_cajero": es_cajero,
             "es_administrador": tiene_rol(request.user, "administrador"),
+            "puede_cancelar": (
+                not puede_consultar
+                and tiene_rol(request.user, "usuario_cliente")
+            ),
         },
     )
 

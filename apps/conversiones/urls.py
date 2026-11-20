@@ -16,6 +16,16 @@ urlpatterns = [
     path("compras/<int:pk>/confirmar/", views.confirmar_compra_view, name="confirmar_compra"),
     path("compras/<int:pk>/cancelar/", views.cancelar_compra_view, name="cancelar_compra"),
     path("compras/<int:pk>/anular/", views.anular_compra_view, name="anular_compra"),
+    path(
+        "compras-pendientes/",
+        views.compras_pendientes_view,
+        name="compras_pendientes",
+    ),
+    path(
+        "compras/<int:pk>/recibir-efectivo/",
+        views.confirmar_compra_efectivo_view,
+        name="confirmar_compra_efectivo",
+    ),
     path("vender/", views.vender, name="vender"),
     path(
         "ventas-administracion/",

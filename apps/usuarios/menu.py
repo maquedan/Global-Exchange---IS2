@@ -110,6 +110,11 @@ MENU_PRINCIPAL = [
         "roles": ["cajero"],
     },
     {
+        "texto": "Compras pendientes",
+        "url": "conversiones:compras_pendientes",
+        "roles": ["cajero"],
+    },
+    {
         "texto": "Mis existencias",
         "url": "cajas:mis_existencias",
         "roles": ["cajero"],

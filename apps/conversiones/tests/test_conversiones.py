@@ -42,6 +42,7 @@ from apps.conversiones.services import (
     calcular_conversion,
     confirmar_pago_compra,
     confirmar_pago_venta,
+    confirmar_pago_compra_efectivo,
     iniciar_venta,
     iniciar_compra,
 )
@@ -182,6 +183,23 @@ def cargar_billete(cajero, moneda, valor):
         billetes={denominacion.pk: 1},
     )
     return denominacion
+
+
+def preparar_billetes_compra(moneda, importe):
+    sucursal, _ = Sucursal.objects.get_or_create(
+        es_unica=True,
+        defaults={"nombre": "Centro", "direccion": "Centro"},
+    )
+    Caja.objects.get_or_create(sucursal=sucursal)
+
+    denominacion = DenominacionBillete.objects.create(
+        moneda=moneda,
+        valor=importe,
+    )
+
+    return {
+        f"billete_recibido_{denominacion.pk}": "1",
+    }, denominacion
 
 
 def preparar_desgloses_venta(cajero, venta, importes_entregados=None):
@@ -1899,3 +1917,267 @@ def test_comprobante_no_lo_puede_ver_un_usuario_que_no_es_dueno_de_la_operacion(
     respuesta = client.get(reverse("conversiones:comprobante_compra", args=[compra.pk]))
 
     assert respuesta.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# RF057 (GEG9-58) — Recepción de efectivo en compra
+# --------------------------------------------------------------------------
+
+def crear_compra_pendiente_efectivo(
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+):
+    return iniciar_compra(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        monto_pagado=Decimal("100.00"),
+    )
+
+
+@pytest.mark.django_db
+def test_cajero_recibe_efectivo_y_confirma_compra(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    datos, denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        compra.total_a_pagar,
+    )
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+        follow=True,
+    )
+
+    compra.refresh_from_db()
+
+    assert respuesta.status_code == 200
+    assert compra.estado == CompraDivisa.Estado.CONFIRMADA
+    assert compra.confirmado_en is not None
+    assert compra.movimiento_efectivo_recibido is not None
+
+    movimiento = compra.movimiento_efectivo_recibido
+    assert movimiento.tipo == MovimientoCaja.Tipo.INGRESO_CAJERO
+    assert movimiento.importe == compra.total_a_pagar
+    assert movimiento.cajero == usuario_cajero
+    assert movimiento.nota == (
+        f"Efectivo recibido del cliente por compra #{compra.pk}"
+    )
+
+    fondo = FondoCajero.objects.get(
+        cajero=usuario_cajero,
+        moneda=compra.moneda_pagada,
+    )
+    assert fondo.saldo == compra.total_a_pagar
+
+    inventario = InventarioBilleteCajero.objects.get(
+        cajero=usuario_cajero,
+        denominacion=denominacion,
+    )
+    assert inventario.cantidad == 1
+
+    assert compra.cambios_estado.filter(
+        estado_nuevo=CompraDivisa.Estado.CONFIRMADA
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_cajero_no_confirma_compra_si_el_desglose_no_coincide(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+
+    importe_incorrecto = compra.total_a_pagar - Decimal("1.00")
+    datos, _denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        importe_incorrecto,
+    )
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+    )
+
+    compra.refresh_from_db()
+
+    assert respuesta.status_code == 200
+    assert "difiere por 1.00 USD" in respuesta.content.decode()
+    assert compra.estado == CompraDivisa.Estado.PENDIENTE
+    assert compra.movimiento_efectivo_recibido is None
+    assert MovimientoCaja.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_compra_en_efectivo_se_cancela_si_cambia_la_cotizacion(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    datos, _denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        compra.total_a_pagar,
+    )
+
+    _cambiar_cotizacion(tasa, Decimal("7.50"), Decimal("7.60"))
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+    )
+
+    compra.refresh_from_db()
+
+    assert respuesta.status_code == 302
+    assert compra.estado == CompraDivisa.Estado.CANCELADA
+    assert (
+        compra.motivo_cancelacion
+        == CompraDivisa.MotivoCancelacion.CAMBIO_COTIZACION
+    )
+    assert compra.movimiento_efectivo_recibido is None
+    assert MovimientoCaja.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_compra_por_transferencia_no_aparece_en_cola_de_efectivo(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    compra.espera_transferencia = True
+    compra.save(update_fields=["espera_transferencia"])
+
+    client.force_login(usuario_cajero)
+    respuesta = client.get(reverse("conversiones:compras_pendientes"))
+
+    assert respuesta.status_code == 200
+    assert compra not in respuesta.context["compras"]
+
+
+@pytest.mark.django_db
+def test_cliente_no_puede_recibir_efectivo_de_una_compra(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+
+    client.force_login(usuario_cliente)
+
+    assert client.get(
+        reverse("conversiones:compras_pendientes")
+    ).status_code == 403
+
+    assert client.get(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk])
+    ).status_code == 403
+
+
+@pytest.mark.django_db
+def test_anular_compra_en_efectivo_revierte_el_movimiento_de_caja(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    datos, denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        compra.total_a_pagar,
+    )
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+    )
+    assert respuesta.status_code == 302
+
+    administrador = get_user_model().objects.create_user(
+        username="admin-anula-compra-efectivo"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+
+    compra, reembolso_completado = anular_compra(
+        pk=compra.pk,
+        usuario=administrador,
+        motivo="Cobro anulado",
+        confirmar_reembolso_manual=True,
+    )
+    movimiento = compra.movimiento_efectivo_recibido
+    reversion = movimiento.movimiento_reversion
+
+    assert reembolso_completado
+    assert compra.estado == CompraDivisa.Estado.ANULADA
+    assert reversion.tipo == MovimientoCaja.Tipo.RETIRO_CAJERO
+    assert reversion.importe == movimiento.importe
+    assert reversion.reversion_de == movimiento
+
+    fondo = FondoCajero.objects.get(
+        cajero=usuario_cajero,
+        moneda=compra.moneda_pagada,
+    )
+    inventario = InventarioBilleteCajero.objects.get(
+        cajero=usuario_cajero,
+        denominacion=denominacion,
+    )
+    assert fondo.saldo == Decimal("0.00")
+    assert inventario.cantidad == 0
