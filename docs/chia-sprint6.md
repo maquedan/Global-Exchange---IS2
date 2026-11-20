@@ -1123,3 +1123,19 @@ cerrados.
 **Decisión.** Registrar el resultado exacto de la batería (`199 passed`) como evidencia del comportamiento controlado, y dejar explícito que la integración externa requiere credenciales, rango fiscal y ambiente autorizados. No se debe marcar como aprobada una pasarela o factura real solo por una prueba simulada.
 
 ---
+
+## 18. Daniela González — Verificación del manejo de roles (GEG9-71)
+
+### 18.1. «¿Basta con configurar los roles para asegurar los permisos?»
+
+**Contexto.** La pantalla administrativa permite crear roles en Keycloak, asignarlos a usuarios y vincular permisos funcionales. Sin embargo, esa configuración por sí sola no demuestra que cada perfil vea solamente las opciones permitidas ni que las rutas directas estén protegidas.
+
+**Decisión.** Verificar la matriz de roles mediante pruebas automatizadas y revisión manual del menú y de las URLs. Se comprobó el comportamiento de administrador, analista cambiario, usuario cliente, cajero y terminal; también se verificó que un usuario sin cliente asociado quede limitado a las consultas permitidas.
+
+### 18.2. «¿Qué hacer cuando el menú y la autorización no coinciden?»
+
+**Lo que aprendimos.** Una ruta puede estar correctamente protegida y aun así existir un problema de experiencia o seguridad si el menú ofrece una acción que el rol no puede utilizar. También una pantalla interna puede responder a usuarios anónimos aunque no exponga datos sensibles.
+
+**Decisión.** Registrar los hallazgos como errores independientes en Jira: GEG9-83 para ocultar **Clientes** al analista cambiario, manteniendo el acceso administrativo y el `403` por URL directa; y GEG9-84 para exigir autenticación en `/elegir-cliente/`. La tarea GEG9-71 no se considerará cerrada hasta aplicar ambas correcciones y repetir la verificación.
+
+---

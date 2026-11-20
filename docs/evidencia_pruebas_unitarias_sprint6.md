@@ -805,3 +805,34 @@ La ejecución cubre los flujos automatizados de simulación, tasa y comisión, c
 Las pruebas no llaman a dLocal ni a Factura Segura reales: esos proveedores se simulan o controlan dentro de la suite. La verificación contra servicios externos requiere credenciales y datos autorizados del ambiente correspondiente.
 
 ---
+
+## Daniela González — Verificación del manejo de roles (GEG9-71)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 05:22:58 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/usuarios/tests/test_menu.py`, `apps/usuarios/tests/test_roles_permisos.py`, `apps/usuarios/tests/test_restriccion_operaciones.py`, `apps/terminal/tests/test_terminal.py` |
+| **Comando** | `docker compose exec web pytest apps/usuarios/tests/test_menu.py apps/usuarios/tests/test_roles_permisos.py apps/usuarios/tests/test_restriccion_operaciones.py apps/terminal/tests/test_terminal.py -v` |
+| **Resultado** | **70 passed**, 1 warning en 32.95s |
+
+```text
+$ docker compose exec web pytest \
+  apps/usuarios/tests/test_menu.py \
+  apps/usuarios/tests/test_roles_permisos.py \
+  apps/usuarios/tests/test_restriccion_operaciones.py \
+  apps/terminal/tests/test_terminal.py \
+  -v
+
+collected 70 items
+
+========================= 70 passed, 1 warning in 32.95s =========================
+```
+
+La ejecución verifica el menú según rol, la gestión administrativa de roles y permisos, la restricción de operaciones para usuarios sin cliente asociado y el acceso exclusivo a la terminal. Un usuario sin cliente puede realizar consultas permitidas, pero se bloquea en las rutas operativas sin crear operaciones, pagos ni cuentas.
+
+Durante la revisión manual se detectaron dos hallazgos abiertos: QA-ROL-01
+(GEG9-83), referido a la opción **Clientes** visible para el analista
+cambiario; y QA-ROL-02 (GEG9-84), referido al acceso anónimo a
+`/elegir-cliente/`. GEG9-71 permanece en curso hasta corregirlos y volver a ejecutar las pruebas correspondientes.
+
+---
