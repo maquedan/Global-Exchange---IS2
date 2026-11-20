@@ -163,3 +163,76 @@ apps/usuarios/tests/test_configuracion_seguridad.py ......               [100%]
 
 El warning corresponde a la deprecación futura de `EMAIL_BACKEND` informada
 por `pytest-django`; no produjo fallos.
+
+## Ryuto Maehara - GEG9-81, Registro de auditoría
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 23:32:00 (-03) |
+| **Ambiente** | Docker Compose, servicio `web`, base PostgreSQL |
+| **Artefactos probados** | `apps/usuarios/tests/test_auditoria.py`, `apps/clientes/tests/test_clientes.py`, `apps/comisiones/tests/test_comisiones.py`, `apps/tasa_cambios/tests.py`, `apps/conversiones/tests/test_conciliacion.py`, `apps/conversiones/tests/test_conversiones.py` |
+| **Comando** | `docker compose exec -T web python -m pytest -v apps/usuarios/tests/test_auditoria.py apps/clientes/tests/test_clientes.py apps/comisiones/tests/test_comisiones.py apps/tasa_cambios/tests.py apps/conversiones/tests/test_conciliacion.py apps/conversiones/tests/test_conversiones.py` |
+| **Resultado** | **110 passed**, 1 warning en 9.15s |
+
+```text
+$ docker compose exec -T web python -m pytest -v apps/usuarios/tests/test_auditoria.py apps/clientes/tests/test_clientes.py apps/comisiones/tests/test_comisiones.py apps/tasa_cambios/tests.py apps/conversiones/tests/test_conciliacion.py apps/conversiones/tests/test_conversiones.py
+============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-9.2.0, pluggy-1.7.0
+django: version: 6.1.3, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 110 items
+
+apps/usuarios/tests/test_auditoria.py .....                              [  4%]
+apps/clientes/tests/test_clientes.py ...............                     [ 18%]
+apps/comisiones/tests/test_comisiones.py ......                          [ 23%]
+apps/tasa_cambios/tests.py .........                                     [ 31%]
+apps/conversiones/tests/test_conciliacion.py ................            [ 46%]
+apps/conversiones/tests/test_conversiones.py ........................... [ 70%]
+............................                                             [ 96%]
+apps/conversiones/tests/test_conciliacion.py .                           [ 97%]
+apps/conversiones/tests/test_conversiones.py ...                         [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 110 passed, 1 warning in 9.15s ========================
+```
+
+### Casos cubiertos
+
+- **Acceso y consulta:** el rol administrador puede abrir la pantalla; un
+  analista no puede acceder. Se verifican filtros por usuario, acción y fecha,
+  así como el rechazo de solicitudes `POST`.
+- **Solo lectura:** en Django Admin el registro no permite alta, edición ni
+  borrado, y un usuario de tipo `staff` sin rol administrador no puede
+  consultarlo.
+- **Tasas, comisiones y clientes:** se comprueba el registro de altas de
+  clientes y comisiones, la creación de tasas y la activación/desactivación de
+  tasas. Un intento fallido de activación no genera un evento.
+- **Anulaciones y conciliaciones:** las pruebas de las vistas verifican que las
+  anulaciones de compra y venta y la conciliación exitosa generen sus acciones
+  de auditoría asociadas al administrador.
+
+### Verificaciones complementarias
+
+| Comando | Resultado |
+|---|---|
+| `docker compose exec -T web python manage.py check` | No se identificaron problemas de configuración. |
+| `docker compose exec -T web python manage.py makemigrations --check --dry-run` | No se detectaron cambios de modelo sin migración. |
+| `docker compose exec -T web python manage.py showmigrations usuarios` | `0003_registroauditoria` aparece aplicada. |
+| `docker compose exec -T web python manage.py migrate usuarios` | Se aplicó `usuarios.0003_registroauditoria` en la base activa. |
+| `git diff --check` | Sin errores de espacios o formato del diff. |
+
+Al abrir `/administracion/auditoria/` antes de aplicar la migración, la aplicación
+respondía con `ProgrammingError` porque faltaba la tabla
+`usuarios_registroauditoria`. Después de aplicar la migración se recargó la
+misma página y se verificó que el título, los filtros y el mensaje de estado
+vacío se mostraran correctamente. No había registros porque todavía no se
+habían realizado operaciones auditables desde la activación; el registro no se
+completa con operaciones históricas. El warning de pytest corresponde a la
+deprecación futura de `EMAIL_BACKEND` y no produjo fallos.
