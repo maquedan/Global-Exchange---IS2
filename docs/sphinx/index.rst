@@ -24,12 +24,15 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    monedas
    tasa_cambios
    tasas
+   ganancias
    conversiones
    comisiones
    notificaciones
    cajas
    pagos
    facturacion
+   horarios
+   terminal
    tablero
 
 .. toctree::

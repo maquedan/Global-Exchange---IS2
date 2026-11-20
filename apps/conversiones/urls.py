@@ -47,6 +47,7 @@ urlpatterns = [
         views.reporte_transacciones,
         name="reporte_transacciones",
     ),
+    path("reporte-transacciones/exportar/<str:formato>/", views.exportar_reporte_transacciones, name="exportar_reporte_transacciones"),
     path("conciliaciones/", views.conciliaciones, name="conciliaciones"),
     path("conciliaciones/<int:pk>/", views.conciliar, name="conciliar"),
 ]

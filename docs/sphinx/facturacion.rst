@@ -23,6 +23,10 @@ las facturas de su cliente activo; el administrador consulta las de todos los
 clientes. Cada fila lleva a ``/facturas/<id>/`` para ver el detalle del
 documento y de su compra o venta asociada.
 
+El historial también puede descargarse en PDF y Excel-compatible desde
+``/facturas/exportar/<formato>/``. La descarga conserva los filtros del listado
+y está protegida por las mismas reglas de visibilidad de facturas.
+
 Modelos
 -------
 

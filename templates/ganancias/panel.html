@@ -13,8 +13,12 @@
   <form method="get" class="tarjeta flex flex-wrap items-end gap-4">
     <label>Desde<input type="date" name="fecha_desde" value="{{ fecha_desde }}"></label>
     <label>Hasta<input type="date" name="fecha_hasta" value="{{ fecha_hasta }}"></label>
+    <label>{{ formulario.moneda.label }}{{ formulario.moneda }}</label>
+    <label>{{ formulario.estado.label }}{{ formulario.estado }}</label>
     <button class="boton" type="submit">Aplicar filtros</button>
     <a href="{% url 'ganancias:panel' %}">Limpiar</a>
+    <a href="{% url 'ganancias:exportar' 'pdf' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Exportar PDF</a>
+    <a href="{% url 'ganancias:exportar' 'excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Exportar Excel (.xlsx)</a>
   </form>
 
   <section class="grid gap-4 md:grid-cols-4" aria-label="Resumen de ganancias">

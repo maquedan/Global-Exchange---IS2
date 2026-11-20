@@ -56,11 +56,11 @@ alineadas aunque el texto sí lo esté.
 En el gráfico de tasas el formateo es JavaScript, y usa
 ``Intl.NumberFormat("es-PY")``, que da el mismo resultado sin reimplementarlo.
 
-En las descargas no hay ninguna librería: la planilla es SpreadsheetML
-escrito a mano y el PDF se arma byte a byte. En Excel los importes van como
-``ss:Type="Number"`` con un estilo alineado a la derecha —antes iban como
-texto y ni se sumaban—, y en el PDF las columnas se rellenan con espacios,
-que funciona porque usa una sola tipografía.
+En las descargas no hay ninguna librería externa: el XLSX se arma con los XML
+mínimos de Office dentro de un ZIP y el PDF se arma byte a byte. Los importes
+numéricos se conservan como números en el XLSX para que puedan sumarse, y en
+el PDF las columnas se rellenan con espacios, que funciona porque usa una sola
+tipografía.
 
 Formato
 -------
@@ -78,4 +78,10 @@ Filtros de plantilla
 --------------------
 
 .. automodule:: apps.comun.templatetags.formato_extras
+   :members:
+
+Exportaciones
+-------------
+
+.. automodule:: apps.comun.exportaciones
    :members:

@@ -8,6 +8,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+from django.http import HttpResponse
 
 from apps.cajas.models import Caja
 from apps.cajas.services import proponer_billetes_entrega
@@ -33,6 +34,7 @@ from .forms import (
 )
 
 from .models import CompraDivisa, VentaDivisa
+from apps.comun.exportaciones import crear_pdf_reporte, crear_xlsx, fecha_generacion
 
 from .services import (
     AnulacionCompraNoPermitida,
@@ -779,6 +781,11 @@ def reporte_transacciones(request):
     Se mantiene separado de ``historial``, que representa únicamente al
     cliente activo y solo muestra operaciones confirmadas.
     """
+    formulario, transacciones = _reporte_transacciones_data(request)
+    return render(request, "conversiones/reporte_transacciones.html", {"formulario": formulario, "transacciones": transacciones})
+
+
+def _reporte_transacciones_data(request):
     formulario = ReporteTransaccionesForm(request.GET or None)
     compras = CompraDivisa.objects.select_related(
         "cliente", "moneda_pagada", "moneda_adquirida"
@@ -858,11 +865,34 @@ def reporte_transacciones(request):
         )
 
     transacciones.sort(key=lambda transaccion: transaccion["fecha"], reverse=True)
-    return render(
-        request,
-        "conversiones/reporte_transacciones.html",
-        {"formulario": formulario, "transacciones": transacciones},
-    )
+    return formulario, transacciones
+
+
+def _filas_exportacion(transacciones):
+    return [[
+        item["fecha"].strftime("%d/%m/%Y %H:%M") if item["fecha"] else "",
+        item["tipo"], str(item["cliente"]),
+        f'{item["monto_origen"]} {item["origen"].codigo} -> {item["monto_final"]} {item["destino"].codigo}',
+        item["tasa"], f'{item["comision"]} {item["moneda_comision"].codigo}', item["estado"],
+    ] for item in transacciones]
+
+
+@login_required
+@requiere_administracion
+def exportar_reporte_transacciones(request, formato):
+    _, transacciones = _reporte_transacciones_data(request)
+    encabezados = ["Fecha", "Tipo", "Cliente", "Monto", "Tasa aplicada", "Comisión", "Estado"]
+    filas = _filas_exportacion(transacciones)
+    totales = {"Operaciones": len(filas), "Fecha de generación": fecha_generacion()}
+    if formato == "excel":
+        respuesta = HttpResponse(crear_xlsx("Transacciones", encabezados, filas, totales, {4}), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        respuesta["Content-Disposition"] = 'attachment; filename="reporte-transacciones.xlsx"'
+        return respuesta
+    if formato == "pdf":
+        respuesta = HttpResponse(crear_pdf_reporte("Reporte de transacciones", encabezados, filas, totales), content_type="application/pdf")
+        respuesta["Content-Disposition"] = 'attachment; filename="reporte-transacciones.pdf"'
+        return respuesta
+    return HttpResponse("Formato no soportado.", status=404)
 
 @login_required
 @requiere_administrador

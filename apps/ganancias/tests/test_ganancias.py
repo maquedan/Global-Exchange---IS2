@@ -1,5 +1,7 @@
 from datetime import datetime
 from decimal import Decimal
+from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 from django.contrib.auth.models import Group
@@ -92,3 +94,41 @@ def test_dashboard_filtra_por_fecha(client, django_user_model, datos):
 
     respuesta = client.get(reverse("ganancias:datos"), {"fecha_desde": "2026-11-11"})
     assert respuesta.json()["operaciones"] == 0
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("formato", "content_type"),
+    [("pdf", "application/pdf"), ("excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")],
+)
+def test_exportacion_ganancias_incluye_totales_fecha_y_respeta_filtros(
+    client, django_user_model, datos, formato, content_type
+):
+    crear_compra(datos)
+    usuario = django_user_model.objects.create_user(username="admin-exporta-ganancias")
+    usuario.groups.add(Group.objects.create(name="administrador"))
+    client.force_login(usuario)
+    respuesta = client.get(
+        reverse("ganancias:exportar", args=[formato]),
+        {"moneda": datos[1].pk, "estado": CompraDivisa.Estado.CONFIRMADA},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta["Content-Type"] == content_type
+    if formato == "excel":
+        with ZipFile(BytesIO(respuesta.content)) as archivo:
+            assert "xl/worksheets/sheet1.xml" in archivo.namelist()
+            hoja = archivo.read("xl/worksheets/sheet1.xml")
+            assert b"Fecha de generaci" in hoja
+            assert b"Ganancia total" in hoja
+            assert b"PYG" in hoja
+    else:
+        assert b"Fecha de generaci" in respuesta.content
+        assert b"Ganancia total" in respuesta.content
+
+
+@pytest.mark.django_db
+def test_exportacion_ganancias_rechaza_usuario_sin_rol(client, django_user_model):
+    usuario = django_user_model.objects.create_user(username="cliente-exporta-ganancias")
+    client.force_login(usuario)
+    assert client.get(reverse("ganancias:exportar", args=["pdf"])).status_code == 403

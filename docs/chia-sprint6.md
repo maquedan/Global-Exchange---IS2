@@ -1428,4 +1428,46 @@ bien; la aserción, mal.
 - `manage.py check` sin errores. La app no define modelos, así que no hay
   migraciones. Sphinx genera sin warnings.
 
+## 19. Fabrizio Cardozo — RF032, Exportación de Reportes (GEG9-65)
+
+### 19.1. «¿Qué información debe exportarse?»
+
+**Lo que aprendimos.** Ya existían dos consultas administrativas: el reporte
+global de transacciones y el monitoreo de ganancias. Generar los archivos desde
+otra consulta habría permitido que la pantalla y la descarga mostraran datos
+distintos.
+
+**Decisión.** Las descargas reutilizan los mismos filtros y las mismas fuentes
+de datos de cada pantalla. El reporte de transacciones conserva filtros por
+fechas, moneda, estado, cliente y tipo de operación; el de ganancias conserva
+fechas y agrega moneda y estado. Las ganancias solo pueden provenir de
+operaciones confirmadas.
+
+### 19.2. «¿Cómo generar PDF y Excel sin agregar dependencias?»
+
+**Lo que aprendimos.** El proyecto ya genera PDF de texto y no utiliza una
+librería de documentos. Agregar una dependencia para una exportación sencilla
+incrementaría el costo de despliegue.
+
+**Decisión.** Se reutiliza el generador PDF local y se agregó un generador
+pequeño de XLSX basado en los archivos XML mínimos dentro de un ZIP. El archivo
+descargado tiene extensión `.xlsx`, MIME oficial de Office y conserva valores
+numéricos como números cuando corresponde.
+
+### 19.3. «¿Qué debe quedar dentro del archivo?»
+
+Cada reporte incluye sus filas filtradas, totales y fecha de generación. El
+PDF usa una tabla de texto legible; el XLSX incluye una hoja con encabezados,
+datos y una sección de totales. Los endpoints comparten la misma protección de
+acceso de los reportes: solo `administrador` y `analista_cambiario`.
+
+### 19.4. Verificaciones realizadas
+
+- Se agregaron pruebas para PDF y XLSX de ambos reportes, incluyendo MIME,
+  extensión, filtros, totales, fecha de generación y estructura interna del
+  XLSX.
+- Se agregó una prueba de rechazo para usuarios sin rol en cada exportación.
+- No se agregó migración ni dependencia externa.
+- `manage.py check` y la suite enfocada pasan correctamente.
+
 ---

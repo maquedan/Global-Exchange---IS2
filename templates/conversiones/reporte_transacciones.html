@@ -19,6 +19,8 @@
     <div class="md:col-span-3">
       <button type="submit">Aplicar filtros</button>
       <a href="{% url 'conversiones:reporte_transacciones' %}">Limpiar</a>
+      <a href="{% url 'conversiones:exportar_reporte_transacciones' 'pdf' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Exportar PDF</a>
+      <a href="{% url 'conversiones:exportar_reporte_transacciones' 'excel' %}{% if request.GET.urlencode %}?{{ request.GET.urlencode }}{% endif %}">Exportar Excel (.xlsx)</a>
     </div>
   </form>
 

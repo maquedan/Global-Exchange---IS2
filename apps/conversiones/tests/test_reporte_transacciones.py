@@ -1,4 +1,6 @@
 from decimal import Decimal
+from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 from django.contrib.auth.models import Group
@@ -138,3 +140,39 @@ def test_reporte_no_reemplaza_historial_del_cliente(client, django_user_model, d
 
     assert client.get(reverse("conversiones:historial")).status_code == 403
     assert client.get(reverse("conversiones:reporte_transacciones")).status_code == 200
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("formato", "content_type", "extension"),
+    [("pdf", "application/pdf", ".pdf"), ("excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".xlsx")],
+)
+def test_exportacion_transacciones_aplica_filtros_e_incluye_totales_y_fecha(
+    client, django_user_model, datos_reporte, formato, content_type, extension
+):
+    client.force_login(usuario_con_rol(django_user_model, "analista_cambiario"))
+    respuesta = client.get(
+        reverse("conversiones:exportar_reporte_transacciones", args=[formato]),
+        {"tipo_operacion": "compra", "estado": CompraDivisa.Estado.PENDIENTE},
+    )
+
+    assert respuesta.status_code == 200
+    assert respuesta["Content-Type"] == content_type
+    assert respuesta["Content-Disposition"].endswith(extension + '"')
+    if formato == "excel":
+        with ZipFile(BytesIO(respuesta.content)) as archivo:
+            assert "xl/worksheets/sheet1.xml" in archivo.namelist()
+            hoja = archivo.read("xl/worksheets/sheet1.xml")
+            assert b"Fecha de generaci" in hoja
+            assert b"Operaciones" in hoja
+            assert b"Pendiente de confirmaci" in hoja
+            assert b"Pagada" not in hoja
+    else:
+        assert b"Fecha de generaci" in respuesta.content
+        assert b"Operaciones" in respuesta.content
+
+
+@pytest.mark.django_db
+def test_exportacion_transacciones_rechaza_usuario_sin_rol(client, django_user_model):
+    client.force_login(usuario_con_rol(django_user_model, "usuario_cliente"))
+    assert client.get(reverse("conversiones:exportar_reporte_transacciones", args=["pdf"])).status_code == 403

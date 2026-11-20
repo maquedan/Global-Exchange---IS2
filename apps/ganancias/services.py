@@ -53,21 +53,26 @@ def _ganancia_venta(venta):
     return venta.moneda_acreditada, comision, diferencia_tasa
 
 
-def resumen_ganancias(fecha_desde=None, fecha_hasta=None):
+def resumen_ganancias(fecha_desde=None, fecha_hasta=None, moneda=None, estado=None):
     """Calcula el resumen actual; al no persistirse, siempre refleja nuevas confirmaciones."""
     compras, ventas = operaciones_confirmadas(fecha_desde, fecha_hasta)
+    moneda_codigo = getattr(moneda, "codigo", moneda) if moneda else None
+    if estado and estado != CompraDivisa.Estado.CONFIRMADA:
+        compras, ventas = compras.none(), ventas.none()
     por_moneda = defaultdict(lambda: {"comision": Decimal("0"), "diferencia_tasa": Decimal("0")})
     operaciones = 0
 
     for compra in compras:
-        moneda, comision, diferencia_tasa = _ganancia_compra(compra)
-        por_moneda[moneda.codigo]["comision"] += comision
-        por_moneda[moneda.codigo]["diferencia_tasa"] += diferencia_tasa
+        moneda_resultado, comision, diferencia_tasa = _ganancia_compra(compra)
+        if moneda_codigo and moneda_resultado.codigo != moneda_codigo: continue
+        por_moneda[moneda_resultado.codigo]["comision"] += comision
+        por_moneda[moneda_resultado.codigo]["diferencia_tasa"] += diferencia_tasa
         operaciones += 1
     for venta in ventas:
-        moneda, comision, diferencia_tasa = _ganancia_venta(venta)
-        por_moneda[moneda.codigo]["comision"] += comision
-        por_moneda[moneda.codigo]["diferencia_tasa"] += diferencia_tasa
+        moneda_resultado, comision, diferencia_tasa = _ganancia_venta(venta)
+        if moneda_codigo and moneda_resultado.codigo != moneda_codigo: continue
+        por_moneda[moneda_resultado.codigo]["comision"] += comision
+        por_moneda[moneda_resultado.codigo]["diferencia_tasa"] += diferencia_tasa
         operaciones += 1
 
     desglose = []
