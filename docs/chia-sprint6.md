@@ -1047,4 +1047,63 @@ de los extremos de la conversión—, tipo de operación, estado y rango inclusi
 
 **Verificación.** Se añadieron pruebas para ambos comprobantes: confirman que el administrador ve el retorno administrativo y no ve acciones de repetición.
 
+## 16. Fabrizio Cardozo — RF037, Gestión de Horarios Operativos (GEG9-79)
+
+### 16.1. «¿Cómo representar los días y rangos horarios?»
+
+**Lo que aprendimos.** Un día puede tener más de un intervalo operativo —por
+ejemplo, atención de mañana y de tarde—, por lo que un único campo de apertura
+y cierre por día no alcanza. Además, la comparación debe respetar la zona
+horaria configurada para el negocio.
+
+**Decisión.** Agregar `apps.horarios` con el modelo `RangoHorario`, que guarda
+el día de la semana, la hora de inicio y la hora de fin. Se permiten varios
+rangos para un mismo día, se evita duplicar el mismo intervalo y se valida que
+la hora inicial sea anterior a la final. La evaluación usa la zona horaria de
+Asunción.
+
+### 16.2. «¿Quién puede modificar la configuración?»
+
+**Decisión.** Crear la pantalla `/horarios-operativos/` con operaciones para
+crear, modificar y eliminar rangos. Todas las vistas están protegidas para el
+rol `administrador`; cualquier otro rol recibe 403. La opción también aparece
+en el menú únicamente para administradores.
+
+### 16.3. «¿Dónde se debe aplicar el bloqueo?»
+
+**Lo que aprendimos.** La web y la terminal ya comparten los servicios
+`iniciar_compra` e `iniciar_venta`. Validar solo en las vistas dejaría una
+puerta abierta para llamadas directas al servicio o para un flujo nuevo.
+
+**Decisión.** Centralizar la regla en `exigir_horario_operativo()` y llamarla
+antes de iniciar compras y ventas, y antes de confirmar compras y ventas. Así
+se cubren el cliente, el cajero, la conciliación administrativa y la terminal
+sin duplicar la lógica.
+
+### 16.4. «¿Qué debe seguir disponible fuera del horario?»
+
+**Decisión.** Solo se bloquean las acciones que crean o confirman operaciones.
+Las pantallas de tasas y simulación no consultan el validador de horario y
+continúan disponibles. Cuando se intenta operar fuera del rango, se muestra
+un mensaje claro indicando que las operaciones están cerradas y que las
+consultas y simulaciones siguen habilitadas.
+
+### 16.5. «¿Qué ocurre antes de configurar el primer horario?»
+
+**Decisión.** Mientras no exista ningún rango, el sistema permanece abierto
+para no dejar inutilizable una instalación recién desplegada. Desde que se
+configura el primer rango, todos los días y horas no incluidos quedan
+cerrados.
+
+### 16.6. Verificaciones realizadas
+
+- Se agregaron 6 pruebas unitarias en
+  `apps/horarios/tests/test_horarios.py`: límites del rango, días cerrados,
+  bloqueo de compras y ventas, confirmación, terminal, permisos y simulación.
+- Las pruebas focalizadas de horarios, conversiones y terminal pasaron sin
+  regresiones.
+- `manage.py check` y `makemigrations --check` terminan sin errores.
+- La suite completa mantiene un fallo preexistente en
+  `apps/notificaciones/tests/test_notificaciones.py::test_editar_sin_cambiar_los_valores_no_notifica`.
+
 ---

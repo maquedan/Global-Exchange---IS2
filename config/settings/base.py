@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.ganancias",
     "apps.conversiones",
     "apps.comisiones",
+    "apps.horarios",
     "apps.notificaciones",
     "apps.cajas",
     "apps.pagos",

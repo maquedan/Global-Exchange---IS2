@@ -748,4 +748,35 @@ apps/conversiones/tests/test_conversiones.py ...................................
 - El cliente conserva el flujo de repetición y el cajero conserva su retorno 
   a ventas pendientes.
 
+## Fabrizio Cardozo — RF037, Gestión de Horarios Operativos (GEG9-79)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 04:42:25 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/horarios/tests/test_horarios.py` |
+| **Comando** | `.venv/bin/pytest apps/horarios/tests/test_horarios.py -q` |
+| **Resultado** | **6 passed** |
+
+```text
+$ .venv/bin/pytest apps/horarios/tests/test_horarios.py -q
+......                                                                   [100%]
+6 passed, 2 warnings
+```
+
+Casos cubiertos:
+
+- Configuración de rangos por día, incluyendo apertura, cierre exacto y días
+  sin rango.
+- Rechazo de inicio de compra y venta fuera del horario, incluida la ruta de
+  terminal, y rechazo de confirmación de venta fuera de horario.
+- Acceso exclusivo del administrador a la configuración y validación de que
+  la hora de inicio sea anterior a la hora de fin.
+- La simulación continúa disponible fuera del horario operativo.
+
+También se verificó `manage.py check`, `makemigrations --check` y que las
+pruebas de conversiones y terminal pasaran sin regresiones. La suite completa se
+intentó ejecutar; quedó un fallo preexistente en
+`apps/notificaciones/tests/test_notificaciones.py::test_editar_sin_cambiar_los_valores_no_notifica`,
+relacionado con una notificación al editar una tasa sin cambiar sus valores.
+
 ---
