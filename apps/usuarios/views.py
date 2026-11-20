@@ -1,16 +1,26 @@
 """Vistas de autenticación y panel principal (GEG9-24, GEG9-25)."""
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_http_methods, require_POST
 
 from .auth import cerrar_sesion_en_keycloak
+from .forms import ConfiguracionSeguridadForm
 from .keycloak_admin import KeycloakAdmin, KeycloakAdminError
 from .menu import roles_de
-from .models import PermisoRol, PermisoSistema
+from .models import (
+    MAX_TIEMPO_INACTIVIDAD_MINUTOS,
+    MIN_TIEMPO_INACTIVIDAD_MINUTOS,
+    CambioConfiguracionSeguridad,
+    ConfiguracionSeguridad,
+    PermisoRol,
+    PermisoSistema,
+)
 from .services import ClienteNoDisponible, clientes_del_usuario, elegir_cliente
 
 
@@ -186,3 +196,56 @@ def roles_permisos(request):
             "roles": [], "permisos": PermisoSistema.objects.all(),
             "permisos_por_rol": {}, "usuarios_keycloak": [],
         }, status=503)
+
+
+@login_required
+@user_passes_test(es_administrador)
+@require_http_methods(["GET", "POST"])
+def configuracion_seguridad(request):
+    """Pantalla RF036 para ajustar el tiempo de inactividad de las sesiones."""
+    timeout_inicial = min(
+        max(
+            settings.SESSION_COOKIE_AGE // 60,
+            MIN_TIEMPO_INACTIVIDAD_MINUTOS,
+        ),
+        MAX_TIEMPO_INACTIVIDAD_MINUTOS,
+    )
+    configuracion, _ = ConfiguracionSeguridad.objects.get_or_create(
+        pk=1,
+        defaults={"tiempo_inactividad_minutos": timeout_inicial},
+    )
+
+    if request.method == "POST":
+        formulario = ConfiguracionSeguridadForm(request.POST, instance=configuracion)
+        if formulario.is_valid():
+            nuevo_tiempo = formulario.cleaned_data["tiempo_inactividad_minutos"]
+            cambio_realizado = False
+            with transaction.atomic():
+                configuracion = ConfiguracionSeguridad.objects.select_for_update().get(pk=1)
+                anterior = configuracion.tiempo_inactividad_minutos
+                if nuevo_tiempo != anterior:
+                    configuracion.tiempo_inactividad_minutos = nuevo_tiempo
+                    configuracion.save(update_fields=["tiempo_inactividad_minutos"])
+                    CambioConfiguracionSeguridad.objects.create(
+                        usuario=request.user,
+                        usuario_nombre=request.user.get_username(),
+                        tiempo_inactividad_anterior_minutos=anterior,
+                        tiempo_inactividad_nuevo_minutos=nuevo_tiempo,
+                    )
+                    cambio_realizado = True
+            if cambio_realizado:
+                messages.success(request, "La configuración de seguridad fue actualizada.")
+            else:
+                messages.info(request, "No se realizaron cambios.")
+            return redirect("usuarios:configuracion_seguridad")
+    else:
+        formulario = ConfiguracionSeguridadForm(instance=configuracion)
+
+    return render(
+        request,
+        "usuarios/configuracion_seguridad.html",
+        {
+            "formulario": formulario,
+            "cambios": CambioConfiguracionSeguridad.objects.select_related("usuario")[:20],
+        },
+    )
