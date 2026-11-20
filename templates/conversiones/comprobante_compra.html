@@ -86,8 +86,12 @@
     </script>
     {% endif %}
   {% else %}
-    <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
-    <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>
+    {% if es_administrador %}
+      <a class="boton boton-secundario" href="{% url 'conversiones:compras_administracion' %}">Volver a Compras y anulaciones</a>
+    {% else %}
+      <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
+      <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>
+    {% endif %}
   {% endif %}
 
   {% with pago=compra.pagos.first %}

@@ -1530,6 +1530,59 @@ def test_comprobante_de_compra_cancelada_ofrece_repetir_la_operacion(
     assert "Repetir esta operación" in contenido
     assert f"monto_pagado={compra.monto_pagado}" in contenido.replace("&amp;", "&")
 
+
+@pytest.mark.django_db
+def test_administrador_ve_retorno_y_no_repeticion_en_comprobante_compra(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    compra = iniciar_compra(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        monto_pagado=Decimal("100.00"),
+    )
+    cancelar_compra(pk=compra.pk, usuario=usuario_cliente)
+    administrador = get_user_model().objects.create_user(username="admin-comprobante-compra")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.get(reverse("conversiones:comprobante_compra", args=[compra.pk]))
+    contenido = respuesta.content.decode()
+
+    assert respuesta.status_code == 200
+    assert "Volver a Compras y anulaciones" in contenido
+    assert reverse("conversiones:compras_administracion") in contenido
+    assert "Realizar otra compra" not in contenido
+    assert "Repetir esta operación" not in contenido
+
+
+@pytest.mark.django_db
+def test_administrador_ve_retorno_y_no_repeticion_en_comprobante_venta(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    venta = iniciar_venta(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        monto_entregado=Decimal("100.00"),
+    )
+    cancelar_venta(pk=venta.pk, usuario=usuario_cliente)
+    administrador = get_user_model().objects.create_user(username="admin-comprobante-venta")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.get(reverse("conversiones:comprobante_venta", args=[venta.pk]))
+    contenido = respuesta.content.decode()
+
+    assert respuesta.status_code == 200
+    assert "Volver a Ventas y anulaciones" in contenido
+    assert reverse("conversiones:ventas_administracion") in contenido
+    assert "Realizar otra venta" not in contenido
+    assert "Repetir esta operación" not in contenido
+
+
 # --------------------------------------------------------------------------
 # RF030 (GEG9-34) — Consulta de historial de transacciones
 # --------------------------------------------------------------------------

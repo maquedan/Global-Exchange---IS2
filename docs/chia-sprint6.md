@@ -537,8 +537,7 @@ unificarlos en algún momento.
 
 Una prueba fallaba con `TypeError: 'Cliente' object is not callable`: al
 desempaquetar el fixture con `usuario, _cliente = duenio`, la variable
-`_cliente` tapaba a la función `_cliente()` que crea clientes. Se renombró la
-variable.
+`_cliente` tapaba a la función `_cliente()` que crea clientes. Se renombró la variable.
 
 ## 5.8. Verificaciones realizadas
 
@@ -702,6 +701,8 @@ y la pantalla de seguridad cargaran correctamente.
 - Se verificó en el navegador el panel y la pantalla de seguridad después de
   aplicar la migración `0002_cambioconfiguracionseguridad_configuracionseguridad`.
 
+---
+
 ## 10. Ryuto Maehara — GEG9-81, Registro de auditoría
 
 ### 10.1. «¿Cómo registrar las operaciones críticas de administración?»
@@ -735,7 +736,6 @@ no se habían registrado operaciones desde su activación.
   errores.
 - Se verificó la pantalla en el navegador después de aplicar la migración.
 
----
 ---
 
 ## 11. Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
@@ -959,9 +959,6 @@ puede recompilar en este entorno (Node 18 contra el 20 que pide).
 - `manage.py check` sin errores, migraciones `monedas.0002` y `0003`
   aplicadas y Sphinx genera sin warnings.
 
-<<<<<<< HEAD
----
-=======
 ---
 
 ## 13. Fabrizio Cardozo — RF031, Monitoreo de Ganancias en Tiempo Real (GEG9-64)
@@ -1004,39 +1001,29 @@ de confirmación, porque es el momento en que la operación genera rendimiento.
 - RF031 no agrega modelos ni migraciones.
 - La ejecución de las pruebas queda pendiente de validación en el contenedor
   Docker del proyecto.
->>>>>>> 228221b (feature/GEG9-64: Monitoreo de Ganancias en Tiempo Real (RF031))
 
-## Daniela González — RF030, Reporte de Transacciones para la Administración (GEG9-66)
+---
+
+## 14. Fabrizio Cardozo — RF030, Reporte de Transacciones para la Administración (GEG9-66)
 
 ### 14.1. «¿Cómo complementar el historial por cliente?»
 
-**Lo que aprendimos.** El historial existente está deliberadamente limitado al
-cliente activo y a operaciones confirmadas. Cambiarlo para que un administrador
-vea todos los clientes rompería ese límite de privacidad y el propósito de RF030
-original.
+**Lo que aprendimos.** El historial existente está deliberadamente limitado al cliente activo y a operaciones confirmadas. Cambiarlo para que un administrador vea todos los clientes rompería ese límite de privacidad y el propósito de RF030 original.
 
-**Decisión.** Crear una pantalla independiente de reporte global. El historial
-por cliente se conserva sin cambios; el nuevo reporte consulta compras y ventas
-por separado, las transforma a una estructura común y las ordena por fecha de
-creación.
+**Decisión.** Crear una pantalla independiente de reporte global. El historial por cliente se conserva sin cambios; el nuevo reporte consulta compras y ventas por separado, las transforma a una estructura común y las ordena por fecha de creación.
 
 ### 14.2. «¿Las operaciones de la terminal necesitan otro registro?»
 
 **Lo que aprendimos.** La terminal inicia operaciones mediante los mismos
-servicios `iniciar_compra` e `iniciar_venta`, con `desde_terminal=True`, y las
-guarda en `CompraDivisa` y `VentaDivisa`. No existe un modelo separado de
-transacciones de terminal.
+servicios `iniciar_compra` e `iniciar_venta`, con `desde_terminal=True`, y las guarda en `CompraDivisa` y `VentaDivisa`. No existe un modelo separado de transacciones de terminal.
 
 **Decisión.** Reutilizar esas fuentes históricas. De esta forma el reporte
-incluye también operaciones iniciadas desde autoservicio sin duplicar datos ni
-agregar una migración.
+incluye también operaciones iniciadas desde autoservicio sin duplicar datos ni agregar una migración.
 
 ### 14.3. «¿Qué filtros necesita la auditoría?»
 
 **Decisión.** Agregar filtros combinables por cliente, moneda —en cualquiera
-de los extremos de la conversión—, tipo de operación, estado y rango inclusivo
-de fechas. La fecha mostrada y filtrada es `creado_en`, para que también puedan
-auditarse operaciones pendientes, canceladas y anuladas.
+de los extremos de la conversión—, tipo de operación, estado y rango inclusivo de fechas. La fecha mostrada y filtrada es `creado_en`, para que también puedan auditarse operaciones pendientes, canceladas y anuladas.
 
 ### 14.4. Verificaciones realizadas
 
@@ -1048,3 +1035,16 @@ auditarse operaciones pendientes, canceladas y anuladas.
 - No se agregó migración: el reporte utiliza `CompraDivisa` y `VentaDivisa`.
 - `manage.py check` no reporta errores y las pruebas de `apps/conversiones/`
   pasan.
+
+---
+
+## 15. Daniela González — Corrección de comprobantes administrativos
+
+**Contexto.** Los comprobantes de compras y ventas mostraban a un administrador los botones «Realizar otra operación» y «Repetir esta operación». Esas acciones inician una operación en nombre del usuario autenticado y están reservadas al cliente asociado; desde administración resultaban confusas y podían terminar en un bloqueo de permisos.
+
+**Decisión.** Mantener los botones de repetición únicamente para
+`usuario_cliente`. En un comprobante consultado por administración se muestra un enlace de retorno a «Compras y anulaciones» o «Ventas y anulaciones». El cajero conserva su retorno a ventas pendientes, por lo que no se modifica el flujo de caja ni el de la Terminal.
+
+**Verificación.** Se añadieron pruebas para ambos comprobantes: confirman que el administrador ve el retorno administrativo y no ve acciones de repetición.
+
+---
