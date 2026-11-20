@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+
+{% block titulo %}Compras y anulaciones | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Compras y anulaciones</h1>
+  <p>Consultá las compras y abrí el comprobante para revisar su trazabilidad.
+    Las compras pagadas pueden anularse después de confirmar su devolución.</p>
+
+  {% if compras %}
+    <div class="overflow-x-auto">
+      <table class="datos">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Compra</th>
+            <th>Cliente</th>
+            <th>Total pagado</th>
+            <th>Recibe</th>
+            <th>Estado</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for compra in compras %}
+            <tr>
+              <td>{{ compra.creado_en|date:"d/m/Y H:i" }}</td>
+              <td>#{{ compra.pk }}</td>
+              <td>{{ compra.cliente }}</td>
+              <td>{{ compra.total_a_pagar }} {{ compra.moneda_pagada.codigo }}</td>
+              <td>{{ compra.monto_recibido }} {{ compra.moneda_adquirida.codigo }}</td>
+              <td>{{ compra.get_estado_display }}</td>
+              <td>
+                <a href="{% url 'conversiones:comprobante_compra' compra.pk %}">
+                  Ver comprobante{% if compra.estado == "CONFIRMADA" %} / anular{% endif %}
+                </a>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>No hay compras registradas.</p>
+  {% endif %}
+
+  {% if compras_page_obj.paginator.num_pages > 1 %}
+    <nav class="mt-4 flex items-center gap-4" aria-label="Páginas de compras">
+      {% if compras_page_obj.has_previous %}
+        <a href="?page={{ compras_page_obj.previous_page_number }}">Anterior</a>
+      {% endif %}
+      <span>Página {{ compras_page_obj.number }} de {{ compras_page_obj.paginator.num_pages }}</span>
+      {% if compras_page_obj.has_next %}
+        <a href="?page={{ compras_page_obj.next_page_number }}">Siguiente</a>
+      {% endif %}
+    </nav>
+  {% endif %}
+</div>
+{% endblock %}

@@ -18,6 +18,7 @@ from apps.tasa_cambios.models import TasaCambio
 
 from apps.pagos import services
 from apps.pagos.models import Pago
+from apps.pagos.services import ReembolsoPagoNoDisponible
 from apps.pagos.proveedores.base import ProveedorPago
 from apps.pagos.proveedores.dlocal import DLocalNoConfigurado, DLocalProveedor, _firmar
 
@@ -126,6 +127,48 @@ def test_pago_aprobado_confirma_la_compra(cliente_y_usuario, compra_pendiente):
     compra_pendiente.refresh_from_db()
     assert pago.estado == Pago.Estado.APROBADO
     assert compra_pendiente.estado == CompraDivisa.Estado.CONFIRMADA
+
+
+@pytest.mark.django_db
+def test_solicitar_reembolso_usa_el_proveedor_del_pago(
+    cliente_y_usuario, compra_pendiente
+):
+    pago = Pago.objects.create(
+        compra=compra_pendiente,
+        proveedor="simulado",
+        id_externo="FALSO-REEMBOLSO",
+        order_id="GE-REEMBOLSO-1",
+        monto=compra_pendiente.total_a_pagar,
+        moneda="USD",
+        estado=Pago.Estado.APROBADO,
+    )
+    falso = ProveedorFalso()
+
+    with _con_proveedor_falso(falso):
+        resultado = services.solicitar_reembolso_pago(pago)
+
+    assert resultado["estado"] == Pago.Estado.REEMBOLSADO
+    assert falso.reembolsos_pedidos == [
+        (pago.id_externo, pago.monto, pago.moneda)
+    ]
+
+
+@pytest.mark.django_db
+def test_no_hay_reembolso_automatico_para_transferencia_manual(
+    compra_pendiente,
+):
+    pago = Pago.objects.create(
+        compra=compra_pendiente,
+        proveedor="manual",
+        id_externo="TRF-MANUAL",
+        order_id="GE-REEMBOLSO-MANUAL",
+        monto=compra_pendiente.total_a_pagar,
+        moneda="USD",
+        estado=Pago.Estado.APROBADO,
+    )
+
+    with pytest.raises(ReembolsoPagoNoDisponible):
+        services.solicitar_reembolso_pago(pago)
 
 
 @pytest.mark.django_db

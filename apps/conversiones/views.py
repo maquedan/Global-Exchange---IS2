@@ -9,11 +9,13 @@ from django.views.decorators.http import require_POST
 
 from apps.cajas.models import Caja
 from apps.cajas.services import proponer_billetes_entrega
+from apps.pagos.models import Pago
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.menu import tiene_rol
 from apps.usuarios.services import requiere_cliente_activo
 
 from .forms import (
+    AnularCompraForm,
     ConciliacionForm,
     AnularVentaForm,
     CompraDivisaForm,
@@ -24,6 +26,7 @@ from .forms import (
 )
 from .models import CompraDivisa, VentaDivisa
 from .services import (
+    AnulacionCompraNoPermitida,
     ConciliacionNoPermitida,
     compras_pendientes_de_conciliar,
     conciliar_compra,
@@ -35,6 +38,7 @@ from .services import (
     VentaNoDisponible,
     cancelar_compra,
     cancelar_venta,
+    anular_compra,
     anular_venta,
     confirmar_pago_compra,
     confirmar_pago_venta,
@@ -135,21 +139,58 @@ def comprar(request):
 
 
 @login_required
-@requiere_cliente
 def comprobante_compra(request, pk):
     """Muestra el estado de la compra (pendiente, confirmada o cancelada)."""
+    es_administrador = tiene_rol(request.user, "administrador")
+    filtros = {"pk": pk}
+    if not es_administrador:
+        if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        filtros["cliente__asociaciones_usuarios__usuario"] = request.user
+
     compra = get_object_or_404(
         CompraDivisa.objects.select_related(
             "cliente", "moneda_pagada", "moneda_adquirida"
-        ),
-        pk=pk,
-        cliente__asociaciones_usuarios__usuario=request.user,
+        ).prefetch_related("cambios_estado__usuario", "pagos", "facturas"),
+        **filtros,
     )
-    compra = expirar_compra_si_corresponde(compra)
+    if not es_administrador:
+        compra = expirar_compra_si_corresponde(compra)
+
+    pagos = list(compra.pagos.all())
+    pago_aprobado = next(
+        (pago for pago in pagos if pago.estado == Pago.Estado.APROBADO),
+        None,
+    )
+    pago_en_revision = next(
+        (
+            pago
+            for pago in pagos
+            if pago.estado == Pago.Estado.REQUIERE_REVISION
+            and "reembolso_anulacion" in pago.respuesta_cruda
+        ),
+        None,
+    )
+    hay_pago_sin_resolver = any(
+        pago.estado in (Pago.Estado.PENDIENTE, Pago.Estado.REQUIERE_REVISION)
+        and pago is not pago_en_revision
+        for pago in pagos
+    )
     return render(
         request,
         "conversiones/comprobante_compra.html",
-        {"compra": compra, "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE},
+        {
+            "compra": compra,
+            "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE,
+            "es_administrador": es_administrador,
+            "requiere_reembolso_manual": (
+                pago_aprobado is None
+                or pago_aprobado.proveedor == "manual"
+                or pago_en_revision is not None
+            ),
+            "reembolso_en_revision": pago_en_revision is not None,
+            "anulacion_bloqueada": hay_pago_sin_resolver,
+        },
     )
 
 
@@ -320,6 +361,26 @@ def ventas_administracion_view(request):
 
 
 @login_required
+@requiere_administrador
+def compras_administracion_view(request):
+    """Lista compras para que administración pueda consultar y anular."""
+    compras = (
+        CompraDivisa.objects.select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        )
+        .order_by("-creado_en", "-pk")
+    )
+    pagina = Paginator(compras, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "conversiones/compras_administracion.html",
+        {"compras": pagina, "compras_page_obj": pagina},
+    )
+
+
+@login_required
 @requiere_cajero
 def confirmar_venta_view(request, pk):
     """Permite al cajero revisar el desglose y confirmar la entrega (RF058)."""
@@ -446,6 +507,52 @@ def anular_venta_view(request, pk):
         "La venta fue anulada y se registraron los movimientos inversos.",
     )
     return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+
+@login_required
+@require_POST
+def anular_compra_view(request, pk):
+    """Reembolsa y anula una compra pagada, solo por decisión administrativa."""
+    if not tiene_rol(request.user, "administrador"):
+        raise PermissionDenied
+
+    formulario = AnularCompraForm(request.POST)
+    if not formulario.is_valid():
+        messages.error(request, "Indicá un motivo válido para anular la compra.")
+        return redirect("conversiones:comprobante_compra", pk=pk)
+
+    try:
+        compra, reembolso_completado = anular_compra(
+            pk=pk,
+            usuario=request.user,
+            motivo=formulario.cleaned_data["motivo"],
+            confirmar_reembolso_manual=formulario.cleaned_data[
+                "confirmar_reembolso_manual"
+            ],
+        )
+    except AnulacionCompraNoPermitida as error:
+        messages.error(request, str(error))
+        return redirect("conversiones:comprobante_compra", pk=pk)
+
+    if not reembolso_completado:
+        pago = compra.pagos.order_by("-creado_en", "-pk").first()
+        estado_reembolso = (
+            pago.respuesta_cruda.get("reembolso_anulacion", {}).get("estado")
+            if pago
+            else "REQUIERE_REVISION"
+        )
+        messages.error(
+            request,
+            "El reembolso no fue confirmado por el proveedor "
+            f"(estado: {estado_reembolso}). La compra sigue pagada.",
+        )
+        return redirect("conversiones:comprobante_compra", pk=compra.pk)
+
+    messages.success(
+        request,
+        "La compra fue reembolsada y anulada correctamente.",
+    )
+    return redirect("conversiones:comprobante_compra", pk=compra.pk)
 
 
 @login_required

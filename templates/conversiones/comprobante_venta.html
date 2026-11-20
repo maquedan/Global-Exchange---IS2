@@ -163,6 +163,7 @@
           {% if cambio.estado_anterior %}{{ cambio.get_estado_anterior_display }} → {% endif %}{{ cambio.get_estado_nuevo_display }}
         </span>
         {% if cambio.motivo %}<span class="linea-tiempo-motivo">{{ cambio.motivo }}</span>{% endif %}
+        {% if cambio.usuario %}<span class="linea-tiempo-motivo">Realizado por: {{ cambio.usuario }}</span>{% endif %}
       </li>
     {% endfor %}
   </ul>

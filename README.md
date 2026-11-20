@@ -142,6 +142,17 @@ configuraciones existentes. Las tasas de demostración no representan precios
 de mercado; en producción, confirmá la cotización y las comisiones antes de
 habilitar operaciones.
 
+### Anular una compra pagada
+
+El administrador puede consultar las compras desde **Compras y anulaciones**.
+Para pagos por dLocal o el proveedor simulado, la anulación solicita primero
+el reembolso y solo cambia la compra a `ANULADA` cuando el proveedor lo confirma.
+Si el reembolso queda pendiente o requiere revisión, la compra permanece pagada
+hasta que se verifique la devolución. En transferencias conciliadas manualmente
+(o compras heredadas sin pago asociado), el administrador debe realizar la
+devolución por fuera del sistema y confirmarla en el comprobante. El motivo,
+el usuario y la fecha quedan en la trazabilidad de estados.
+
 ## Scripts de Keycloak dentro de Docker
 
 Con los servicios levantados, los scripts se ejecutan como contenedores
