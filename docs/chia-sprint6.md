@@ -1445,4 +1445,10 @@ bien; la aserción, mal.
 
 **Decisión.** Registrar los hallazgos como errores independientes en Jira: GEG9-83 para ocultar **Clientes** al analista cambiario, manteniendo el acceso administrativo y el `403` por URL directa; y GEG9-84 para exigir autenticación en `/elegir-cliente/`. La tarea GEG9-71 no se considerará cerrada hasta aplicar ambas correcciones y repetir la verificación.
 
+### 19.3. «¿Cuándo se considera cerrada una auditoría de roles?»
+
+**Lo que aprendimos.** Detectar un problema no basta para aprobar la matriz de roles. Debe corregirse en una rama independiente, integrarse en `develop` y volver a comprobarse junto con las pantallas nuevas que aparecieron durante el Sprint, como el Tablero administrativo de GEG9-67.
+
+**Decisión.** Reejecutar una batería consolidada de 150 pruebas después de integrar GEG9-83 y GEG9-84. La verificación confirmó que el analista ya no ve Clientes, que `/elegir-cliente/` exige autenticación y que el Tablero queda reservado al administrador. Con esa evidencia, GEG9-71 puede considerarse aprobado.
+
 ---

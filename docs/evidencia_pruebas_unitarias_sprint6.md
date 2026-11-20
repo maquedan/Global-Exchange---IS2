@@ -805,7 +805,6 @@ La ejecución cubre los flujos automatizados de simulación, tasa y comisión, c
 Las pruebas no llaman a dLocal ni a Factura Segura reales: esos proveedores se simulan o controlan dentro de la suite. La verificación contra servicios externos requiere credenciales y datos autorizados del ambiente correspondiente.
 
 ---
-<<<<<<< HEAD
 
 ## Daniela González — Verificación del manejo de roles (GEG9-71)
 
@@ -837,7 +836,7 @@ cambiario; y QA-ROL-02 (GEG9-84), referido al acceso anónimo a
 `/elegir-cliente/`. GEG9-71 permanece en curso hasta corregirlos y volver a ejecutar las pruebas correspondientes.
 
 ---
-=======
+
 ## Leyda Fleitas — RF038, Panel de Control Central (GEG9-67)
 
 | Campo | Valor |
@@ -996,4 +995,39 @@ dando verde.
   pero no miden los 3 segundos de RNF001 contra un volumen de producción.
 
 ---
->>>>>>> origin/develop
+
+## Daniela González — Re-verificación final del manejo de roles (GEG9-71)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 13:46:37 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/usuarios/tests/test_menu.py`, `apps/usuarios/tests/test_roles_permisos.py`, `apps/usuarios/tests/test_restriccion_operaciones.py`, `apps/usuarios/tests/test_conmutacion_cliente.py`, `apps/usuarios/tests/test_cliente_activo.py`, `apps/clientes/tests/test_clientes.py`, `apps/terminal/tests/test_terminal.py`, `apps/tablero/tests/test_tablero.py` |
+| **Resultado** | **150 passed**, 1 warning en 25.59s |
+
+```text
+$ docker compose exec web pytest \
+  apps/usuarios/tests/test_menu.py \
+  apps/usuarios/tests/test_roles_permisos.py \
+  apps/usuarios/tests/test_restriccion_operaciones.py \
+  apps/usuarios/tests/test_conmutacion_cliente.py \
+  apps/usuarios/tests/test_cliente_activo.py \
+  apps/clientes/tests/test_clientes.py \
+  apps/terminal/tests/test_terminal.py \
+  apps/tablero/tests/test_tablero.py \
+  -v
+===================================== test session starts ======================================
+platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
+django: version: 6.1.2, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+
+collected 150 items
+=============================== 150 passed, 1 warning in 25.59s ================================
+```
+
+La ejecución final confirma la corrección de QA-ROL-01 (GEG9-83): el analista no ve **Clientes** y mantiene el acceso denegado por URL directa; y QA-ROL-02 (GEG9-84): `/elegir-cliente/` redirige al inicio de sesión cuando no existe una sesión autenticada.
+
+También incorpora la verificación del Tablero administrativo de GEG9-67: solamente el administrador puede abrirlo; los demás roles reciben `403` por URL directa.
+
+---

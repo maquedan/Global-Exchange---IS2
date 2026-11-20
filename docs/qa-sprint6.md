@@ -125,7 +125,7 @@ Esto demuestra la configuración de roles, pero no reemplaza la comprobación de
 
 ### Administrador
 
-El administrador debe acceder a gestión de clientes, monedas, caja principal, configuración, roles y permisos, auditoría, operaciones administrativas y facturas. La ruta `/administracion/roles-permisos/` queda reservada a este perfil.
+El administrador debe acceder a gestión de clientes, monedas, caja principal, configuración, roles y permisos, auditoría, operaciones administrativas, facturas y tablero. La ruta `/administracion/roles-permisos/` queda reservada a este perfil.
 
 **Resultado:** Protegido y cubierto por pruebas automatizadas.
 
@@ -135,7 +135,7 @@ El analista puede consultar cotizaciones, tasas de cambio, ganancias y reporte d
 
 Durante la revisión manual se encontró la inconsistencia QA-ROL-01 descrita más abajo.
 
-**Resultado:** Pendiente de corrección del hallazgo QA-ROL-01.
+**Resultado:** Aprobado. No ve **Clientes** en el menú y la URL `/clientes/` continúa restringida al administrador.
 
 ### Usuario cliente
 
@@ -182,15 +182,28 @@ La ruta interna `/elegir-cliente/` responde `200 OK` para un visitante sin inici
 ---
 
 ## Hallazgos y correcciones
-- **QA-ROL-01:** inconsistencia entre el menú del analista cambiario y la
-  autorización de la vista de clientes. Debe registrarse como Error en Jira, corregirse y volver a probarse antes de cerrar GEG9-71.
-- **QA-ROL-02:** la ruta de selección de cliente es accesible sin iniciar
-  sesión. Debe registrarse como Error en Jira, protegerse y volver a probarse.
-- No se identificaron fallos nuevos durante la ejecución automatizada de
-  GEG9-70.
+
+- **QA-ROL-01 (GEG9-83): corregido.** La opción **Clientes** se restringió al menú del administrador. El analista ya no la visualiza y conserva el `403` si intenta abrir `/clientes/` directamente.
+
+- **QA-ROL-02 (GEG9-84): corregido.** La vista `/elegir-cliente/` exige autenticación; una persona anónima es redirigida al inicio de sesión y el flujo de selección autenticado se mantiene.
+
+- **Tablero administrativo (GEG9-67): verificado.** El administrador puede acceder; analista, usuario cliente, cajero y terminal reciben `403` por URL directa y no deben disponer de esa opción en el menú.
+
+- No se identificaron fallos nuevos durante la ejecución automatizada de GEG9-70.
+
+
+### Verificación final posterior a las correcciones
+
+Se ejecutó la batería consolidada de roles, menú, restricciones operativas, selección de cliente, clientes, terminal y tablero administrativo.
+
+**Resultado:** `150 passed, 1 warning in 25.59s`.
+
 
 ## Conclusión
 
 GEG9-70 queda aprobado para los flujos funcionales verificables localmente, con 199 pruebas automatizadas aprobadas y recorridos manuales realizados. Las integraciones reales de dLocal y Factura Segura conservan la limitación propia de sus credenciales y ambientes externos.
 
-GEG9-71 cuenta con 70 pruebas automatizadas aprobadas y dos hallazgos reproducibles, QA-ROL-01 y QA-ROL-02. La tarea debe considerarse en curso hasta registrar, corregir y reverificar ambos errores.
+GEG9-71 queda aprobado: la matriz de roles, los menús y el acceso por URL
+directa fueron verificados para administrador, analista cambiario, usuario
+cliente, cajero y terminal. Los hallazgos QA-ROL-01 y QA-ROL-02 fueron
+corregidos y reverificados.
