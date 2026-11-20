@@ -1496,3 +1496,95 @@ variable.
   Sphinx genera sin warnings.
 
 ---
+
+## 9. Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+### 9.1. «Proveedor y método de pago no son lo mismo»
+
+**Lo que aprendimos**, y era el malentendido que había que deshacer antes de
+modelar nada. El punto de partida del ticket mencionaba `PAGO_PROVEEDOR`
+como si fuera la configuración de métodos de pago. No lo es:
+
+| | Qué decide | Quién lo cambia |
+|---|---|---|
+| `PAGO_PROVEEDOR` | Qué **pasarela** se usa: dLocal o el simulado | Variable de entorno |
+| Método de pago | Con **qué paga** el cliente: tarjeta, transferencia | El administrador, desde la app |
+
+`PAGO_PROVEEDOR` es un interruptor técnico —"¿llamo a la API real o al doble
+de pruebas?"— y no tiene nada que hacer en una pantalla de negocio. **No se
+tocó.**
+
+Lo que el ERS llama método de pago **no existía como dato**: los dos botones
+estaban escritos a mano en `templates/pagos/elegir_pago.html`. Habilitar o
+deshabilitar uno exigía editar el HTML y desplegar.
+
+### 9.2. «¿Qué métodos se modelan?»
+
+**Decisión de la integrante:** solo los **dos que ya funcionaban**, tarjeta y
+transferencia. El ERS menciona también billeteras, pero no hay código detrás:
+crear esa fila habría puesto en la pantalla un botón que al tocarlo no hace
+nada, o una fila permanentemente deshabilitada que nadie puede habilitar sin
+programar.
+
+Cada fila de la tabla corresponde a algo que de verdad anda. Cuando se
+implemente billetera, se crea con la migración que traiga su código.
+
+### 9.3. «El punto delicado: deshabilitar no puede trabar lo que ya está en curso»
+
+**Lo que aprendimos**, y es el requisito del ERS que más fácil se incumple
+sin darse cuenta: la comprobación obvia sería *"¿este método está
+habilitado?"* en todo el flujo de pago. Eso rompería el punto 5.
+
+Si un administrador deshabilita la transferencia mientras hay compras
+esperando conciliación, esas compras quedarían **trabadas**: no se podrían
+confirmar ni cancelar. Y el cliente **ya transfirió el dinero**.
+
+**Decisión.** La comprobación va **solo al iniciar** un pago
+(`exigir_metodo_habilitado`), nunca al confirmarlo, cancelarlo o conciliarlo.
+Queda escrito en el docstring de esa función, porque es un invariante fácil
+de romper de buena fe: alguien que agregue la validación "por completitud" en
+`confirmar_pago` estaría introduciendo el problema.
+
+Hay tres pruebas dedicadas: un pago por pasarela ya iniciado se confirma
+igual, una compra que espera transferencia se cancela igual, y la
+conciliación manual de RF025 sigue funcionando.
+
+### 9.4. «¿Último cambio o historial completo?»
+
+**Decisión de la integrante:** historial completo, con una tabla
+`CambioMetodoPago`, en vez de dos campos `modificado_por` y `modificado_en`
+en el propio modelo.
+
+El motivo es concreto: con solo el último cambio, si alguien deshabilita un
+método y otra persona lo vuelve a habilitar, **el primer cambio desaparece**
+y no queda forma de saber quién lo apagó. Es el mismo patrón de
+`CambioEstado` (RF023).
+
+El servicio además no registra un cambio que no ocurrió: deshabilitar algo ya
+deshabilitado no ensucia el historial.
+
+### 9.5. «La plantilla deja de saber los métodos de memoria»
+
+El campo `flujo` (PASARELA o MANUAL) existe para que la plantilla sepa a qué
+vista mandar el botón **sin conocer cada método por su nombre**. Si tuviera
+un `{% if metodo.codigo == "tarjeta" %}`, agregar un método nuevo volvería a
+exigir editar el HTML, que es justo lo que esta historia vino a sacar.
+
+## 9.6. Verificaciones realizadas
+
+- **16 pruebas nuevas.** Suite completa: **400 aprobadas** (eran 384), sin
+  regresiones.
+- Casos cubiertos: la migración de datos crea exactamente los dos métodos
+  que funcionaban; habilitar y deshabilitar; queda registro de quién y
+  cuándo; el historial guarda **todos** los cambios y no inventa los que no
+  ocurrieron; un método deshabilitado no aparece en la pantalla de pago y no
+  se puede usar ni forzando el POST; sin ningún método habilitado avisa y no
+  rompe; **un pago ya iniciado se confirma, se cancela y se concilia aunque
+  se deshabilite el método**; un no administrador recibe 403 por GET y por
+  POST; y cambiar el estado exige POST.
+- `manage.py check` sin errores, migraciones `pagos.0002` y `0003` aplicadas
+  y Sphinx genera sin warnings.
+
+---

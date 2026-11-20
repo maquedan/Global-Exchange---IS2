@@ -760,3 +760,52 @@ operación y no de quien la disparó (8.2).
 
 ---
 
+## Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 21:10:29 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/pagos/tests/test_metodos_pago.py` |
+| **Comando** | `docker compose exec web pytest apps/pagos/tests/test_metodos_pago.py -v` |
+| **Resultado** | **16 passed** en 4.45s |
+
+```text
+$ date
+Thu Nov 19 21:10:29 -03 2026
+
+$ docker compose exec web pytest apps/pagos/tests/test_metodos_pago.py -v
+apps/pagos/tests/test_metodos_pago.py ................                   [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 16 passed, 1 warning in 4.45s =========================
+```
+
+- **La migración de datos** crea exactamente los dos métodos que ya
+  funcionaban (tarjeta y transferencia), ambos habilitados. No se agregó
+  billetera: no tiene código detrás y sería un botón que no hace nada.
+- **Habilitar y deshabilitar** funciona en los dos sentidos, queda registro
+  de **quién y cuándo**, el historial guarda **todos** los cambios —no solo
+  el último— y no se registra un cambio que no ocurrió.
+- **Un método deshabilitado** desaparece de la pantalla de pago y no se puede
+  usar ni forzando el POST, ni por pasarela ni por transferencia.
+- **Sin ningún método habilitado** la pantalla responde 200 con un mensaje
+  claro; no hay error 500.
+- **Lo que ya estaba en curso no se traba** (punto 5 del ERS, y el más fácil
+  de incumplir sin darse cuenta): un pago por pasarela ya iniciado se
+  confirma igual; una compra que espera transferencia se cancela igual; y la
+  conciliación manual de RF025 sigue funcionando. El cliente ya transfirió el
+  dinero: dejarlo trabado sería quedarse con su plata.
+- **Acceso:** un usuario que no es administrador recibe 403 tanto por GET
+  como por POST, y cambiar el estado exige POST con CSRF.
+
+También se corrió la suite completa: **400 passed** (eran 384), sin
+regresiones. Las decisiones están en `docs/chia-sprint5.md`, sección 9 — en
+particular por qué la comprobación va solo al iniciar el pago (9.3).
+
+---
+
