@@ -16,6 +16,7 @@ from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.services import cliente_habilitado_para
+from apps.horarios.services import exigir_horario_operativo
 
 from .models import CambioEstado, CompraDivisa, VentaDivisa
 
@@ -145,6 +146,7 @@ def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, mont
     su cuenta que esa persona pueda operar en nombre del cliente, en vez de
     confiar en que la vista ya lo verificó.
     """
+    exigir_horario_operativo()
     if desde_terminal:
         if not usuario_es_terminal(usuario):
             raise CompraNoDisponible(
@@ -269,6 +271,7 @@ def confirmar_pago_compra_efectivo(*, pk, usuario, billetes_recibidos):
     registrado en su fondo, con detalle de billetes, y la compra se confirma
     únicamente si la cotización congelada sigue vigente.
     """
+    exigir_horario_operativo()
     if (
         not usuario
         or not usuario.is_authenticated
@@ -400,6 +403,7 @@ def _confirmar_compra_pendiente(compra, *, usuario, motivo=""):
     `motivo` queda en el historial de estados: vacío en el pago normal, y con
     la referencia de la transferencia en la conciliación.
     """
+    exigir_horario_operativo()
     compra = expirar_compra_si_corresponde(compra)
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         return compra
@@ -847,6 +851,7 @@ def iniciar_venta(
     `usuario` es obligatorio desde RF010 (GEG9-20), igual que en
     `iniciar_compra`.
     """
+    exigir_horario_operativo()
     if desde_terminal:
         if not usuario_es_terminal(usuario):
             raise VentaNoDisponible(
@@ -948,6 +953,7 @@ def confirmar_pago_venta(
     La divisa del cliente ingresa y el efectivo entregado sale del fondo del
     cajero, con ambos movimientos vinculados a la venta en la misma transacción.
     """
+    exigir_horario_operativo()
     if not usuario or not usuario.is_authenticated or not usuario.groups.filter(
         name="cajero"
     ).exists():

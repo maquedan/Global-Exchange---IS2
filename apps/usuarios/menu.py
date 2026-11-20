@@ -90,6 +90,11 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        "texto": "Horarios operativos",
+        "url": "horarios:lista",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Caja principal",
         "url": "cajas:lista",
         "roles": ["administrador"],

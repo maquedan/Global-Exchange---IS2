@@ -17,6 +17,7 @@ from apps.usuarios.auditoria import registrar_auditoria
 from apps.usuarios.menu import tiene_rol
 from apps.usuarios.models import RegistroAuditoria
 from apps.usuarios.services import requiere_cliente_activo
+from apps.horarios.services import FueraDeHorarioOperativo
 
 from .forms import (
     AnularCompraForm,
@@ -150,7 +151,7 @@ def comprar(request):
                 moneda_adquirida=datos["moneda_adquirida"],
                 monto_pagado=datos["monto_pagado"],
             )
-        except CompraNoDisponible as error:
+        except (CompraNoDisponible, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             return redirect("conversiones:comprobante_compra", pk=compra.pk)
@@ -244,6 +245,9 @@ def confirmar_compra_view(request, pk):
         compra = confirmar_pago_compra(pk=pk, usuario=request.user)
     except CompraNoConfirmable as error:
         raise PermissionDenied from error
+    except FueraDeHorarioOperativo as error:
+        messages.error(request, str(error))
+        return redirect("conversiones:comprobante_compra", pk=pk)
 
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         messages.error(
@@ -337,7 +341,7 @@ def confirmar_compra_efectivo_view(request, pk):
             )
         except CompraNoConfirmable as error:
             raise PermissionDenied from error
-        except CompraNoDisponible as error:
+        except (CompraNoDisponible, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             if compra.estado == CompraDivisa.Estado.CANCELADA:
@@ -389,7 +393,7 @@ def vender(request):
                 moneda_acreditada=datos["moneda_acreditada"],
                 monto_entregado=datos["monto_entregado"],
             )
-        except VentaNoDisponible as error:
+        except (VentaNoDisponible, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             return redirect("conversiones:comprobante_venta", pk=venta.pk)
@@ -905,7 +909,7 @@ def conciliar(request, pk):
                         f"Compra #{conciliada.pk}; referencia "
                         f"{formulario.cleaned_data['referencia']}.",
                     )
-        except ConciliacionNoPermitida as error:
+        except (ConciliacionNoPermitida, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             if conciliada.estado != CompraDivisa.Estado.CONFIRMADA:

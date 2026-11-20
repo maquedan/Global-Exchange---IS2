@@ -15,6 +15,7 @@ urlpatterns = [
     path("ganancias/", include("apps.ganancias.urls")),  # Monitoreo de Ganancias - GEG9-64
     path("conversiones/", include("apps.conversiones.urls")),
     path("comisiones/", include("apps.comisiones.urls")), # Configuración de Comisiones - GEG9-35
+    path("horarios-operativos/", include("apps.horarios.urls")),
     path("notificaciones/", include("apps.notificaciones.urls")),  # Alertas de Tasas - GEG9-38
     path("cajas/", include("apps.cajas.urls")),
     path("pagos/", include("apps.pagos.urls")),  # Pago con pasarela (dLocal) - GEG9-36
