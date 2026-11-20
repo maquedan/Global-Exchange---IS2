@@ -11,11 +11,18 @@ from django.urls import NoReverseMatch, reverse
 # "url" es el NOMBRE de la ruta (el name= de urls.py), no la dirección.
 MENU_PRINCIPAL = [
     {"texto": "Panel", "url": "usuarios:panel", "roles": []},
+    {
+        # Tablero de control central (RF038 - GEG9-67). Sin "necesita_cliente":
+        # el administrador no opera en nombre de nadie, solo consulta.
+        "texto": "Tablero",
+        "url": "tablero:panel",
+        "roles": ["administrador"],
+    },
     {"texto": "Cotizaciones", "url": "tasas:panel", "roles": []},
     {
         "texto": "Clientes",
         "url": "clientes:lista",
-        "roles": ["administrador", "analista_cambiario"],
+        "roles": ["administrador"],
     },
         {
         "texto": "Monedas",
@@ -28,8 +35,23 @@ MENU_PRINCIPAL = [
         "roles": ["administrador", "analista_cambiario"],
     },
     {
+        "texto": "Ganancias",
+        "url": "ganancias:panel",
+        "roles": ["administrador", "analista_cambiario"],
+    },
+    {
         "texto": "Roles y permisos",
         "url": "usuarios:roles_permisos",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Seguridad",
+        "url": "usuarios:configuracion_seguridad",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Auditoría",
+        "url": "usuarios:auditoria",
         "roles": ["administrador"],
     },
     {
@@ -63,8 +85,20 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        # Sin "necesita_cliente": es configuración del negocio, el
+        # administrador no opera en nombre de nadie (RF010).
+        "texto": "Métodos de pago",
+        "url": "pagos:metodos",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Comisiones",
         "url": "comisiones:lista",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Horarios operativos",
+        "url": "horarios:lista",
         "roles": ["administrador"],
     },
     {
@@ -73,14 +107,19 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
-        "texto": "Historial de caja",
-        "url": "cajas:historial_movimientos",
-        "roles": ["administrador"],
-    },
-    {
         "texto": "Ventas y anulaciones",
         "url": "conversiones:ventas_administracion",
         "roles": ["administrador"],
+    },
+    {
+        "texto": "Compras y anulaciones",
+        "url": "conversiones:compras_administracion",
+        "roles": ["administrador"],
+    },
+    {
+        "texto": "Reporte de transacciones",
+        "url": "conversiones:reporte_transacciones",
+        "roles": ["administrador", "analista_cambiario"],
     },
     {
         "texto": "Arqueo de caja",
@@ -93,9 +132,9 @@ MENU_PRINCIPAL = [
         "roles": ["cajero"],
     },
     {
-        "texto": "Diferencias de caja",
-        "url": "cajas:diferencias",
-        "roles": ["administrador"],
+        "texto": "Compras pendientes",
+        "url": "conversiones:compras_pendientes",
+        "roles": ["cajero"],
     },
     {
         "texto": "Mis existencias",

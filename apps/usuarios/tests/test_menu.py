@@ -50,7 +50,7 @@ def test_todos_los_autenticados_ven_el_panel():
 def test_clientes_se_muestra_a_los_roles_autorizados():
     """La ruta de Clientes ya existe y respeta las reglas del menú."""
     assert "Clientes" in textos_del_menu(usuario_con("administrador"))
-    assert "Clientes" in textos_del_menu(usuario_con("analista_cambiario"))
+    assert "Clientes" not in textos_del_menu(usuario_con("analista_cambiario"))
     assert "Clientes" not in textos_del_menu(usuario_con("usuario_cliente"))
 
 
@@ -62,10 +62,25 @@ def test_cajas_y_sucursales_solo_se_muestra_al_administrador():
 
 
 @pytest.mark.django_db
+def test_historial_y_diferencias_de_caja_no_aparecen_en_el_menu():
+    textos = textos_del_menu(usuario_con("administrador"))
+
+    assert "Historial de caja" not in textos
+    assert "Diferencias de caja" not in textos
+
+
+@pytest.mark.django_db
 def test_ventas_y_anulaciones_solo_se_muestra_al_administrador():
-    assert "Ventas y anulaciones" in textos_del_menu(usuario_con("administrador"))
-    assert "Ventas y anulaciones" not in textos_del_menu(usuario_con("cajero"))
-    assert "Ventas y anulaciones" not in textos_del_menu(usuario_con("usuario_cliente"))
+    menu_administrador = textos_del_menu(usuario_con("administrador"))
+    menu_cajero = textos_del_menu(usuario_con("cajero"))
+    menu_cliente = textos_del_menu(usuario_con("usuario_cliente"))
+
+    assert "Ventas y anulaciones" in menu_administrador
+    assert "Ventas y anulaciones" not in menu_cajero
+    assert "Ventas y anulaciones" not in menu_cliente
+    assert "Compras y anulaciones" in menu_administrador
+    assert "Compras y anulaciones" not in menu_cajero
+    assert "Compras y anulaciones" not in menu_cliente
 
 
 @pytest.mark.django_db

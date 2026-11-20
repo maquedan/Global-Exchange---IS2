@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+
+{% block titulo %}Métodos de pago | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Métodos de pago</h1>
+  <p>Elegí qué formas de pago se le ofrecen al cliente al pagar una compra.
+    Deshabilitar uno lo saca de la pantalla de pago al instante.</p>
+
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  <p class="mensaje">Las operaciones que ya estén esperando con un método
+    <strong>no se ven afectadas</strong>: se pueden confirmar o cancelar
+    aunque lo deshabilites.</p>
+
+  <ul class="lista-metodos">
+    {% for metodo in metodos %}
+      <li class="metodo{% if not metodo.habilitado %} metodo-apagado{% endif %}">
+        <div class="metodo-datos">
+          <span class="metodo-nombre">
+            {{ metodo.nombre }}
+            <span class="metodo-estado">{% if metodo.habilitado %}Habilitado{% else %}Deshabilitado{% endif %}</span>
+          </span>
+          <span class="metodo-detalle">{{ metodo.descripcion }}</span>
+          {% with ultimo=metodo.cambios.first %}
+            {% if ultimo %}
+              <span class="metodo-historial">
+                Último cambio: {{ ultimo.fecha|date:"d/m/Y H:i" }}
+                {% if ultimo.usuario %}por {{ ultimo.usuario.get_full_name|default:ultimo.usuario.username }}{% else %}por el sistema{% endif %}
+              </span>
+            {% endif %}
+          {% endwith %}
+        </div>
+
+        <form method="post" action="{% url 'pagos:cambiar_metodo' metodo.codigo %}">
+          {% csrf_token %}
+          <input type="hidden" name="habilitado" value="{% if metodo.habilitado %}0{% else %}1{% endif %}">
+          <button class="boton {% if metodo.habilitado %}boton-secundario{% endif %}" type="submit">
+            {% if metodo.habilitado %}Deshabilitar{% else %}Habilitar{% endif %}
+          </button>
+        </form>
+      </li>
+    {% empty %}
+      <li class="metodo"><span class="metodo-detalle">No hay métodos cargados.</span></li>
+    {% endfor %}
+  </ul>
+</div>
+
+<style>
+  .lista-metodos {
+    list-style: none;
+    margin: 1.5rem 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .metodo {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    padding: 1rem 1.25rem;
+    border: 1px solid #e2e8f0;
+    border-left: 4px solid #047857;
+    border-radius: 0.75rem;
+    background: #f0fdf7;
+  }
+
+  .metodo-apagado {
+    border-left-color: #94a3b8;
+    background: #f8fafc;
+    opacity: 0.85;
+  }
+
+  .metodo form { margin: 0; }
+
+  .metodo-nombre {
+    display: block;
+    font-weight: 700;
+    color: #0f172a;
+  }
+
+  .metodo-estado {
+    display: inline-block;
+    margin-left: 0.5rem;
+    padding: 0.1rem 0.55rem;
+    border-radius: 9999px;
+    background: #d1fae5;
+    color: #065f46;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .metodo-apagado .metodo-estado {
+    background: #e2e8f0;
+    color: #475569;
+  }
+
+  .metodo-detalle,
+  .metodo-historial {
+    display: block;
+    margin-top: 0.2rem;
+    max-width: 38rem;
+    font-size: 0.85rem;
+    color: #64748b;
+  }
+
+  .metodo-historial { font-size: 0.75rem; }
+</style>
+{% endblock %}

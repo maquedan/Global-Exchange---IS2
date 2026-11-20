@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+
+{% block titulo %}Horarios operativos | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <div style="display:flex; gap:.75rem; flex-wrap:wrap; align-items:center;">
+    <a class="boton" href="{% url 'horarios:crear' %}">Agregar rango horario</a>
+  </div>
+  <h1 style="margin-top:1rem;">Horarios operativos</h1>
+  <p>Fuera de estos rangos no se pueden iniciar ni confirmar compras o ventas. Las tasas y simulaciones continúan disponibles.</p>
+  {% if messages %}{% for message in messages %}<p class="mensaje">{{ message }}</p>{% endfor %}{% endif %}
+  {% if rangos %}
+    <table class="datos"><thead><tr><th>Día</th><th>Desde</th><th>Hasta</th><th>Acciones</th></tr></thead><tbody>
+      {% for rango in rangos %}<tr><td>{{ rango.get_dia_display }}</td><td>{{ rango.hora_desde|time:"H:i" }}</td><td>{{ rango.hora_hasta|time:"H:i" }}</td><td>
+        <a class="boton boton-secundario" href="{% url 'horarios:editar' rango.pk %}">Modificar</a>
+        <form method="post" action="{% url 'horarios:eliminar' rango.pk %}" style="display:inline">{% csrf_token %}<button class="boton boton-secundario" type="submit">Eliminar</button></form>
+      </td></tr>{% endfor %}
+    </tbody></table>
+  {% else %}<p>No hay rangos configurados. El sistema permanece abierto hasta que se configure el primer rango.</p>{% endif %}
+</div>
+{% endblock %}

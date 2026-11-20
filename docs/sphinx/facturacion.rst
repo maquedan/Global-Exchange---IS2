@@ -23,6 +23,10 @@ las facturas de su cliente activo; el administrador consulta las de todos los
 clientes. Cada fila lleva a ``/facturas/<id>/`` para ver el detalle del
 documento y de su compra o venta asociada.
 
+El historial también puede descargarse en PDF y Excel-compatible desde
+``/facturas/exportar/<formato>/``. La descarga conserva los filtros del listado
+y está protegida por las mismas reglas de visibilidad de facturas.
+
 Modelos
 -------
 
@@ -63,4 +67,23 @@ Comando de reintento
 --------------------
 
 .. automodule:: apps.facturacion.management.commands.emitir_facturas_pendientes
+   :members:
+
+Vistas de facturación
+----------------------------------------
+
+Permiten consultar el listado y detalle de las facturas, descargar
+documentos y exportar el historial de facturación. El acceso depende
+del rol del usuario y del cliente activo de su sesión.
+
+.. automodule:: apps.facturacion.views
+   :members:
+
+Generación de documentos
+----------------------------------------
+
+Funciones auxiliares para generar documentos PDF a partir
+del contenido de los comprobantes.
+
+.. automodule:: apps.facturacion.documentos
    :members:

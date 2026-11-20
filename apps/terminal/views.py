@@ -17,6 +17,7 @@ from apps.usuarios.menu import tiene_rol
 from apps.clientes.models import Cliente
 from apps.facturacion.models import Factura
 from apps.facturacion.services import cliente_configurado
+from apps.horarios.services import FueraDeHorarioOperativo
 
 from decimal import Decimal, InvalidOperation
 
@@ -422,7 +423,7 @@ def confirmar_operacion_terminal(request):
             request.session["terminal_venta_id"] = operacion.pk
             request.session.pop("terminal_compra_id", None)
 
-    except (CompraNoDisponible, VentaNoDisponible) as error:
+    except (CompraNoDisponible, VentaNoDisponible, FueraDeHorarioOperativo) as error:
         return render(
             request,
             "terminal/simulacion.html",

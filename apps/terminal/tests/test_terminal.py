@@ -54,6 +54,20 @@ def test_usuario_terminal_puede_abrir_el_inicio(client):
 
 
 @pytest.mark.django_db
+def test_terminal_enlaza_y_puede_consultar_cotizaciones(client):
+    """El perfil terminal reutiliza el panel público de tasas (RF016)."""
+    usuario = usuario_con_rol("terminal")
+    client.force_login(usuario)
+
+    respuesta_inicio = client.get(reverse("terminal:inicio"))
+    respuesta_cotizaciones = client.get(reverse("tasas:panel"))
+
+    assert respuesta_inicio.status_code == 200
+    assert f'href="{reverse("tasas:panel")}"' in respuesta_inicio.content.decode()
+    assert respuesta_cotizaciones.status_code == 200
+
+
+@pytest.mark.django_db
 def test_otro_rol_no_puede_abrir_la_terminal(client):
     usuario = usuario_con_rol("usuario_cliente")
     client.force_login(usuario)

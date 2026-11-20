@@ -26,6 +26,7 @@ from apps.facturacion.models import Factura
 from apps.monedas.models import Moneda
 from apps.pagos.models import Pago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.models import RegistroAuditoria
 
 
 def _usuario(django_user_model, username, rol):
@@ -362,6 +363,9 @@ def test_el_administrador_concilia_desde_la_pantalla(
     assert respuesta.url == reverse("conversiones:conciliaciones")
     assert compra_por_transferencia.estado == CompraDivisa.Estado.CONFIRMADA
     assert Pago.objects.get(compra=compra_por_transferencia).id_externo == "TRF-555"
+    assert RegistroAuditoria.objects.get().accion == (
+        RegistroAuditoria.Accion.COMPRA_CONCILIADA
+    )
 
 
 @pytest.mark.django_db

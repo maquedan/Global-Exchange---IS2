@@ -124,6 +124,45 @@ def test_editar_sin_cambiar_los_valores_no_notifica(
 
 
 @pytest.mark.django_db
+def test_cambiar_solo_la_vigencia_se_audita_pero_no_notifica(
+    client, analista, tasa, django_capture_on_commit_callbacks
+):
+    """Fija las DOS conductas juntas, porque se pisaron una vez.
+
+    El commit 8b816fb (GEG9-81, auditoría) agregó `vigente_desde` a la misma
+    variable que RF033 usaba para decidir si notificar, y tocar solo la fecha
+    de vigencia empezó a avisarle a todos los clientes asociados.
+
+    Las dos cosas van en una sola prueba a propósito: separadas, arreglar una
+    rompiendo la otra seguiría dando verde en su propio archivo.
+    """
+    from apps.usuarios.models import RegistroAuditoria
+
+    cliente_activo = _cliente()
+    usuario_cliente = _usuario_con_rol("cliente-solo-vigencia", "usuario_cliente")
+    AsociacionUsuarioCliente.objects.create(usuario=usuario_cliente, cliente=cliente_activo)
+
+    client.force_login(analista)
+    with django_capture_on_commit_callbacks(execute=True):
+        client.post(
+            reverse("tasa_cambios:editar", args=[tasa.pk]),
+            _datos_formulario(tasa, vigente_desde="2026-12-01T08:00"),
+        )
+
+    tasa.refresh_from_db()
+    # `vigente_desde` se guarda en UTC, asi que hay que pasarlo a hora local
+    # antes de comparar con lo que se escribio en el formulario.
+    local = timezone.localtime(tasa.vigente_desde)
+    assert local.strftime("%Y-%m-%dT%H:%M") == "2026-12-01T08:00"
+    # No se avisa: las tasas no cambiaron (RF033).
+    assert Notificacion.objects.count() == 0
+    # Pero sí queda asentado: es un cambio sobre la tasa (GEG9-81).
+    assert RegistroAuditoria.objects.filter(
+        accion=RegistroAuditoria.Accion.TASA_MODIFICADA
+    ).count() == 1
+
+
+@pytest.mark.django_db
 def test_activar_y_desactivar_no_notifican(
     client, analista, tasa, django_capture_on_commit_callbacks
 ):

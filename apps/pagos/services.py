@@ -8,6 +8,7 @@ import logging
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
+import requests
 from django.conf import settings
 from django.db import transaction
 from django.urls import reverse
@@ -21,8 +22,12 @@ from apps.conversiones.services import (
     expirar_compra_si_corresponde,
 )
 
-from .models import Pago
-from .proveedores.dlocal import DLocalProveedor
+from .models import CambioMetodoPago, MetodoPago, Pago
+from .proveedores.dlocal import (
+    DLocalErrorDeRed,
+    DLocalNoConfigurado,
+    DLocalProveedor,
+)
 from .proveedores.simulado import SimuladoProveedor
 
 logger = logging.getLogger(__name__)
@@ -32,10 +37,32 @@ class OperacionNoDisponibleParaPago(Exception):
     """La compra no está en condiciones de iniciar o resolver un pago."""
 
 
+class ReembolsoPagoNoDisponible(Exception):
+    """No se puede solicitar un reembolso para el proveedor del pago."""
+
+
 def _instancia_proveedor(nombre):
     if nombre == "dlocal":
         return DLocalProveedor()
     return SimuladoProveedor()
+
+
+def solicitar_reembolso_pago(pago):
+    """Solicita el reembolso de un pago aprobado a su proveedor original."""
+    if pago.proveedor not in {"dlocal", "simulado"}:
+        raise ReembolsoPagoNoDisponible(
+            "El pago no tiene un proveedor con reembolso automático."
+        )
+
+    proveedor = _instancia_proveedor(pago.proveedor)
+    try:
+        return proveedor.reembolsar(pago.id_externo, pago.monto, pago.moneda)
+    except (DLocalNoConfigurado, DLocalErrorDeRed, requests.RequestException) as error:
+        logger.exception("No se pudo solicitar el reembolso del pago %s", pago.order_id)
+        return {
+            "estado": "REQUIERE_REVISION",
+            "respuesta_cruda": {"error": type(error).__name__},
+        }
 
 
 def _proveedor_configurado():
@@ -66,6 +93,66 @@ def monto_para_pasarela(compra):
     return monto_pyg, "PYG"
 
 
+class MetodoPagoNoDisponible(Exception):
+    """El método de pago está deshabilitado o no existe (RF035 — GEG9-77)."""
+
+
+# Códigos de los métodos que crea la migración 0003. Se nombran acá para que
+# los servicios no dependan de un texto suelto repartido por el código.
+CODIGO_TARJETA = "tarjeta"
+CODIGO_TRANSFERENCIA = "transferencia"
+
+
+def metodos_habilitados():
+    """Los métodos que hoy se le pueden ofrecer al cliente."""
+    return MetodoPago.objects.filter(habilitado=True)
+
+
+def exigir_metodo_habilitado(codigo):
+    """Corta si ese método no está disponible para iniciar un pago nuevo.
+
+    **Solo se usa al iniciar.** Confirmar o cancelar un pago ya iniciado
+    nunca pasa por acá: si se deshabilitara un método mientras hay
+    operaciones esperando, esas operaciones quedarían trabadas sin forma de
+    resolverse, y el cliente ya transfirió el dinero (RF035, punto 5).
+    """
+    metodo = MetodoPago.objects.filter(codigo=codigo, habilitado=True).first()
+    if metodo is None:
+        raise MetodoPagoNoDisponible(
+            "Ese método de pago no está disponible en este momento. "
+            "Elegí otro o probá más tarde."
+        )
+    return metodo
+
+
+@transaction.atomic
+def cambiar_estado_metodo(*, codigo, habilitado, usuario):
+    """Habilita o deshabilita un método y deja constancia de quién lo hizo.
+
+    Es idempotente: si ya estaba en ese estado no registra un cambio que no
+    ocurrió.
+    """
+    metodo = MetodoPago.objects.select_for_update().filter(codigo=codigo).first()
+    if metodo is None:
+        raise MetodoPagoNoDisponible("Ese método de pago no existe.")
+
+    if metodo.habilitado == habilitado:
+        return metodo
+
+    metodo.habilitado = habilitado
+    metodo.save(update_fields=["habilitado"])
+    CambioMetodoPago.objects.create(
+        metodo=metodo, habilitado=habilitado, usuario=usuario
+    )
+    logger.info(
+        "Método de pago %s %s por %s",
+        codigo,
+        "habilitado" if habilitado else "deshabilitado",
+        getattr(usuario, "username", "sistema"),
+    )
+    return metodo
+
+
 @transaction.atomic
 def iniciar_pago(compra_pk, *, usuario):
     """Crea el `Pago` y le pide a la pasarela el link de cobro.
@@ -83,6 +170,10 @@ def iniciar_pago(compra_pk, *, usuario):
         raise OperacionNoDisponibleParaPago("La operación no existe.")
 
     cliente_habilitado_para(usuario, compra.cliente_id)
+
+    # RF035: iniciar un cobro por pasarela exige que la tarjeta esté
+    # habilitada, aunque alguien fuerce el POST sin pasar por la pantalla.
+    exigir_metodo_habilitado(CODIGO_TARJETA)
 
     compra = expirar_compra_si_corresponde(compra)
     if compra.estado != CompraDivisa.Estado.PENDIENTE:

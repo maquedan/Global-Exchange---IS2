@@ -27,13 +27,20 @@ INSTALLED_APPS = [
     "apps.monedas",
     "apps.tasa_cambios",
     "apps.tasas",
+    "apps.ganancias",
     "apps.conversiones",
     "apps.comisiones",
+    "apps.horarios",
     "apps.notificaciones",
     "apps.cajas",
     "apps.pagos",
+    # Utilidades compartidas: formato de numeros y montos (GEG9-82).
+    "apps.comun",
     "apps.facturacion",
     "apps.terminal",
+    # Tablero de control del administrador (GEG9-67). Va al final porque solo
+    # consulta: no define modelos propios ni le aporta nada a las demas apps.
+    "apps.tablero",
 ]
 
 MIDDLEWARE = [
@@ -44,6 +51,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Aplica el timeout vigente de sesión, editable por RF036 sin reinicio.
+    "apps.usuarios.middleware_seguridad.ConfiguracionSesionMiddleware",
     # Deja request.cliente_activo y manda a elegir antes de operar (RF008).
     # Va después del de autenticación: necesita request.user ya resuelto.
     "apps.usuarios.middleware.ClienteActivoMiddleware",
@@ -133,6 +142,11 @@ OIDC_OP_JWKS_ENDPOINT = f"{_OIDC_INTERNO}/certs"
 OIDC_OP_LOGOUT_URL_METHOD = "apps.usuarios.auth.cerrar_sesion_en_keycloak"
 # Guarda el id_token en la sesión; Keycloak lo pide para cerrar sesión.
 OIDC_STORE_ID_TOKEN = True
+
+# La sesión vence tras un período de inactividad; cada solicitud renueva el
+# vencimiento. El valor configurable está expresado en segundos.
+SESSION_COOKIE_AGE = env.int("DJANGO_SESSION_IDLE_TIMEOUT", default=15 * 60)
+SESSION_SAVE_EVERY_REQUEST = True
 
 # Crear el usuario en Django la primera vez que entra desde Keycloak.
 OIDC_CREATE_USER = True

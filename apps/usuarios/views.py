@@ -1,13 +1,28 @@
 """Vistas de autenticación y panel principal (GEG9-24, GEG9-25)."""
+from django.conf import settings
 from django.contrib import messages
+from django.contrib.auth import logout
 from django.contrib.auth.decorators import login_required, user_passes_test
+from django.db import transaction
+from django.http import HttpResponseRedirect
 from django.shortcuts import redirect, render
 from django.utils.http import url_has_allowed_host_and_scheme
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_GET, require_http_methods, require_POST
 
+from .auth import cerrar_sesion_en_keycloak
+from .forms import ConfiguracionSeguridadForm
+from .forms_auditoria import FiltroAuditoriaForm
 from .keycloak_admin import KeycloakAdmin, KeycloakAdminError
 from .menu import roles_de
-from .models import PermisoRol, PermisoSistema
+from .models import (
+    MAX_TIEMPO_INACTIVIDAD_MINUTOS,
+    MIN_TIEMPO_INACTIVIDAD_MINUTOS,
+    CambioConfiguracionSeguridad,
+    ConfiguracionSeguridad,
+    PermisoRol,
+    PermisoSistema,
+    RegistroAuditoria,
+)
 from .services import ClienteNoDisponible, clientes_del_usuario, elegir_cliente
 
 
@@ -33,7 +48,14 @@ def panel(request):
     )
 
 
-@login_required
+@require_POST
+def cerrar_sesion_por_inactividad(request):
+    """Cierra Django y Keycloak incluso si Django ya venció la sesión."""
+    url_keycloak = cerrar_sesion_en_keycloak(request)
+    logout(request)
+    return HttpResponseRedirect(url_keycloak)
+
+
 def _destino_seguro(request, siguiente):
     """Valida a dónde volver después de elegir cliente (RF009 — GEG9-19).
 
@@ -61,6 +83,7 @@ def _destino_seguro(request, siguiente):
     return siguiente if siguiente.startswith("/") else None
 
 
+@login_required
 def seleccionar_cliente(request):
     """Pantalla "Elegí el cliente con el que vas a operar" (RF008 — GEG9-18).
 
@@ -175,3 +198,83 @@ def roles_permisos(request):
             "roles": [], "permisos": PermisoSistema.objects.all(),
             "permisos_por_rol": {}, "usuarios_keycloak": [],
         }, status=503)
+
+
+@login_required
+@user_passes_test(es_administrador)
+@require_http_methods(["GET", "POST"])
+def configuracion_seguridad(request):
+    """Pantalla RF036 para ajustar el tiempo de inactividad de las sesiones."""
+    timeout_inicial = min(
+        max(
+            settings.SESSION_COOKIE_AGE // 60,
+            MIN_TIEMPO_INACTIVIDAD_MINUTOS,
+        ),
+        MAX_TIEMPO_INACTIVIDAD_MINUTOS,
+    )
+    configuracion, _ = ConfiguracionSeguridad.objects.get_or_create(
+        pk=1,
+        defaults={"tiempo_inactividad_minutos": timeout_inicial},
+    )
+
+    if request.method == "POST":
+        formulario = ConfiguracionSeguridadForm(request.POST, instance=configuracion)
+        if formulario.is_valid():
+            nuevo_tiempo = formulario.cleaned_data["tiempo_inactividad_minutos"]
+            cambio_realizado = False
+            with transaction.atomic():
+                configuracion = ConfiguracionSeguridad.objects.select_for_update().get(pk=1)
+                anterior = configuracion.tiempo_inactividad_minutos
+                if nuevo_tiempo != anterior:
+                    configuracion.tiempo_inactividad_minutos = nuevo_tiempo
+                    configuracion.save(update_fields=["tiempo_inactividad_minutos"])
+                    CambioConfiguracionSeguridad.objects.create(
+                        usuario=request.user,
+                        usuario_nombre=request.user.get_username(),
+                        tiempo_inactividad_anterior_minutos=anterior,
+                        tiempo_inactividad_nuevo_minutos=nuevo_tiempo,
+                    )
+                    cambio_realizado = True
+            if cambio_realizado:
+                messages.success(request, "La configuración de seguridad fue actualizada.")
+            else:
+                messages.info(request, "No se realizaron cambios.")
+            return redirect("usuarios:configuracion_seguridad")
+    else:
+        formulario = ConfiguracionSeguridadForm(instance=configuracion)
+
+    return render(
+        request,
+        "usuarios/configuracion_seguridad.html",
+        {
+            "formulario": formulario,
+            "cambios": CambioConfiguracionSeguridad.objects.select_related("usuario")[:20],
+        },
+    )
+
+
+@login_required
+@user_passes_test(es_administrador)
+@require_GET
+def auditoria(request):
+    """Consulta filtrable del historial inmutable de operaciones críticas."""
+    formulario = FiltroAuditoriaForm(request.GET or None)
+    registros = RegistroAuditoria.objects.select_related("usuario")
+    if formulario.is_valid():
+        filtros = formulario.cleaned_data
+        if filtros["usuario"]:
+            registros = registros.filter(usuario_nombre=filtros["usuario"])
+        if filtros["accion"]:
+            registros = registros.filter(accion=filtros["accion"])
+        if filtros["fecha_desde"]:
+            registros = registros.filter(creado_en__date__gte=filtros["fecha_desde"])
+        if filtros["fecha_hasta"]:
+            registros = registros.filter(creado_en__date__lte=filtros["fecha_hasta"])
+    else:
+        registros = registros.none()
+
+    return render(
+        request,
+        "usuarios/auditoria.html",
+        {"formulario": formulario, "registros": registros},
+    )

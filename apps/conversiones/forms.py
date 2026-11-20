@@ -1,11 +1,15 @@
 from decimal import Decimal
 
+from apps.comun.campos import MontoField
+
 from django import forms
 
 from apps.cajas.models import DenominacionBillete
+from apps.clientes.models import Cliente
 from apps.monedas.models import Moneda
 
 from .services import calcular_conversion
+from .models import CompraDivisa
 
 
 class SimulacionConversionForm(forms.Form):
@@ -22,12 +26,11 @@ class SimulacionConversionForm(forms.Form):
         queryset=Moneda.objects.filter(activo=True),
         label="Moneda de destino",
     )
-    monto = forms.DecimalField(
+    monto = MontoField(
         label="Monto",
         min_value=Decimal("0.01"),
         max_digits=12,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
     tipo_operacion = forms.ChoiceField(
         choices=TIPOS_OPERACION,
@@ -81,12 +84,11 @@ class CompraDivisaForm(forms.Form):
         queryset=Moneda.objects.filter(activo=True),
         label="Moneda que querés adquirir",
     )
-    monto_pagado = forms.DecimalField(
+    monto_pagado = MontoField(
         label="Monto base a pagar",
         min_value=Decimal("0.01"),
         max_digits=16,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
         help_text="La comisión se calcula aparte y se suma al total.",
     )
 
@@ -117,12 +119,11 @@ class VentaDivisaForm(forms.Form):
     moneda_acreditada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True), label="Moneda a acreditar"
     )
-    monto_entregado = forms.DecimalField(
+    monto_entregado = MontoField(
         label="Monto de la divisa que vendés",
         min_value=Decimal("0.01"),
         max_digits=16,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
 
     def __init__(self, *args, **kwargs):
@@ -244,6 +245,69 @@ class EntregaEfectivoVentaForm(forms.Form):
         return cantidades
 
 
+class RecepcionEfectivoCompraForm(forms.Form):
+    """Desglose de billetes recibidos al cobrar una compra en efectivo."""
+
+    def __init__(self, *args, moneda_recibida, importe_esperado, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.moneda_recibida = moneda_recibida
+        self.importe_esperado = importe_esperado
+        self.campos_billetes_recibidos = []
+
+        denominaciones = DenominacionBillete.objects.filter(
+            moneda=moneda_recibida,
+            moneda__activo=True,
+        ).order_by("-valor")
+
+        for denominacion in denominaciones:
+            nombre = f"billete_recibido_{denominacion.pk}"
+
+            self.fields[nombre] = forms.IntegerField(
+                label=f"{moneda_recibida.codigo} {denominacion.valor}",
+                min_value=0,
+                required=False,
+                initial=0,
+                widget=forms.NumberInput(attrs={"min": "0", "step": "1"}),
+            )
+
+            self.campos_billetes_recibidos.append(
+                {
+                    "denominacion": denominacion,
+                    "campo": self[nombre],
+                }
+            )
+
+    def clean(self):
+        datos = super().clean()
+        billetes_recibidos = {}
+        total_recibido = Decimal("0.00")
+
+        for item in self.campos_billetes_recibidos:
+            denominacion = item["denominacion"]
+            cantidad = datos.get(
+                f"billete_recibido_{denominacion.pk}"
+            ) or 0
+
+            if cantidad:
+                billetes_recibidos[denominacion.pk] = cantidad
+                total_recibido += denominacion.valor * cantidad
+
+        if total_recibido != self.importe_esperado:
+            diferencia = abs(self.importe_esperado - total_recibido)
+            self.add_error(
+                None,
+                (
+                    "El desglose de billetes difiere por "
+                    f"{diferencia:.2f} {self.moneda_recibida.codigo}; debe sumar "
+                    f"exactamente {self.importe_esperado:.2f} "
+                    f"{self.moneda_recibida.codigo}."
+                ),
+            )
+
+        datos["billetes_recibidos"] = billetes_recibidos
+        return datos
+
+
 class AnularVentaForm(forms.Form):
     motivo = forms.CharField(
         label="Motivo de anulación",
@@ -251,6 +315,16 @@ class AnularVentaForm(forms.Form):
         strip=True,
         widget=forms.Textarea(attrs={"rows": 3}),
     )
+
+
+class AnularCompraForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de anulación",
+        max_length=255,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    confirmar_reembolso_manual = forms.BooleanField(required=False)
 
 
 class ConciliacionForm(forms.Form):
@@ -271,3 +345,56 @@ class ConciliacionForm(forms.Form):
         required=False,
         widget=forms.Textarea(attrs={"rows": 2}),
     )
+
+
+class ReporteTransaccionesForm(forms.Form):
+    """Filtros del reporte global de operaciones para administración (RF030)."""
+
+    cliente = forms.ModelChoiceField(
+        queryset=Cliente.objects.none(), required=False, label="Cliente"
+    )
+    moneda = forms.ModelChoiceField(
+        queryset=Moneda.objects.none(), required=False, label="Moneda"
+    )
+    tipo_operacion = forms.ChoiceField(
+        choices=(("", "Todas"), ("compra", "Compra"), ("venta", "Venta")),
+        required=False,
+        label="Tipo de operación",
+    )
+    estado = forms.ChoiceField(
+        choices=(("", "Todos"), *CompraDivisa.Estado.choices),
+        required=False,
+        label="Estado",
+    )
+    fecha_desde = forms.DateField(
+        required=False,
+        label="Fecha desde",
+        input_formats=["%Y-%m-%d"],
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+    fecha_hasta = forms.DateField(
+        required=False,
+        label="Fecha hasta",
+        input_formats=["%Y-%m-%d"],
+        widget=forms.DateInput(attrs={"type": "date"}),
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields["cliente"].queryset = Cliente.objects.order_by(
+            "nombres", "apellidos", "pk"
+        )
+        self.fields["moneda"].queryset = Moneda.objects.filter(activo=True).order_by(
+            "codigo"
+        )
+
+    def clean(self):
+        datos = super().clean()
+        desde = datos.get("fecha_desde")
+        hasta = datos.get("fecha_hasta")
+        if desde and hasta and desde > hasta:
+            self.add_error(
+                "fecha_hasta",
+                "La fecha hasta no puede ser anterior a la fecha desde.",
+            )
+        return datos

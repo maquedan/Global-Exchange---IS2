@@ -12,8 +12,14 @@ from apps.usuarios.menu import tiene_rol
 from apps.usuarios.services import requiere_cliente_para_operar
 
 from .models import Pago
+from .models import MetodoPago
 from .services import (
+    CODIGO_TRANSFERENCIA,
+    MetodoPagoNoDisponible,
     OperacionNoDisponibleParaPago,
+    cambiar_estado_metodo,
+    exigir_metodo_habilitado,
+    metodos_habilitados,
     confirmar_pago,
     iniciar_pago,
     resolver_pago_simulado,
@@ -24,6 +30,16 @@ def requiere_cliente(vista):
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_administrador(vista):
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "administrador"):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
@@ -44,7 +60,7 @@ def elegir_pago(request, compra_pk):
     if request.method == "POST":
         try:
             pago = iniciar_pago(compra.pk, usuario=request.user)
-        except OperacionNoDisponibleParaPago as error:
+        except (OperacionNoDisponibleParaPago, MetodoPagoNoDisponible) as error:
             messages.error(request, str(error))
             return redirect("conversiones:comprobante_compra", pk=compra.pk)
 
@@ -52,7 +68,14 @@ def elegir_pago(request, compra_pk):
             return redirect(pago.redirect_url)
         return redirect("pagos:esperando", pk=pago.pk)
 
-    return render(request, "pagos/elegir_pago.html", {"compra": compra})
+    # Los métodos ya no están escritos en la plantilla: salen de la base, así
+    # que el administrador puede habilitarlos o deshabilitarlos sin desplegar
+    # (RF035 — GEG9-77).
+    return render(
+        request,
+        "pagos/elegir_pago.html",
+        {"compra": compra, "metodos": metodos_habilitados()},
+    )
 
 
 @login_required
@@ -85,6 +108,14 @@ def esperar_transferencia(request, compra_pk):
 
     if compra.estado != CompraDivisa.Estado.PENDIENTE:
         messages.error(request, "Esta operación ya no está pendiente de pago.")
+        return redirect("conversiones:comprobante_compra", pk=compra.pk)
+
+    # RF035: igual que la tarjeta, elegir transferencia exige que el método
+    # esté habilitado, aunque se fuerce el POST.
+    try:
+        exigir_metodo_habilitado(CODIGO_TRANSFERENCIA)
+    except MetodoPagoNoDisponible as error:
+        messages.error(request, str(error))
         return redirect("conversiones:comprobante_compra", pk=compra.pk)
 
     if not compra.espera_transferencia:
@@ -150,3 +181,40 @@ def simulado_rechazar(request, pk):
     except OperacionNoDisponibleParaPago as error:
         messages.error(request, str(error))
     return redirect("conversiones:comprobante_compra", pk=pago.compra_id)
+
+
+@login_required
+@requiere_administrador
+def metodos(request):
+    """Métodos de pago y su estado, para el administrador (RF035 — GEG9-77)."""
+    return render(
+        request,
+        "pagos/metodos.html",
+        {
+            "metodos": MetodoPago.objects.prefetch_related("cambios__usuario"),
+        },
+    )
+
+
+@login_required
+@requiere_administrador
+@require_POST
+def cambiar_metodo(request, codigo):
+    """Habilita o deshabilita un método.
+
+    El control de acceso está por duplicado a propósito: el decorador corta
+    el POST, y el servicio no tiene forma de ser llamado sin pasar por acá
+    desde la web. Solo POST, con CSRF: cambiar configuración del negocio no
+    puede hacerse con un GET.
+    """
+    habilitado = request.POST.get("habilitado") == "1"
+    try:
+        metodo = cambiar_estado_metodo(
+            codigo=codigo, habilitado=habilitado, usuario=request.user
+        )
+    except MetodoPagoNoDisponible as error:
+        messages.error(request, str(error))
+    else:
+        estado = "habilitado" if metodo.habilitado else "deshabilitado"
+        messages.success(request, f"{metodo.nombre} quedó {estado}.")
+    return redirect("pagos:metodos")

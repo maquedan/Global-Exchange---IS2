@@ -1,0 +1,1500 @@
+# CHIA — Conversaciones con Inteligencia Artificial
+
+Registro del uso de IA como herramienta de apoyo durante el **Sprint 6** del
+proyecto Global Exchange (Grupo 9, FP-UNA).
+
+- **Modalidad de trabajo:** se utilizó como apoyo para relevar el código,
+  implementar cambios puntuales y ejecutar pruebas en el entorno local del
+  proyecto. Se documentan las decisiones y verificaciones de esta conversación;
+  no se incluyen secretos ni credenciales.
+
+## 1. Leyda Fleitas — RF025, Conciliación Manual (GEG9-75)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket pedía reportar el diseño y las decisiones abiertas antes de
+implementar.
+
+### 1.1. «El ticket pide pasar por `confirmar_pago_compra`, pero un administrador no puede»
+
+**Lo que aprendimos.** `confirmar_pago_compra` filtra así:
+
+```python
+.filter(pk=pk,
+        cliente__asociaciones_usuarios__usuario=usuario,
+        cliente__activo=True)
+```
+
+Ese filtro es el control de dueño que agregaron RF008 y RF010. Un
+administrador **no está asociado** al cliente, así que el filtro devuelve
+`None` y el servicio responde "la operación no existe o no te pertenece".
+Pasar por ahí tal cual era imposible.
+
+**Decisión.** Extraer el núcleo a `_confirmar_compra_pendiente(compra, *,
+usuario, motivo)` y dejar dos puertas de entrada que solo se diferencian en
+el control de acceso: `confirmar_pago_compra` (dueño) y `conciliar_compra`
+(rol `administrador`). Así la revalidación de tasa de RF051, la trazabilidad
+de RF023 y la facturación de RF026 son idénticas por los dos caminos, que es
+lo que el ticket pedía con "no dupliques lógica", y el historial registra al
+administrador real y no al cliente.
+
+Había **precedente en el repo**: `anular_venta` (RF059, de un compañero) ya
+valida el grupo `administrador` dentro del servicio y busca sin filtro de
+dueño. Se siguió esa misma forma.
+
+### 1.2. «La función no serviría: la ventana es de 15 minutos»
+
+**Lo que aprendimos**, y fue el hallazgo que cambió el alcance:
+`MINUTOS_EXPIRACION_PENDIENTE = 15`, y `confirmar_pago_compra` llama a
+`expirar_compra_si_corresponde` **antes** de confirmar. Verificar una
+transferencia bancaria lleva horas o días: para cuando el administrador
+entrara a conciliar, **toda** compra pendiente ya se habría cancelado sola.
+La pantalla habría estado siempre vacía.
+
+**Decisión de la integrante** (entre tres opciones planteadas): un campo
+nuevo `espera_transferencia` en `CompraDivisa`. El cliente lo marca al elegir
+cómo pagar, y esa compra deja de vencerse.
+
+La protección de RF051 **no se pierde**: al conciliar se revalida la
+cotización igual, y si cambió la operación se cancela en vez de confirmarse.
+Lo que se suspende es el vencimiento por tiempo, no el control de tasa.
+
+### 1.3. «¿Alcanza con el cambio de estado, o se registra un `Pago`?»
+
+**Decisión de la integrante:** registrar también un `Pago` con proveedor
+`"manual"` y estado `APROBADO`. `Pago.proveedor` es texto libre, así que no
+hizo falta migrar nada, y el comprobante ya muestra un bloque "Pago" leyendo
+`compra.pagos.first`: la conciliación aparece ahí **sin tocar esa
+plantilla**. La referencia bancaria va en `id_externo` y quién concilió en
+`respuesta_cruda`.
+
+Se registra el importe **tal como lo transfirió el cliente** (el total en la
+moneda de la operación), no el convertido para la pasarela: acá no hubo
+pasarela que convirtiera nada.
+
+### 1.4. «Bug propio: lanzar una excepción revertía la cancelación»
+
+**Lo que aprendimos.** `conciliar_compra` está decorado con
+`@transaction.atomic`. Cuando RF051 detectaba que la cotización había
+cambiado, el servicio cancelaba la compra y después **lanzaba** una excepción
+para avisarle al administrador. Resultado: la transacción revertía la
+cancelación que se acababa de registrar, y la compra quedaba pendiente como
+si nada hubiera pasado.
+
+Lo destapó una prueba que esperaba `CANCELADA` y encontró `PENDIENTE`.
+
+**Decisión.** El servicio **devuelve** la compra en vez de lanzar, y la vista
+mira el estado para mostrar el mensaje. Así la cancelación persiste, igual
+que en el pago normal. Queda documentado en el docstring, porque es un
+contrato fácil de romper: *no alcanza con que no haya excepción, hay que
+mirar el estado*.
+
+### 1.5. «Incidente: una prueba llamó a la API real de Factura Segura»
+
+**Lo que aprendimos.** Al correr las pruebas nuevas, una de ellas emitió
+contra Factura Segura **de verdad**. La causa es la ya conocida de la sección
+2.9: `config.settings.dev` lee el `.env`, que en esta máquina tiene
+`FACTURACION_PROVEEDOR=facturasegura`. Las pruebas de `apps/facturacion` se
+protegían con un fixture propio, pero esa protección **no alcanzaba a un
+archivo de pruebas de otra app**.
+
+No se perdió ningún número: la API rechazó el intento con `NUMDOC_APROBADO`
+—el número ya estaba aprobado— y la secuencia real quedó intacta. Fue suerte,
+no diseño.
+
+**Decisión.** Mover la protección a un **`conftest.py` en la raíz** del
+proyecto, con fixtures `autouse` que fuerzan el proveedor simulado de
+facturación **y** de pagos en todas las pruebas. Ahora ninguna prueba del
+proyecto puede salir a la red, la escriba quien la escriba y esté donde esté.
+La lección de 2.9 estaba bien aprendida pero mal ubicada: una salvaguarda que
+vive en el archivo que ya se acordó de ponerla no protege de los olvidos.
+
+### 1.6. Hallazgos del ambiente (no son de esta historia, pero se verificaron)
+
+- El certificado TLS de Factura Segura, que entre el 28/10 y mediados de
+  noviembre fue emitido por una CA interna de un FortiGate y rompía toda
+  llamada, **está corregido**: ahora lo emite Amazon y la conexión valida.
+- Con la API otra vez disponible se consultó `get_estado_sifen` de las tres
+  facturas emitidas: las **tres figuran `0260 - Aprobado`**, incluida la de
+  una compra. Es decir, la emisión automática de RF026 produce documentos
+  fiscalmente válidos, y los datos de prueba del emisor no impidieron la
+  aprobación: Factura Segura valida la identidad contra el RUC y el timbrado
+  registrados en la cuenta ESI, no contra el nombre y la dirección enviados.
+
+## 1.7. Verificaciones realizadas
+
+- **16 pruebas nuevas.** Suite completa: **328 aprobadas** (eran 312), sin
+  regresiones en las historias de los compañeros (RF028, RF029, RF053, RF055,
+  RF056, RF059) ni en las propias.
+- Casos cubiertos: conciliar deja la compra confirmada y con factura
+  generada; queda registrado quién concilió y con qué referencia; se crea el
+  `Pago` manual con la referencia y el importe correctos; no se puede
+  conciliar una cancelada; conciliar dos veces no duplica pago, factura ni
+  cambio de estado; la referencia es obligatoria; si la cotización cambió se
+  cancela y **no** se registra pago; la compra por transferencia no se vence
+  ni a los dos días mientras que una normal sí; la lista solo trae las que
+  esperan transferencia; el servicio y las vistas rechazan a quien no es
+  administrador (GET y POST); y un fallo de la facturación no deshace la
+  conciliación (RNF011).
+- `python manage.py check` sin errores, migración `conversiones.0011`
+  aplicada y Sphinx genera **sin warnings** — de paso se repuso
+  `docs/sphinx/notificaciones.rst`, que el `index` referenciaba y no existía
+  en el repositorio.
+
+---
+
+## 2. Leyda Fleitas — RF012, Recuperación de Acceso (GEG9-22)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que la recuperación ya funcionaba y que lo que faltaba
+era comprobarlo. Era casi cierto, pero el relevamiento destapó otra cosa.
+
+### 2.1. «No contestes de memoria: probá el flujo de verdad»
+
+**Lo que aprendimos.** La pregunta del ticket —si Keycloak manda el enlace
+cuando el correo **no** está verificado— se podía responder de memoria y
+equivocarse. Se probó pidiendo la recuperación para tres usuarios distintos y
+mirando qué correos llegaban realmente:
+
+| Usuario | Mensaje en pantalla | ¿Llegó el correo? |
+|---|---|---|
+| `cliente.demo` (verificado) | *"En breve deberías recibir…"* | **Sí** |
+| `sinverificar.demo` (sin verificar) | *"En breve deberías recibir…"* | **Sí** |
+| `noexiste@ejemplo.com` | *"En breve deberías recibir…"* | No |
+
+Dos conclusiones: **Keycloak manda el enlace aunque el correo no esté
+verificado**, y el mensaje es **idéntico en los tres casos**, así que no se
+puede averiguar qué correos están registrados. El punto 3 del ticket ya se
+cumplía sin tocar nada.
+
+### 2.2. «El mensaje genérico no prueba que se haya mandado el correo»
+
+**Lo que aprendimos**, y casi lleva a una conclusión falsa: en el primer
+intento los tres casos mostraron *"You should receive an email shortly"* y
+**Mailpit estaba vacío**. La tentación era concluir "no manda nada".
+
+Pero ese mensaje Keycloak lo muestra igual aunque no mande nada —es
+justamente así como evita revelar si el usuario existe—, o sea que **no
+prueba nada**. Tampoco los logs: los eventos exitosos no se registran por
+defecto, solo los de error.
+
+Lo que sí probó algo fue mandarle un correo a Mailpit desde Django: llegó al
+instante. Mailpit funcionaba; el que no le hablaba era Keycloak.
+
+### 2.3. «El archivo del realm y el Keycloak que corre no coincidían»
+
+**Lo que aprendimos**, y es el hallazgo de fondo:
+
+```
+keycloak/realm-global-exchange.json  ->  smtpServer: mailpit:1025
+Keycloak en ejecución                ->  smtpServer: smtp.gmail.com
+```
+
+El realm **se importa solo en el primer arranque** del contenedor. Después
+alguien corrió `scripts/configurar_smtp.py`, que toma `EMAIL_HOST` del `.env`
+y lo aplica al servidor. Desde ese momento el archivo versionado y el
+servidor cuentan historias distintas, y nada avisa.
+
+Consecuencia práctica: los correos de recuperación de los usuarios demo
+—direcciones `@globalexchange.local`— salían hacia Gmail, que no puede
+entregarlos a un dominio inexistente. Se perdían en silencio.
+
+**Decisión.** Volver el Keycloak local a Mailpit para probar, y documentar en
+`docs/keycloak.md` tanto la desincronización como el comando para comparar
+archivo contra servidor. Es el mismo tipo de problema que el `.env`: estado
+que vive fuera de git y que nadie recuerda.
+
+### 2.4. «¿Qué se puede arreglar con configuración y qué no?»
+
+**Lo que aprendimos.** El ERS pide que el enlace vaya "al correo verificado",
+pero Keycloak no tiene ninguna opción para condicionar el envío a eso.
+Lograrlo exigiría un autenticador propio, que es justo el tipo de código que
+RNF003 evita.
+
+**Decisión.** No escribir ese código. Lo que protege la cuenta es
+`verifyEmail: true`, que ya estaba: mientras el correo no se verifique,
+Keycloak exige verificarlo para poder usar la cuenta, así que restablecer la
+contraseña por sí solo no alcanza para entrar.
+
+Queda anotado como **no verificado punta a punta**: es lo que indica la
+configuración, pero no se probó ese caso completo, y en la documentación está
+dicho así y no como un hecho.
+
+### 2.5. «Lo que faltaba versionar»
+
+**Lo que aprendimos.** Tres cosas dependían de valores por defecto de
+Keycloak y no estaban en el archivo:
+
+- **El idioma.** `internationalizationEnabled: false`: pantallas y correos
+  salían en inglés.
+- **La vida del enlace.** `actionTokenGeneratedByUserLifespan` no estaba, así
+  que valía el default de 5 minutos por casualidad, no por decisión.
+- **El uso único.** Se comprobó completando el cambio de contraseña y
+  reintentando el mismo enlace: *"Action expired. Please continue with login
+  now."* Funciona, y es comportamiento propio de Keycloak.
+
+**Decisión de la integrante:** dejar los **5 minutos**, pero **fijados en el
+archivo**, no heredados. Más el idioma español. Siete líneas de diff.
+
+## 2.6. Verificaciones realizadas
+
+- **7 pruebas nuevas** que leen el realm versionado (Keycloak no se puede
+  levantar dentro de pytest): recuperación habilitada, `verifyEmail`, SMTP
+  definido, **sin credenciales en el archivo**, vencimiento fijado, idioma
+  español y que los usuarios demo tengan correo.
+- Suite completa: **343 aprobadas** (eran 336).
+- Flujo recorrido a mano de punta a punta: pedido → correo en Mailpit
+  (*"Reiniciar contraseña"*) → enlace → contraseña nueva → el mismo enlace ya
+  no sirve.
+- Tras aplicar el idioma, el mensaje pasó a *"En breve deberías recibir un
+  mensaje con más instrucciones"* y el asunto a *"Reiniciar contraseña"*.
+- `sphinx-build` sin warnings.
+
+---
+
+## 3. Leyda Fleitas — RF009, Conmutación de Cliente en Sesión (GEG9-19)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket anticipaba que la historia ya estaba casi hecha por RF008 y pedía
+relevar antes de tocar nada. Era cierto en lo funcional, pero el relevamiento
+destapó un agujero de seguridad.
+
+### 3.1. «Bug propio: redirección abierta en el parámetro `siguiente`»
+
+**Lo que aprendimos.** La vista de selección volvía a donde estabas con:
+
+```python
+siguiente = request.POST.get("siguiente") or request.GET.get("siguiente")
+...
+return redirect(siguiente or "usuarios:panel")
+```
+
+Ese valor **lo controla quien arma el enlace** y no se validaba. Se comprobó:
+
+```
+POST /elegir-cliente/  siguiente=https://sitio-malicioso.example.com/phishing
+302 → https://sitio-malicioso.example.com/phishing
+```
+
+Es una **redirección abierta**. Sirve para engañar: alguien manda un enlace
+que empieza con el dominio real de la aplicación, la víctima elige su cliente
+con toda normalidad y termina en una página ajena que imita la nuestra y le
+pide la contraseña. El enlace que compartió era legítimo.
+
+Lo escribí yo en RF008 y pasó desapercibido porque **funcionaba bien**: el
+caso normal —volver a `/conversiones/comprar/`— anda igual con o sin
+validación. El error solo aparece si alguien busca abusarlo.
+
+**Decisión.** Validar con `url_has_allowed_host_and_scheme` de Django, que
+es la función que el propio framework usa para el `next` del login, y exigir
+además que la ruta empiece con `/` para no dejar pasar algo como
+`javascript:`. Ante cualquier duda, al panel.
+
+La prueba es parametrizada con cuatro formas distintas del ataque: URL
+absoluta, `//dominio` (que el navegador interpreta como externa), otro
+dominio por `http` y `javascript:`.
+
+### 3.2. «Cambiar de cliente dejaba operable lo del cliente anterior»
+
+**Lo que aprendimos**, y no lo esperaba: estando asociada a dos clientes, se
+podía elegir el cliente B y **confirmar igual una compra pendiente del
+cliente A**. Lo destapó una prueba escrita justamente para descartarlo.
+
+No es un robo de datos —el usuario está asociado a los dos clientes—, pero
+contradice lo que RF008 le promete: *"todas las operaciones que hagas se van
+a registrar en nombre del que elijas acá"*. Si lo que elegís en la barra no
+delimita sobre qué podés actuar, el selector es decorativo.
+
+La causa: los servicios filtran por *"alguno de los clientes del usuario"*,
+que es el control de dueño correcto, pero ninguna capa miraba el cliente
+**activo**.
+
+**Decisión.** Un helper `_es_del_cliente_activo()` en las vistas, aplicado a
+confirmar y cancelar compra y a cancelar venta. Va en la vista y no en el
+servicio a propósito: el cliente activo es un concepto de **sesión**, y los
+servicios no conocen la sesión ni deberían.
+
+**Lo que NO se tocó:** `confirmar_venta_view`, que un compañero reescribió
+para el flujo del cajero (RF058). El cajero opera sin cliente activo, así que
+aplicarle el mismo filtro habría roto su historia. Queda dicho en el
+docstring del helper.
+
+### 3.3. «Una prueba que escribí mal, y lo que enseñó»
+
+Escribí una prueba esperando que al desactivar el cliente activo el sistema
+volviera a pedir elegir. Falló: el sistema había pasado solo al otro cliente.
+
+**La prueba estaba mal, no el código.** RF008 define que con un solo cliente
+disponible no se pregunta nada. Se corrigió para verificar el comportamiento
+real, y se agregó una segunda que cubre el caso que yo creía estar probando:
+desactivar **todos** los clientes, ahí sí se vuelve a pedir.
+
+### 3.4. Lo que ya estaba y no se tocó
+
+El ticket pedía no reescribir lo de RF008, y efectivamente no hizo falta:
+el enlace **Cambiar** en la barra, `puede_cambiar_cliente` (que se calcula
+con `cantidad_clientes > 1`, así que con uno solo no se ofrece), la vista de
+selección reutilizada, y la revalidación contra la base en cada request.
+
+Sobre el "selector" que menciona el ERS: hoy es un enlace a una pantalla.
+**Decisión de la integrante:** dejarlo así. Cumple la intención —cambiar de
+cliente sin cerrar sesión, en dos clics— y la pantalla muestra el documento y
+la categoría de cada cliente, que un desplegable escondería.
+
+## 3.5. Verificaciones realizadas
+
+- **13 pruebas nuevas**, ninguna de las cuales existía: las 10 de
+  `test_cliente_activo.py` cubren RF008 (la primera elección), no el cambio.
+- Suite completa: **356 aprobadas** (eran 343), sin regresiones.
+- Casos cubiertos: el cambio mantiene la **misma sesión**; el encabezado
+  muestra el cliente nuevo y ya no el anterior; el enlace sólo aparece con más
+  de un cliente; se vuelve a la pantalla de origen; **cuatro formas de
+  redirección externa quedan rechazadas**, por POST y por query string; no se
+  puede cambiar a un cliente ajeno; una operación pendiente del cliente
+  anterior deja de ser operable; al desactivar un cliente se pasa al que
+  queda, y al desactivarlos todos se vuelve a pedir.
+- `manage.py check` sin errores y Sphinx genera sin warnings.
+
+---
+
+## 4. Leyda Fleitas — RF016, Gráficos de Evolución de Tasas (GEG9-68)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket anticipaba que la historia ya estaba hecha y pedía relevar contra
+seis criterios antes de tocar nada. Lo estaba: el panel de cotizaciones ya
+tenía el gráfico SVG con dos líneas, el selector de período y el tooltip.
+
+### 4.1. «Revisar contra los criterios, uno por uno»
+
+| Criterio | Estado |
+|---|---|
+| Gráfico de evolución por par | ✅ SVG propio, líneas de compra y venta |
+| Selector de período | ✅ 7D / 1M / 3M / Todo, filtra sin recargar |
+| Muestra compra y venta | ✅ ambas líneas y ambas filas de estadísticas |
+| Historial real (`TasaCambio`) | ✅ `_historial_del_par` |
+| Visible para todos los roles | ✅ solo `@login_required`, sin control de rol |
+| Par sin historial / una sola tasa | ✅ estado vacío con sugerencias; con una tasa no dibuja el gráfico pero muestra las estadísticas |
+
+El acceso del usuario **sin cliente asociado** ya estaba cubierto por dos
+pruebas propias de RF008 y RF010, que verifican que `/tasas/` responde 200 sin
+ningún cliente. No se duplicó.
+
+**Decisión: no se tocó el gráfico ni se agregó ninguna librería**, que es lo
+que el ticket pedía explícitamente.
+
+### 4.2. «El selector decía "7 días" y mostraba datos de hace 74»
+
+**Lo que aprendimos** al mirar el criterio 3 —cómo se ve con los datos de
+demo— y que no se veía leyendo solo el código: **todas las tasas del fixture
+tienen entre 74 y 101 días**.
+
+| Par | Puntos | En 7D | En 1M | En 3M |
+|---|---|---|---|---|
+| USD/PYG | 4 | **0** | **0** | 4 |
+| EUR/PYG | 4 | **0** | **0** | 3 |
+
+Al tocar **7D** no queda ningún punto en el rango. El código tiene un guard
+deliberado:
+
+```js
+if (puntosFiltrados.length < 2) puntosFiltrados = puntosCompletos.slice(-2);
+```
+
+O sea que el botón queda marcado como activo y el gráfico dibuja **los dos
+registros más recientes, de hace 74 días**, sin decir nada. No se rompe:
+**informa mal**, que es peor, porque no hay forma de notarlo.
+
+Conviene separar las dos cosas: **el código está bien** —el filtro funciona y
+el fallback evita un gráfico vacío— y **lo que faltaba era avisar**.
+
+**Decisión.** Un aviso que aparece solo cuando el rango elegido se quedó sin
+datos: *"No hay registros en los últimos 7 días. Se muestran los 2 más
+recientes."* Ocho líneas de JavaScript, sin librerías nuevas y sin tocar el
+dibujo. Se distingue además el caso de **un solo** registro en el rango, que
+tampoco alcanza para trazar una línea.
+
+### 4.3. «Bug propio en las pruebas: una sola tasa activa por par»
+
+Las primeras pruebas nuevas fallaron con `IntegrityError`: el modelo tiene una
+restricción `tasa_cambio_unica_activa_por_par`, y el helper de pruebas crea
+las tasas con `activo=True` por defecto. Creé varias activas del mismo par.
+
+**La restricción estaba bien; mis pruebas estaban mal.** Se corrigieron para
+crear el historial con `activo=False` y dejar activa solo la última, que es lo
+que pasa en la realidad: una tasa vigente y las anteriores como histórico.
+
+## 4.4. Verificaciones realizadas
+
+- **8 pruebas nuevas**, que llevan el archivo de 12 a **20**. El selector de
+  período no tenía ninguna, y es la mitad del segundo criterio.
+- Suite completa sin regresiones.
+- Casos cubiertos: los cuatro rangos están en la página; el filtro es del lado
+  del navegador (el historial completo viaja en `historial_json`, así que
+  ningún botón recarga); cada punto lleva fecha, compra y venta, ordenados de
+  más viejo a más nuevo; el JSON embebido es válido; el aviso de rango vacío
+  está presente; las dos líneas del gráfico son compra y venta; el usuario sin
+  cliente ve el panel; y el servidor no recorta el historial.
+- `sphinx-build` sin warnings.
+
+---
+
+## 5. Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que el enganche era único y pedía confirmarlo leyendo el
+código antes de implementar.
+
+### 5.1. «¿De verdad hay un solo punto donde enganchar?»
+
+**Lo que aprendimos.** Sí: `registrar_cambio_estado` se llama en **once
+lugares**, todos dentro de `apps/conversiones/services.py` — iniciar compra y
+venta, vencimiento, cancelación por cambio de cotización, confirmación,
+cancelación por el cliente, anulación, y los flujos de terminal y
+conciliación manual, que reutilizan los mismos servicios.
+
+Enganchando **adentro** de esa función quedan cubiertas las once sin tocar
+ninguna, que es lo que RF023 había preparado sin saberlo.
+
+**Pero dos de esas once no deben avisar:** las que llaman con
+`estado_anterior=""`, que son el nacimiento de la operación. Avisarle a
+alguien "tu compra pasó de nada a pendiente" justo después de que la creó él
+mismo es ruido, no información.
+
+### 5.2. «La terminal rompía el enfoque obvio»
+
+**Lo que aprendimos**, y es el hallazgo que cambió el diseño: lo natural era
+avisarle al `usuario` que recibe `registrar_cambio_estado`. En el flujo de
+autoservicio (RF055) **ese usuario es la terminal**, no una persona: el
+cliente se identifica por documento o RUC.
+
+Tomando el destinatario de ahí, las notificaciones de las operaciones hechas
+en la terminal le habrían llegado **a la máquina**.
+
+**Decisión.** Los destinatarios salen del **cliente de la operación**, no de
+quien la disparó: `AsociacionUsuarioCliente.objects.filter(cliente=...)`.
+Y puede no haber ninguno —alguien que opera en la terminal sin cuenta—, lo
+cual **no es un error**: simplemente no hay a quién avisarle, y eso no puede
+romper la operación.
+
+### 5.3. «Los destinatarios no se resuelven como en RF033»
+
+**Lo que aprendimos.** `_destinatarios` de RF033 devuelve **todos** los
+usuarios con rol cliente, porque un cambio de tasa le interesa a cualquiera.
+Reutilizarlo acá habría sido un problema serio: el ticket exige que nadie
+reciba avisos de operaciones ajenas.
+
+**Decisión.** Una función aparte, `_usuarios_del_cliente`, acotada al cliente
+de esa operación. Se reutiliza la app, el modelo y la pantalla de RF033, pero
+no esa función: hacen cosas distintas aunque se parezcan.
+
+### 5.4. «Los duplicados: comprobar o hacerlos imposibles»
+
+El ticket pedía que registrar dos veces el mismo cambio no genere dos avisos.
+Se podía comparar el texto del mensaje, pero eso es frágil: cambia una coma y
+deja de detectarlos.
+
+**Decisión de la integrante:** una FK de `Notificacion` a `CambioEstado`, con
+una restricción de unicidad sobre (usuario, cambio de estado). El duplicado
+pasa a ser **imposible por construcción**, no algo que haya que acordarse de
+comprobar. De paso, el aviso queda ligado a la transición concreta, que le
+sirve a RF053.
+
+También decidió **tres tipos** (`OPERACION_CONFIRMADA`, `CANCELADA`,
+`ANULADA`) en vez de uno genérico, para poder distinguirlos en la lista sin
+otra migración. Esa decisión se aprovechó enseguida: ver 8.6.
+
+### 5.5. «Que avisar no pueda romper nada»
+
+Mismo criterio que la facturación (RF026): `transaction.on_commit` para no
+avisar de algo que luego se revierta, y un `except` amplio alrededor. El
+aviso es un efecto secundario; la transición es el hecho. Hay una prueba que
+tumba el servicio de notificaciones a propósito y verifica que la compra
+igual queda confirmada.
+
+### 5.6. «Color por tipo sin que quede chocante»
+
+**Lo que aprendimos** al colorear la lista: el borde izquierdo **ya estaba
+usado** para indicar leída o no leída. Agregar color por tipo encima habría
+dado dos significados al mismo elemento.
+
+**Decisión.** El borde pasa a indicar el **tipo** —que es el dato que cambia
+entre una fila y otra— y lo leído se sigue viendo por la opacidad y el badge
+"Nueva". Se agregó además una **etiqueta de texto** con el tipo: si el color
+fuera el único dato, quien no distingue verde de ámbar se quedaría sin esa
+información.
+
+Cancelada va en **ámbar y no en rojo**: merece atención, pero no es un error
+—muchas veces la canceló el propio cliente— y el rojo diría "algo salió mal".
+Queda anotado que la línea de tiempo del comprobante usa rojo para ese mismo
+estado desde RF023: son dos criterios distintos conviviendo, y conviene
+unificarlos en algún momento.
+
+### 5.7. Un error propio en las pruebas
+
+Una prueba fallaba con `TypeError: 'Cliente' object is not callable`: al
+desempaquetar el fixture con `usuario, _cliente = duenio`, la variable
+`_cliente` tapaba a la función `_cliente()` que crea clientes. Se renombró la variable.
+
+## 5.8. Verificaciones realizadas
+
+- **12 pruebas nuevas**, que llevan `apps/notificaciones` de 10 a **22**.
+- Suite completa: **377 aprobadas** (eran 364), sin regresiones.
+- Casos cubiertos: cada transición relevante (confirmar, cancelar, vencer,
+  anular) genera el aviso del tipo correcto y con el motivo; **crear la
+  operación no avisa**; un usuario de otro cliente no recibe nada; todos los
+  usuarios del cliente sí; un cliente **sin usuarios** no rompe; un fallo al
+  avisar **no deshace** la confirmación; registrar el mismo cambio dos veces
+  no duplica; el aviso aparece en la lista y en el contador del menú; se
+  puede marcar como leída; y el formateo de montos tiene un único punto.
+- `manage.py check` sin errores, migración `notificaciones.0002` aplicada y
+  Sphinx genera sin warnings.
+
+---
+
+## 6. Ryuto Maehara - RF013, Control de sesiones por inactividad y cierre voluntario
+
+### 6.1. «¿Por qué `DJANGO_SESSION_IDLE_TIMEOUT=30` no cerraba la sesión?»
+
+**Lo que aprendimos.** El contenedor sí había cargado `SESSION_COOKIE_AGE=30`
+y `SESSION_SAVE_EVERY_REQUEST=True`. La caducidad del lado servidor impedía
+usar una sesión vencida en la siguiente solicitud, pero no podía actualizar
+una página que seguía abierta en el navegador. Hacía falta un temporizador en
+la interfaz para que el vencimiento tuviera un efecto visible.
+
+**Decisión.** Mantener la expiración de Django como control del lado servidor
+y agregar un temporizador para las páginas autenticadas. El plazo se expone
+desde la sesión al template y se usa para enviar un `POST` de cierre, con
+protección CSRF.
+
+### 6.2. «¿Por qué al volver a cargar la página seguía dentro de la cuenta?»
+
+**Lo que aprendimos.** El cierre estándar de `mozilla-django-oidc` cierra la
+sesión de Keycloak solo si la solicitud todavía identifica al usuario como
+autenticado en Django. Cuando el temporizador enviaba el cierre en el mismo
+instante en que caducaba Django, Keycloak no recibía el `id_token_hint`; su
+sesión SSO seguía activa y el siguiente login autenticaba al usuario de nuevo.
+Además, sin ese token Keycloak podía pedir confirmación en una pantalla
+intermedia.
+
+**Decisión.** Agregar una ruta de cierre por inactividad que obtiene la URL de
+cierre de Keycloak y cierra Django incluso si la sesión local ya venció. El
+temporizador se adelanta hasta dos segundos (o el 10 % del plazo, si es menor)
+para enviar el `id_token_hint` antes de que Django elimine la sesión. Si la
+sesión ya venció, se usa el `client_id` como alternativa.
+
+### 6.3. «¿Cómo se configura y se comprueba el plazo?»
+
+- `DJANGO_SESSION_IDLE_TIMEOUT` se interpreta en segundos y tiene un valor
+  predeterminado de 900 (15 minutos); se documentó en los ejemplos de entorno.
+- El contenedor local se verificó con un valor efectivo de 30 segundos. Si se
+  cambia `.env`, hay que reiniciar el servicio `web` para que el proceso vuelva
+  a leer la configuración.
+- La prueba manual en navegador confirmó que, tras la inactividad, el flujo
+  termina en Keycloak y muestra la pantalla de inicio de sesión, no la cuenta
+  autenticada.
+
+### 6.4. Verificaciones realizadas
+
+- 103 pruebas de `apps/usuarios/tests` aprobadas, incluidas las de expiración,
+  renovación con actividad, cierre voluntario y cierre por inactividad con la
+  sesión Django ya vencida.
+- `python manage.py check` sin errores y `git diff --check` limpio.
+
+---
+
+## 7. Ryuto Maehara — GEG9-23, Menú — Ocultar opciones de historial y diferencias de caja
+
+**Consulta:** quitar «Historial de caja» y «Diferencias de caja» de la barra
+de navegación.
+
+**Decisión.** Eliminar únicamente esas dos opciones del menú principal; las
+rutas y funcionalidades de caja se mantienen disponibles. Se agregó una
+prueba que confirma que ambas etiquetas no aparecen para el rol administrador.
+
+**Verificación.** Las 13 pruebas de `apps/usuarios/tests/test_menu.py`
+aprobaron.
+
+---
+
+## 8. Ryuto Maehara - RF024, Gestión de Anulaciones
+
+### 8.1. «¿La anulación debe incluir compras y se puede reembolsar?»
+
+**Lo que aprendimos.** La anulación de ventas ya registraba el motivo, el
+administrador y la fecha, además de revertir los movimientos de efectivo
+asociados. Las compras no tenían un flujo equivalente de anulación. Los pagos
+electrónicos sí permiten solicitar el reembolso al proveedor original; una
+transferencia conciliada requiere una devolución manual verificada por un
+administrador.
+
+**Decisión.** Incorporar la anulación de compras confirmadas, exigir un motivo y
+registrar la transición a `ANULADA` con el actor y la fecha. Para pagos de
+pasarela, anular solo si el proveedor confirma el reembolso. Para pagos manuales
+o compras sin un pago asociado, exigir confirmación administrativa de que la
+devolución ya se realizó. Si el proveedor deja el reembolso pendiente o lo
+rechaza, mantener la compra pagada y dejar el pago para revisión; la anulación
+se puede completar después de verificar manualmente la devolución.
+
+### 8.2. «¿Cómo se accede y qué se muestra?»
+
+- Se agregó «Compras y anulaciones» al menú del administrador y un listado de
+  compras con acceso al comprobante y a la trazabilidad.
+- El comprobante permite anular solo compras confirmadas; una compra anulada
+  no se puede anular nuevamente.
+- La migración agrega `anulado_en` a las compras. Las vistas de historial que
+  filtran por estado confirmado dejan de incluir las compras anuladas.
+- Se actualizaron las pruebas de menú y permisos para limitar las acciones al
+  administrador.
+
+### 8.3. Verificaciones y alcance
+
+- Pasaron las pruebas focalizadas de conversiones, pagos y menú; también
+  `python manage.py check`, `makemigrations --check --dry-run` y `git diff
+  --check`.
+- Se aplicó la migración `0012_compradivisa_anulado_en` y se verificó en el
+  navegador el listado y el comprobante con compras de ejemplo. No se ejecutó
+  un reembolso real de dLocal.
+- Al integrarse RF057, las compras cobradas en efectivo generan un movimiento
+  de ingreso vinculado. La anulación registra el retiro inverso con las mismas
+  denominaciones antes de marcar la compra como anulada, manteniendo el saldo
+  y el inventario del cajero consistentes.
+
+---
+
+## 9. Ryuto Maehara - GEG9-78, Configuración de seguridad (RF036)
+
+### 9.1. «¿Cómo se configura el tiempo de inactividad?»
+
+**Decisión.** Agregar la pantalla «Seguridad», visible y accesible solo para el
+rol administrador. Allí se configura el tiempo máximo de inactividad entre 5
+minutos y 8 horas. El valor se guarda en la base de datos y el middleware lo
+aplica a las sesiones autenticadas en sus solicitudes, sin reiniciar Django.
+Los cambios se registran con el usuario, la fecha y los valores anterior y
+nuevo.
+
+### 9.2. «¿Sigue siendo necesaria `DJANGO_SESSION_IDLE_TIMEOUT`?»
+
+- La variable se expresa en segundos y sirve como valor inicial si todavía no
+  existe una configuración guardada; `900` equivale a 15 minutos.
+- Una vez creada la configuración en la base de datos, el valor guardado tiene
+  prioridad. Cambiar `.env` no reemplaza el parámetro configurado en la
+  pantalla.
+- Las sesiones activas adoptan el nuevo plazo en su siguiente solicitud. Una
+  pestaña abierta puede conservar su temporizador anterior hasta volver a
+  cargar o hacer otra solicitud.
+
+### 9.3. «¿Por qué aparecía `ProgrammingError` en `/panel/`?»
+
+**Causa y resolución.** El código consultaba la tabla nueva de configuración,
+pero la migración aún no se había aplicado en la base de datos del contenedor.
+Se ejecutó `python manage.py migrate usuarios`; luego se verificó que el panel
+y la pantalla de seguridad cargaran correctamente.
+
+### 9.4. Verificaciones realizadas
+
+- Las 460 pruebas del proyecto aprobaron con SQLite; `python manage.py check`
+  y `makemigrations --check --dry-run` no detectaron problemas.
+- Se verificó en el navegador el panel y la pantalla de seguridad después de
+  aplicar la migración `0002_cambioconfiguracionseguridad_configuracionseguridad`.
+
+---
+
+## 10. Ryuto Maehara — GEG9-81, Registro de auditoría
+
+### 10.1. «¿Cómo registrar las operaciones críticas de administración?»
+
+**Decisión.** Agregar un registro con usuario, acción, fecha y hora, además de
+detalles para identificar el objeto afectado. Se auditan altas y cambios de
+tasas, comisiones y clientes, anulaciones de compras y ventas, y conciliaciones
+de compras. Los registros se generan al completar las operaciones.
+
+### 10.2. «¿Quién puede consultar los registros y qué filtros hay?»
+
+- Se agregó la pantalla «Auditoría», accesible solo para el rol administrador,
+  con filtros por usuario, acción y rango de fechas.
+- La pantalla y la entrada del modelo en Django Admin son de solo lectura; no
+  se ofrecen acciones de alta, edición ni borrado.
+
+### 10.3. «¿Por qué aparecía `ProgrammingError` en `/administracion/auditoria/`?»
+
+**Causa y resolución.** El contenedor web aún no tenía aplicada la migración que
+crea `usuarios_registroauditoria`. Se ejecutó
+`docker compose exec -T web python manage.py migrate usuarios` en el entorno
+local y se comprobó que la migración `0003_registroauditoria` quedara aplicada.
+Después de recargar, la pantalla abrió correctamente; quedó vacía porque todavía
+no se habían registrado operaciones desde su activación.
+
+### 10.4. Verificaciones realizadas
+
+- Aprobaron las pruebas enfocadas de auditoría, clientes, comisiones, tasas,
+  anulaciones y conciliaciones; `python manage.py check`,
+  `makemigrations --check --dry-run` y `git diff --check` finalizaron sin
+  errores.
+- Se verificó la pantalla en el navegador después de aplicar la migración.
+
+---
+
+## 11. Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+### 11.1. «Proveedor y método de pago no son lo mismo»
+
+**Lo que aprendimos**, y era el malentendido que había que deshacer antes de
+modelar nada. El punto de partida del ticket mencionaba `PAGO_PROVEEDOR`
+como si fuera la configuración de métodos de pago. No lo es:
+
+| | Qué decide | Quién lo cambia |
+|---|---|---|
+| `PAGO_PROVEEDOR` | Qué **pasarela** se usa: dLocal o el simulado | Variable de entorno |
+| Método de pago | Con **qué paga** el cliente: tarjeta, transferencia | El administrador, desde la app |
+
+`PAGO_PROVEEDOR` es un interruptor técnico —"¿llamo a la API real o al doble
+de pruebas?"— y no tiene nada que hacer en una pantalla de negocio. **No se
+tocó.**
+
+Lo que el ERS llama método de pago **no existía como dato**: los dos botones
+estaban escritos a mano en `templates/pagos/elegir_pago.html`. Habilitar o
+deshabilitar uno exigía editar el HTML y desplegar.
+
+### 11.2. «¿Qué métodos se modelan?»
+
+**Decisión de la integrante:** solo los **dos que ya funcionaban**, tarjeta y
+transferencia. El ERS menciona también billeteras, pero no hay código detrás:
+crear esa fila habría puesto en la pantalla un botón que al tocarlo no hace
+nada, o una fila permanentemente deshabilitada que nadie puede habilitar sin
+programar.
+
+Cada fila de la tabla corresponde a algo que de verdad anda. Cuando se
+implemente billetera, se crea con la migración que traiga su código.
+
+### 11.3. «El punto delicado: deshabilitar no puede trabar lo que ya está en curso»
+
+**Lo que aprendimos**, y es el requisito del ERS que más fácil se incumple
+sin darse cuenta: la comprobación obvia sería *"¿este método está
+habilitado?"* en todo el flujo de pago. Eso rompería el punto 5.
+
+Si un administrador deshabilita la transferencia mientras hay compras
+esperando conciliación, esas compras quedarían **trabadas**: no se podrían
+confirmar ni cancelar. Y el cliente **ya transfirió el dinero**.
+
+**Decisión.** La comprobación va **solo al iniciar** un pago
+(`exigir_metodo_habilitado`), nunca al confirmarlo, cancelarlo o conciliarlo.
+Queda escrito en el docstring de esa función, porque es un invariante fácil
+de romper de buena fe: alguien que agregue la validación "por completitud" en
+`confirmar_pago` estaría introduciendo el problema.
+
+Hay tres pruebas dedicadas: un pago por pasarela ya iniciado se confirma
+igual, una compra que espera transferencia se cancela igual, y la
+conciliación manual de RF025 sigue funcionando.
+
+### 11.4. «¿Último cambio o historial completo?»
+
+**Decisión de la integrante:** historial completo, con una tabla
+`CambioMetodoPago`, en vez de dos campos `modificado_por` y `modificado_en`
+en el propio modelo.
+
+El motivo es concreto: con solo el último cambio, si alguien deshabilita un
+método y otra persona lo vuelve a habilitar, **el primer cambio desaparece**
+y no queda forma de saber quién lo apagó. Es el mismo patrón de
+`CambioEstado` (RF023).
+
+El servicio además no registra un cambio que no ocurrió: deshabilitar algo ya
+deshabilitado no ensucia el historial.
+
+### 11.5. «La plantilla deja de saber los métodos de memoria»
+
+El campo `flujo` (PASARELA o MANUAL) existe para que la plantilla sepa a qué
+vista mandar el botón **sin conocer cada método por su nombre**. Si tuviera
+un `{% if metodo.codigo == "tarjeta" %}`, agregar un método nuevo volvería a
+exigir editar el HTML, que es justo lo que esta historia vino a sacar.
+
+## 11.6. Verificaciones realizadas
+
+- **16 pruebas nuevas.** Suite completa: **400 aprobadas** (eran 384), sin
+  regresiones.
+- Casos cubiertos: la migración de datos crea exactamente los dos métodos
+  que funcionaban; habilitar y deshabilitar; queda registro de quién y
+  cuándo; el historial guarda **todos** los cambios y no inventa los que no
+  ocurrieron; un método deshabilitado no aparece en la pantalla de pago y no
+  se puede usar ni forzando el POST; sin ningún método habilitado avisa y no
+  rompe; **un pago ya iniciado se confirma, se cancela y se concilia aunque
+  se deshabilite el método**; un no administrador recibe 403 por GET y por
+  POST; y cambiar el estado exige POST.
+- `manage.py check` sin errores, migraciones `pagos.0002` y `0003` aplicadas
+  y Sphinx genera sin warnings.
+
+---
+
+## 12. Leyda Fleitas — GEG9-82, Formato de Números y Montos
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+Pedido transversal de la cátedra, no del ERS: separador de miles y columnas
+numéricas alineadas a la derecha.
+
+### 12.1. «La opción más obvia de Django no sirve, y se comprobó»
+
+**Lo que aprendimos.** Lo primero que se evaluó fue activar
+`USE_THOUSAND_SEPARATOR = True`, que parecía resolver todo con una línea. Se
+probó antes de decidir:
+
+```
+HOY                    : 1250000,5
+CON THOUSAND_SEPARATOR : 1 250 000,5      ← espacio fino, no punto
+```
+
+El locale `es` de Django es el de España y agrupa con **espacio**. La cátedra
+pidió `1.250.000`. Activarlo habría cambiado el formato de **todas** las
+pantallas de golpe, y al que no corresponde.
+
+Cambiar a `es_PY` habría arrastrado también el formato de fechas en todo el
+sistema.
+
+**Decisión: filtro propio.** Formato exacto, aplicado donde se quiere, sin
+efectos a distancia.
+
+De paso se comprobó algo que tranquilizó el resto del trabajo: Django **no
+localiza los `NumberInput`**, así que esa opción nunca habría roto los
+formularios. Era un riesgo que valía la pena descartar con una prueba y no
+con una suposición.
+
+### 12.2. «Los formularios: donde el criterio chocaba con el HTML»
+
+**Lo que aprendimos.** El criterio pedía que los formularios acepten el valor
+escrito con separadores. Los campos de monto eran `<input type="number">`, y
+ese tipo de campo **solo admite un número con punto decimal**: escribir
+`10.000` hace que el navegador lo rechace o vacíe el campo antes de que llegue
+al servidor.
+
+**Decisión de la integrante:** pasar a campo de texto con un parser propio
+(`MontoField`). Cumple el criterio al pie de la letra.
+
+El contrapeso, que quedó anotado en el código: se pierde el teclado numérico
+del celular y la validación del navegador. La validación de Django sigue
+intacta —`MontoField` hereda de `DecimalField`, así que mínimos, máximos y
+dígitos siguen valiendo— y **el valor guardado no cambia**.
+
+**Las comisiones se dejaron como estaban**: son porcentajes de 0 a 100, nunca
+llevan separador de miles, y el `max="100"` del navegador es útil. Cambiarlas
+habría sido perder algo sin ganar nada.
+
+### 12.3. «Un riesgo que apareció a mitad de camino: `7.120` como tasa»
+
+**Lo que aprendimos**, y casi se cuela sin que nadie lo note. La regla para
+desambiguar `10.000` —punto con exactamente tres dígitos detrás es separador
+de miles— es correcta para importes. **Para tasas es peligrosa:** una
+cotización de `7.120` significa siete coma doce, no siete mil ciento veinte,
+porque las tasas llevan hasta seis decimales.
+
+Con la regla aplicada a todo, alguien cargando una tasa de `1.234` habría
+guardado mil doscientos treinta y cuatro.
+
+**Decisión.** Un `TasaField` que desactiva esa regla: en una tasa, un punto
+suelto siempre es decimal, y para los miles hay que usar la coma
+(`7.120,00`). Quedó escrito en el docstring, porque es exactamente el tipo de
+diferencia que alguien "unificaría" de buena fe.
+
+### 12.4. «Dónde viven los decimales de cada moneda»
+
+**Lo que aprendimos.** `Moneda` guardaba código, nombre, símbolo y poco más.
+Que el guaraní no lleve decimales estaba **implícito y repartido**:
+`to_integral_value()` en facturación, `quantize(Decimal("0.01"))` en pagos, y
+`floatformat` sueltos con criterios distintos en seis plantillas.
+
+**Decisión de la integrante:** un campo `decimales` en `Moneda`, con
+migración de datos. Es una propiedad de la moneda y ahí corresponde; cuando
+el administrador cargue una moneda nueva, lo define en la misma pantalla.
+
+Se puso **JPY en 0** además del guaraní: el yen tampoco usa decimales.
+
+### 12.5. «Las descargas no tienen ninguna librería»
+
+**Lo que aprendimos** al llegar al criterio de alinear en Excel y PDF: no hay
+`openpyxl` ni `reportlab`. El "Excel" es **SpreadsheetML escrito a mano**, con
+todas las celdas como `ss:Type="String"` —Excel las mostraba pegadas a la
+izquierda y no se podían sumar— y el PDF se arma **byte a byte**, uniendo los
+campos con `" | "`.
+
+**Decisión.** No agregar librerías a esta altura de la entrega:
+
+- **Excel:** los importes pasan a `ss:Type="Number"` con un estilo
+  `ss:Horizontal="Right"` y formato `#.##0,00`. Ahora además **se pueden
+  sumar**, que era un problema que nadie había notado.
+- **PDF:** las columnas se rellenan con espacios hasta el ancho máximo, y las
+  numéricas se alinean a la derecha. Funciona porque el PDF usa una sola
+  tipografía; con una proporcional los espacios no alcanzarían.
+
+### 12.6. «Cifras tabulares, no solo `text-align: right`»
+
+Alinear a la derecha no alcanza: en la mayoría de las tipografías los dígitos
+tienen anchos distintos, así que las comas de una columna quedan desparejas
+aunque el borde derecho esté alineado. La clase `.num` agrega
+`font-variant-numeric: tabular-nums`, que hace que todos los dígitos ocupen
+lo mismo.
+
+Vive en `templates/base.html` y no en cada pantalla, porque Tailwind no se
+puede recompilar en este entorno (Node 18 contra el 20 que pide).
+
+## 12.7. Verificaciones realizadas
+
+- **42 pruebas nuevas.** Suite completa: **442 aprobadas** (eran 400), sin
+  regresiones.
+- Casos cubiertos: enteros, decimales, **cero, negativos y números grandes**;
+  cada moneda con sus decimales (PYG y JPY sin, USD y EUR con dos); que la
+  tasa conserve la precisión; que **no se use float** —`Decimal("1.005")`
+  redondea a `1,01`, que en float daría `1,00`—; que el formulario acepte las
+  dos formas de escribir y que **el valor guardado no cambie**; que siga
+  validando el mínimo; que las columnas numéricas lleven la clase de
+  alineación; que el Excel lleve los importes como número alineados a la
+  derecha; que el PDF los alinee rellenando con espacios; y que el gráfico
+  use el mismo formato.
+- Dos pruebas existentes de tasas se adaptaron: verificaban el atributo
+  `step` del `NumberInput`, que ya no existe. Ahora verifican lo que importa,
+  que es que siga aceptando seis decimales.
+- `manage.py check` sin errores, migraciones `monedas.0002` y `0003`
+  aplicadas y Sphinx genera sin warnings.
+
+---
+
+## 13. Fabrizio Cardozo — RF031, Monitoreo de Ganancias en Tiempo Real (GEG9-64)
+
+### 13.1. «¿Cómo calcular la ganancia de las operaciones?»
+
+**Lo que aprendimos.** Las compras y ventas ya conservan la comisión, la tasa
+aplicada, la tasa de compra y la tasa de venta utilizadas en la operación. No
+hace falta persistir un nuevo valor de ganancia ni crear una migración; el
+resumen puede calcularse con los datos históricos de cada operación.
+
+**Decisión.** Calcular la ganancia como la suma de la comisión cobrada y la
+diferencia entre la tasa de venta y la tasa de compra, aplicada al monto base.
+La comisión de una compra se convierte a la moneda recibida para que el
+desglose sea consistente. El resultado se agrupa por moneda y también se
+muestra como total global.
+
+### 13.2. «¿Qué operaciones deben incluirse?»
+
+**Decisión.** Consultar exclusivamente operaciones con estado `CONFIRMADA` y
+con `confirmado_en` registrado. Las operaciones `PENDIENTE`, `CANCELADA` y
+`ANULADA` quedan fuera del cálculo. El rango de fechas se aplica sobre la fecha
+de confirmación, porque es el momento en que la operación genera rendimiento.
+
+### 13.3. «¿Cómo se actualiza el dashboard?»
+
+- Se agregó la pantalla `/ganancias/` y el endpoint `/ganancias/datos/`.
+- El dashboard permite filtrar por fecha desde/hasta y muestra totales,
+  comisiones, diferencia de tasa, cantidad de operaciones y desglose por
+  moneda.
+- La pantalla consulta nuevamente el endpoint cada 15 segundos, por lo que
+  refleja nuevas operaciones confirmadas sin almacenar un resumen obsoleto.
+- El acceso está restringido a los roles `administrador` y
+  `analista_cambiario`; ambos roles ven la opción «Ganancias» en el menú.
+
+### 13.4. Verificaciones y alcance
+
+- Se agregaron pruebas para la suma de comisión y diferencia de tasa, exclusión
+  de operaciones canceladas, filtro por fecha y permisos de acceso.
+- RF031 no agrega modelos ni migraciones.
+- La ejecución de las pruebas queda pendiente de validación en el contenedor
+  Docker del proyecto.
+
+---
+
+## 14. Fabrizio Cardozo — RF030, Reporte de Transacciones para la Administración (GEG9-66)
+
+### 14.1. «¿Cómo complementar el historial por cliente?»
+
+**Lo que aprendimos.** El historial existente está deliberadamente limitado al cliente activo y a operaciones confirmadas. Cambiarlo para que un administrador vea todos los clientes rompería ese límite de privacidad y el propósito de RF030 original.
+
+**Decisión.** Crear una pantalla independiente de reporte global. El historial por cliente se conserva sin cambios; el nuevo reporte consulta compras y ventas por separado, las transforma a una estructura común y las ordena por fecha de creación.
+
+### 14.2. «¿Las operaciones de la terminal necesitan otro registro?»
+
+**Lo que aprendimos.** La terminal inicia operaciones mediante los mismos
+servicios `iniciar_compra` e `iniciar_venta`, con `desde_terminal=True`, y las guarda en `CompraDivisa` y `VentaDivisa`. No existe un modelo separado de transacciones de terminal.
+
+**Decisión.** Reutilizar esas fuentes históricas. De esta forma el reporte
+incluye también operaciones iniciadas desde autoservicio sin duplicar datos ni agregar una migración.
+
+### 14.3. «¿Qué filtros necesita la auditoría?»
+
+**Decisión.** Agregar filtros combinables por cliente, moneda —en cualquiera
+de los extremos de la conversión—, tipo de operación, estado y rango inclusivo de fechas. La fecha mostrada y filtrada es `creado_en`, para que también puedan auditarse operaciones pendientes, canceladas y anuladas.
+
+### 14.4. Verificaciones realizadas
+
+- Se agregó `/conversiones/reporte-transacciones/` como pantalla de consulta
+  independiente.
+- El acceso está restringido a `administrador` y `analista_cambiario`.
+- Se agregaron 6 pruebas unitarias para listado, estados, filtros, monedas,
+  permisos y coexistencia con el historial por cliente.
+- No se agregó migración: el reporte utiliza `CompraDivisa` y `VentaDivisa`.
+- `manage.py check` no reporta errores y las pruebas de `apps/conversiones/`
+  pasan.
+
+---
+
+## 15. Daniela González — Corrección de comprobantes administrativos
+
+**Contexto.** Los comprobantes de compras y ventas mostraban a un administrador los botones «Realizar otra operación» y «Repetir esta operación». Esas acciones inician una operación en nombre del usuario autenticado y están reservadas al cliente asociado; desde administración resultaban confusas y podían terminar en un bloqueo de permisos.
+
+**Decisión.** Mantener los botones de repetición únicamente para
+`usuario_cliente`. En un comprobante consultado por administración se muestra un enlace de retorno a «Compras y anulaciones» o «Ventas y anulaciones». El cajero conserva su retorno a ventas pendientes, por lo que no se modifica el flujo de caja ni el de la Terminal.
+
+**Verificación.** Se añadieron pruebas para ambos comprobantes: confirman que el administrador ve el retorno administrativo y no ve acciones de repetición.
+
+---
+
+## 16. Fabrizio Cardozo — RF037, Gestión de Horarios Operativos (GEG9-79)
+
+### 16.1. «¿Cómo representar los días y rangos horarios?»
+
+**Lo que aprendimos.** Un día puede tener más de un intervalo operativo —por
+ejemplo, atención de mañana y de tarde—, por lo que un único campo de apertura
+y cierre por día no alcanza. Además, la comparación debe respetar la zona
+horaria configurada para el negocio.
+
+**Decisión.** Agregar `apps.horarios` con el modelo `RangoHorario`, que guarda
+el día de la semana, la hora de inicio y la hora de fin. Se permiten varios
+rangos para un mismo día, se evita duplicar el mismo intervalo y se valida que
+la hora inicial sea anterior a la final. La evaluación usa la zona horaria de
+Asunción.
+
+### 16.2. «¿Quién puede modificar la configuración?»
+
+**Decisión.** Crear la pantalla `/horarios-operativos/` con operaciones para
+crear, modificar y eliminar rangos. Todas las vistas están protegidas para el
+rol `administrador`; cualquier otro rol recibe 403. La opción también aparece
+en el menú únicamente para administradores.
+
+### 16.3. «¿Dónde se debe aplicar el bloqueo?»
+
+**Lo que aprendimos.** La web y la terminal ya comparten los servicios
+`iniciar_compra` e `iniciar_venta`. Validar solo en las vistas dejaría una
+puerta abierta para llamadas directas al servicio o para un flujo nuevo.
+
+**Decisión.** Centralizar la regla en `exigir_horario_operativo()` y llamarla
+antes de iniciar compras y ventas, y antes de confirmar compras y ventas. Así
+se cubren el cliente, el cajero, la conciliación administrativa y la terminal
+sin duplicar la lógica.
+
+### 16.4. «¿Qué debe seguir disponible fuera del horario?»
+
+**Decisión.** Solo se bloquean las acciones que crean o confirman operaciones.
+Las pantallas de tasas y simulación no consultan el validador de horario y
+continúan disponibles. Cuando se intenta operar fuera del rango, se muestra
+un mensaje claro indicando que las operaciones están cerradas y que las
+consultas y simulaciones siguen habilitadas.
+
+### 16.5. «¿Qué ocurre antes de configurar el primer horario?»
+
+**Decisión.** Mientras no exista ningún rango, el sistema permanece abierto
+para no dejar inutilizable una instalación recién desplegada. Desde que se
+configura el primer rango, todos los días y horas no incluidos quedan
+cerrados.
+
+### 16.6. Verificaciones realizadas
+
+- Se agregaron 6 pruebas unitarias en
+  `apps/horarios/tests/test_horarios.py`: límites del rango, días cerrados,
+  bloqueo de compras y ventas, confirmación, terminal, permisos y simulación.
+- Las pruebas focalizadas de horarios, conversiones y terminal pasaron sin
+  regresiones.
+- `manage.py check` y `makemigrations --check` terminan sin errores.
+- La suite completa mantiene un fallo preexistente en
+  `apps/notificaciones/tests/test_notificaciones.py::test_editar_sin_cambiar_los_valores_no_notifica`.
+
+---
+
+## 17. Daniela González — Revisión del flujo crítico de compra/venta y terminal (GEG9-70)
+
+### 17.1. «Una sola evidencia QA, no un documento por cada prueba»
+
+**Contexto.** La tarea pide recorrer varias historias ya implementadas: compra, venta, cancelaciones, caja, terminal, pagos y facturación. Documentar cada comprobación en un archivo aislado haría difícil encontrar el resultado de QA del sprint y duplicaría la constancia de pruebas unitarias.
+
+**Decisión.** Se creó `docs/qa-sprint6.md` como evidencia central de QA. El archivo diferencia lo que fue ejecutado automáticamente de los recorridos que requieren interfaz, usuarios de Keycloak, efectivo de demostración o servicios externos. La constancia PUN conserva el comando, fecha y resultado repetible.
+
+### 17.2. «Qué puede demostrar pytest y qué no»
+
+**Lo que aprendimos.** Las pruebas automatizadas pueden verificar el flujo de negocio completo con proveedores simulados: cálculo, congelamiento de tasa, cancelación, movimientos de caja, terminal y errores de facturación sin revertir una operación ya confirmada. Pero no prueban una transferencia de dinero real ni una emisión fiscal real contra dLocal o Factura Segura.
+
+**Decisión.** Registrar el resultado exacto de la batería (`199 passed`) como evidencia del comportamiento controlado, y dejar explícito que la integración externa requiere credenciales, rango fiscal y ambiente autorizados. No se debe marcar como aprobada una pasarela o factura real solo por una prueba simulada.
+
+---
+
+## 18. Leyda Fleitas — RF038, Panel de Control Central (GEG9-67)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+ERS RF038, Hito 8: una interfaz exclusiva del administrador que consolide las
+métricas del negocio.
+
+### 18.1. «Primero averiguá si RF031 ya está, y leelo»
+
+**Lo que aprendimos.** La historia depende del cálculo de ganancias de RF031
+(GEG9-64), hecho por otro integrante. Antes de escribir una línea se buscó en
+`develop` actualizado y se leyó completo `apps/ganancias/services.py`. Lo que
+se encontró:
+
+- **«Ganancia» son dos cosas, no una:** la comisión cobrada **más** la
+  diferencia entre la tasa de venta y la de compra.
+- **Estados:** solo `CONFIRMADA` y con `confirmado_en` cargado. Las canceladas
+  y las anuladas quedan afuera, que es justo lo que pedía el criterio 5 de
+  esta historia. No hubo que agregar nada.
+- **Período:** sí lo admite, por `confirmado_en__date`, así que el filtro del
+  tablero se traduce al mismo rango sin tocar RF031.
+
+**Decisión: no recalcular.** El tablero llama a `resumen_ganancias()`. Una
+prueba compara el resultado del tablero con el del servicio, así que si
+mañana alguien cambia la regla de ganancias, las dos pantallas siguen
+coincidiendo o la prueba se pone roja. Repetir la cuenta habría dado dos
+números distintos la primera vez que se tocara uno solo de los dos lados.
+
+### 18.2. «El total de ganancias suma monedas distintas»
+
+**Lo que aprendimos.** RF031 devuelve un desglose por moneda y además un
+`total`, pero ese total **suma aritméticamente importes en monedas
+distintas**: guaraníes más dólares más reales en un mismo número. El panel de
+RF031 lo muestra como «Ganancia global». Es un número sin unidad.
+
+**Primera decisión: no repetirlo.** No se tocó RF031 —es de otra historia y
+cambiarlo habría alterado los números de una pantalla ya entregada— y el
+tablero mostró al principio **solo el desglose por moneda**, con un aviso
+explicando que para dar un total hay que decidir con qué cotización se valúa
+cada ganancia.
+
+**La integrante pidió el total en guaraníes igual.** Es el pedido correcto:
+un tablero cuyo número principal sea «no se puede calcular» no sirve de
+tablero. Lo que faltaba no era el cálculo, era **elegir la cotización**, y esa
+elección se podía tomar y dejar escrita.
+
+**Decisión: tasa de compra vigente.** Se convierte cada moneda a guaraníes
+con la tasa que la casa de cambio **paga** por esa moneda, y recién ahí se
+suma. Tres cosas quedaron explícitas en la documentación en vez de
+escondidas:
+
+- **Por qué la de compra y no la de venta:** es la valuación conservadora,
+  nunca infla el resultado.
+- **Por qué la cotización de hoy y no la del día de cada operación:** RF031
+  entrega las ganancias ya sumadas por moneda, no operación por operación, y
+  sacar la cotización histórica habría obligado a recalcular todo por fuera
+  de RF031 —justo lo que se evitó en 18.1—. La consecuencia queda anotada:
+  el total de un período pasado se mueve si cambian las tasas.
+- **Una moneda sin tasa activa no se convierte:** queda fuera del total y la
+  pantalla la nombra. Inventarle una cotización daría un número falso;
+  callarla daría un total que parece completo y no lo está.
+
+El desglose por moneda se sigue mostrando entero, así que la conversión no
+tapa nada.
+
+### 18.2.b. «¿Y un gráfico con esas ganancias?»
+
+**Lo que aprendimos.** El pedido abría una trampa. Un gráfico de evolución
+necesita la ganancia **por fecha**, y `resumen_ganancias` la devuelve ya
+sumada por moneda para todo el período. Las dos salidas obvias eran malas:
+
+- **Reimplementar la fórmula** agrupando por día en la base: rápido, pero
+  deja dos versiones de la regla de ganancia y rompe todo lo decidido en
+  18.1.
+- **Llamar a `resumen_ganancias` una vez por barra:** no duplica nada, pero
+  son dos consultas por barra —veinticuatro para doce barras—.
+
+**Decisión: una tercera.** Se recorren las operaciones **una sola vez** —dos
+consultas— usando las mismas funciones por operación que usa RF031 para
+armar su resumen. La regla sigue viviendo en un solo lugar y el costo no se
+multiplica.
+
+El precio es una dependencia de funciones internas de RF031, y por eso la
+prueba que la cuida es la más importante del gráfico: **la suma de las barras
+tiene que dar exactamente lo mismo que `resumen_ganancias` del período
+completo**. Si allá cambia la fórmula o se renombra una función, esa prueba
+avisa.
+
+El gráfico es **SVG escrito a mano**, igual que el de tasas de RF016: no se
+agregó ninguna librería. La geometría se calcula en Python y no en la
+plantilla, para poder probarla —hay una prueba que verifica que el día con el
+doble de ganancia dibuje el doble de alto—. Y nunca pasa de doce barras: con
+períodos cortos va una por día, con períodos largos cada barra junta varios,
+así no se vuelve ilegible ni el costo depende del largo del período.
+
+### 18.3. «Dos fechas distintas para dos preguntas distintas»
+
+**Lo que aprendimos.** Al filtrar por período apareció una decisión que no era
+obvia. Las ganancias de RF031 se filtran por `confirmado_en`. Pero los conteos
+por estado **no pueden** usar ese campo: una operación cancelada nunca tiene
+fecha de confirmación y no aparecería nunca.
+
+**Decisión.** Los conteos por estado se filtran por `creado_en` —cuándo se
+inició la operación— y las ganancias siguen usando `confirmado_en`. Cada
+pregunta usa la fecha que le corresponde.
+
+El efecto raro queda documentado: una compra iniciada ayer y confirmada hoy
+cuenta como operación de ayer y como ganancia de hoy. La columna del tablero
+dice «por fecha de creación» para que se entienda de dónde sale el número.
+
+### 18.4. «Dos métricas que el ticket pedía y el modelo no permite»
+
+**Lo que aprendimos.** Al leer los modelos antes de implementar aparecieron
+dos pedidos que no se podían cumplir como estaban escritos:
+
+- **«Diferencias de arqueo pendientes».** `DiferenciaCaja` tiene monto,
+  moneda, motivo, responsable y fecha, pero **ningún campo de resuelta o
+  pendiente**. Las diferencias se anotan y nunca se cierran: el sistema no
+  distingue una ya resuelta de una abierta.
+- **«Sucursales activas».** `Sucursal` tiene
+  `es_unica = BooleanField(unique=True)`, o sea que el modelo **impone que
+  haya una sola**. El contador diría siempre «1».
+
+**Decisión.** Se avisó antes de implementar en vez de inventar. La primera
+métrica dice **«diferencias registradas»** y no «pendientes»; agregarle un
+campo de resolución a
+`DiferenciaCaja` sería diseñar un flujo de trabajo que nadie pidió, y en el
+modelo de otra historia. La segunda se reemplazó por el nombre de la caja y
+si está activa.
+
+### 18.5. «Dos formas de que una factura salga mal»
+
+**Lo que aprendimos.** `Factura` tiene dos campos de estado y por lo tanto dos
+maneras distintas de fallar: `estado=ERROR` es que Factura Segura rechazó la
+petición —el problema está en los datos que mandamos—, y
+`estado_fiscal=RECHAZADA` es que se emitió bien pero SIFEN la rechazó después
+—el problema está del lado del fisco—.
+
+**Decisión.** Se cuentan separadas. Un solo número de «facturas con problema»
+habría escondido en qué lado hay que mirar, que es lo único que un
+administrador necesita saber de esa tarjeta.
+
+### 18.6. «Que la pantalla sea rápida de verdad, no solo pocas consultas»
+
+**Lo que aprendimos.** RNF001 pide menos de 3 segundos. Lo fácil es escribir
+agregaciones con `Count(filter=Q(...))` y dar por cumplido el requisito, pero
+eso no se verifica solo: una métrica agregada después, dentro de un bucle,
+pasa desapercibida.
+
+**Decisión: una prueba que lo mida y no una que lo declare.** La prueba corre
+el servicio con 2 operaciones, después crea 20 más y lo vuelve a correr, y
+exige que la **cantidad de consultas sea la misma**. Un número fijo escrito a
+mano se rompería con cualquier cambio inocente; esto se rompe solo cuando el
+costo empieza a crecer con los datos, que es el problema real.
+
+Un detalle de implementación salió de ahí: el filtro de formato puede
+averiguar los decimales de una moneda solo, pero lo hace con una consulta por
+moneda. El servicio los trae junto con el saldo en la misma agregación, así
+que la plantilla no consulta nada.
+
+### 18.7. «Un acceso directo que le habría dado 403 al administrador»
+
+**Lo que aprendimos.** Al armar los accesos directos se iba a enlazar
+«Ventas pendientes» (`conversiones:ventas_pendientes`), que parecía lo lógico
+para la tarjeta de ventas pendientes de entrega. Se verificó la vista antes:
+está protegida con `requiere_cajero`. El administrador habría recibido un 403
+desde un botón del propio tablero.
+
+**Decisión.** La tarjeta muestra el número y el acceso directo va a «Ventas y
+anulaciones», que sí es del administrador. Se verificaron las once rutas
+enlazadas una por una antes de escribir la plantilla.
+
+### 18.8. «El CSS que no se puede recompilar, otra vez»
+
+**Lo que aprendimos.** Revisando el panel de RF031 se vio que usa
+`md:grid-cols-4`, y esa clase **no existe en el CSS ya compilado**: Tailwind
+no se puede recompilar en este entorno (Node 18, pide 20 o más). Las tarjetas
+de ese panel no se acomodan en cuatro columnas.
+
+**Decisión.** La plantilla del tablero lleva su propio `<style>`, igual que se
+hizo en GEG9-82. La rejilla usa `repeat(auto-fit, minmax(13rem, 1fr))` en vez
+de una cantidad fija de columnas: se acomoda sola en el celular y no depende
+de clases que puedan no estar generadas.
+
+### 18.8.b. «Bug propio: el gráfico salió vacío y las fechas desarmadas»
+
+**Lo que pasó.** El gráfico pasaba las 40 pruebas y en la pantalla **no se
+dibujaba ninguna barra**, con las fechas del eje partidas en cifras sueltas.
+Lo detectó la integrante mirando, no las pruebas.
+
+**La causa.** El sitio está en español, y Django **localiza los números al
+renderizar**: escribía `width="44,64"` en vez de `44.64`. SVG no entiende la
+coma como separador decimal, así que descartaba el atributo y la barra
+quedaba sin tamaño.
+
+En `<text x="36,0">` era peor, y es la parte que vale la pena recordar: ahí
+la coma **sí es válida en SVG**, pero significa otra cosa —una posición por
+letra—. Así que no fallaba: dibujaba la primera cifra de la fecha en un lugar
+y la segunda en otro. Un atributo mal formado se nota; uno que significa algo
+distinto de lo que uno cree, no.
+
+**La decisión.** El gráfico va dentro de `{% localize off %}`. La geometría
+no es texto para leer, es un dato para la máquina, y no se localiza.
+
+**Por qué las pruebas no lo agarraron.** Verificaban los números que calcula
+el servicio —que el doble de ganancia dibuje el doble de alto— y eso estaba
+bien. El error aparecía **al renderizar**, que era el único tramo que no
+estaba cubierto. La prueba nueva mira el SVG ya renderizado y exige que
+ninguna coordenada tenga coma y que haya al menos una barra con alto.
+
+Es la misma lección de GEG9-82 vista desde el otro lado: allá el problema era
+que Django **no** formateaba los números como queríamos, y acá que los
+formateaba donde no debía.
+
+### 18.8.c. «Sacale los textos al tablero»
+
+**Lo que aprendimos.** La primera versión explicaba en pantalla cada decisión:
+por qué la conversión usa la tasa de compra, por qué dice «registradas» y no
+«pendientes», por qué los conteos usan otra fecha que las ganancias. La
+integrante pidió sacarlos, y tenía razón: **un tablero se mira de un vistazo,
+no se lee**. Toda esa prosa competía con los números, que son lo único que
+alguien va a mirar ahí.
+
+**Decisión.** Las justificaciones se fueron a Sphinx y a este documento, que
+es donde se buscan. En la pantalla quedaron datos, unidades y enlaces.
+
+**Lo que NO se sacó, y por qué.** El aviso de las monedas sin cotización
+vigente. No explica una decisión: avisa que **el total está incompleto**.
+Sacarlo dejaría una cifra que parece completa y no lo está, que es distinto de
+sacar una explicación. Además es condicional —solo aparece cuando de verdad
+falta una cotización—, así que no ensucia la pantalla el resto del tiempo.
+
+La diferencia entre las dos cosas es la que importa: explicar una decisión es
+opcional, avisar que un número no es lo que aparenta no lo es.
+
+### 18.9. Un bug ajeno que apareció al correr la suite
+
+**Lo que aprendimos.** La suite completa dio una falla en
+`apps/notificaciones`, en una prueba que no toca nada de esta historia. Se
+rastreó antes de suponer: el commit `8b816fb` (GEG9-81, auditoría) agregó
+`vigente_desde` a la condición `cambiaron_los_valores`, que RF033 usaba para
+decidir **si notificar**. Resultado: cambiar solo la fecha de vigencia de una
+tasa ahora le manda una notificación a todos los clientes asociados, justo lo
+contrario de lo que dice el comentario dos líneas más abajo.
+
+**Decisión.** Primero se reportó con el diagnóstico en vez de tocarlo, porque
+es código de otra historia; la integrante pidió arreglarlo y preguntó
+expresamente si eso iba a afectar la auditoría. No: el arreglo **separa la
+condición en dos** y la auditoría queda igual. Sigue registrando el cambio de
+fecha de vigencia, que es un cambio sobre la tasa y tiene que quedar
+asentado; lo único que deja de pasar es la notificación.
+
+Se comprobó antes de responder: las 36 pruebas de auditoría, tasas y
+notificaciones pasan.
+
+**Y una prueba nueva que fija las dos conductas juntas.** Esto es lo que más
+valió la pena de todo el episodio: cambiar solo la vigencia tiene que dejar
+**cero notificaciones y un registro de auditoría**, verificado en una sola
+prueba. Separadas en sus archivos, arreglar una rompiendo la otra seguiría
+dando verde en el archivo de cada uno, que es exactamente cómo se colaron las
+dos juntas la primera vez.
+
+Queda anotado acá porque es un conflicto semántico de merge —dos ramas
+correctas por separado, rotas al juntarse— y ninguna de las dos lo podía
+detectar sola.
+
+**Un error propio, de paso.** La primera versión de esa prueba falló por mi
+culpa: comparaba `vigente_desde` con lo escrito en el formulario sin pasar de
+UTC a hora local, así que daba las 11:00 contra las 08:00. El código estaba
+bien; la aserción, mal.
+
+## 18.10. Verificaciones realizadas
+
+- **40 pruebas nuevas**, todas aprobadas.
+- Casos cubiertos: que **solo** el administrador entre y que analista,
+  cliente, cajero, terminal y un usuario sin rol reciban **403 escribiendo la
+  dirección**; que sin sesión mande a iniciar sesión; que la opción del menú
+  la vea solo el administrador; que los conteos por estado separen compras de
+  ventas y den el total; que **canceladas y anuladas no sumen dinero** —con
+  la anulada llevando fecha de confirmación a propósito, para probar que el
+  filtro mira el estado y no la presencia del campo—; que las ganancias
+  **coincidan con el servicio de RF031** y usen su mismo período; que
+  «7 días» incluya hoy y los seis anteriores; que un período inventado o
+  manipulado caiga en el valor por omisión y devuelva 200; que los clientes
+  no dependan del período; que los saldos se agrupen por moneda con sus
+  decimales; que las facturas separen el error de emisión del rechazo de
+  SIFEN; que las ventas pendientes de entrega **no** se filtren por período;
+  el estado vacío sin error 500 y todo en cero; que las cifras salgan con
+  separador de miles y **no** con el formato de Django; y que la cantidad de
+  consultas no crezca con los datos.
+- Sobre la conversión a guaraníes y el gráfico: que cada moneda se convierta
+  con su cotización y el total tenga unidad; que se use la tasa de **compra**
+  y no la de venta; que una moneda **sin tasa activa** quede fuera del total
+  y se la nombre en vez de inventarle un valor; que si todo ya está en
+  guaraníes no se muestre una columna de equivalencias repetida; que **la
+  suma de las barras sea igual al resumen de RF031**; que haya una barra por
+  día en períodos cortos y que junte días sin pasar del máximo en los largos;
+  que el día con el doble de ganancia dibuje el doble de alto y ninguna barra
+  se salga del dibujo; y que sin operaciones el gráfico quede vacío sin
+  romper.
+- **Suite completa: 530 aprobadas, ninguna falla.** La falla descrita en 18.9,
+  anterior a esta rama, quedó arreglada con una prueba nueva que la fija.
+- `manage.py check` sin errores. La app no define modelos, así que no hay
+  migraciones. Sphinx genera sin warnings.
+
+---
+
+## 19. Fabrizio Cardozo — RF032, Exportación de Reportes (GEG9-65)
+
+### 19.1. «¿Qué información debe exportarse?»
+
+**Lo que aprendimos.** Ya existían dos consultas administrativas: el reporte
+global de transacciones y el monitoreo de ganancias. Generar los archivos desde
+otra consulta habría permitido que la pantalla y la descarga mostraran datos
+distintos.
+
+**Decisión.** Las descargas reutilizan los mismos filtros y las mismas fuentes
+de datos de cada pantalla. El reporte de transacciones conserva filtros por
+fechas, moneda, estado, cliente y tipo de operación; el de ganancias conserva
+fechas y agrega moneda y estado. Las ganancias solo pueden provenir de
+operaciones confirmadas.
+
+### 19.2. «¿Cómo generar PDF y Excel sin agregar dependencias?»
+
+**Lo que aprendimos.** El proyecto ya genera PDF de texto y no utiliza una
+librería de documentos. Agregar una dependencia para una exportación sencilla
+incrementaría el costo de despliegue.
+
+**Decisión.** Se reutiliza el generador PDF local y se agregó un generador
+pequeño de XLSX basado en los archivos XML mínimos dentro de un ZIP. El archivo
+descargado tiene extensión `.xlsx`, MIME oficial de Office y conserva valores
+numéricos como números cuando corresponde.
+
+### 19.3. «¿Qué debe quedar dentro del archivo?»
+
+Cada reporte incluye sus filas filtradas, totales y fecha de generación. El
+PDF usa una tabla de texto legible; el XLSX incluye una hoja con encabezados,
+datos y una sección de totales. Los endpoints comparten la misma protección de
+acceso de los reportes: solo `administrador` y `analista_cambiario`.
+
+### 19.4. Verificaciones realizadas
+
+- Se agregaron pruebas para PDF y XLSX de ambos reportes, incluyendo MIME,
+  extensión, filtros, totales, fecha de generación y estructura interna del
+  XLSX.
+- Se agregó una prueba de rechazo para usuarios sin rol en cada exportación.
+- No se agregó migración ni dependencia externa.
+- `manage.py check` y la suite enfocada pasan correctamente.
+
+---
+
+## 20. Daniela González — Verificación del manejo de roles (GEG9-71)
+
+### 20.1. «¿Basta con configurar los roles para asegurar los permisos?»
+
+**Contexto.** La pantalla administrativa permite crear roles en Keycloak, asignarlos a usuarios y vincular permisos funcionales. Sin embargo, esa configuración por sí sola no demuestra que cada perfil vea solamente las opciones permitidas ni que las rutas directas estén protegidas.
+
+**Decisión.** Verificar la matriz de roles mediante pruebas automatizadas y revisión manual del menú y de las URLs. Se comprobó el comportamiento de administrador, analista cambiario, usuario cliente, cajero y terminal; también se verificó que un usuario sin cliente asociado quede limitado a las consultas permitidas.
+
+### 20.2. «¿Qué hacer cuando el menú y la autorización no coinciden?»
+
+**Lo que aprendimos.** Una ruta puede estar correctamente protegida y aun así existir un problema de experiencia o seguridad si el menú ofrece una acción que el rol no puede utilizar. También una pantalla interna puede responder a usuarios anónimos aunque no exponga datos sensibles.
+
+**Decisión.** Registrar los hallazgos como errores independientes en Jira: GEG9-83 para ocultar **Clientes** al analista cambiario, manteniendo el acceso administrativo y el `403` por URL directa; y GEG9-84 para exigir autenticación en `/elegir-cliente/`. La tarea GEG9-71 no se considerará cerrada hasta aplicar ambas correcciones y repetir la verificación.
+
+### 20.3. «¿Cuándo se considera cerrada una auditoría de roles?»
+
+**Lo que aprendimos.** Detectar un problema no basta para aprobar la matriz de roles. Debe corregirse en una rama independiente, integrarse en `develop` y volver a comprobarse junto con las pantallas nuevas que aparecieron durante el Sprint, como el Tablero administrativo de GEG9-67.
+
+**Decisión.** Reejecutar una batería consolidada de 150 pruebas después de integrar GEG9-83 y GEG9-84. La verificación confirmó que el analista ya no ve Clientes, que `/elegir-cliente/` exige autenticación y que el Tablero queda reservado al administrador. Con esa evidencia, GEG9-71 puede considerarse aprobado.
+
+---

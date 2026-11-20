@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 
 {% block titulo %}
-  {% if compra.estado == "PENDIENTE" %}Confirmá tu compra{% elif compra.estado == "CONFIRMADA" %}Compra confirmada{% else %}Compra cancelada{% endif %} | Global Exchange
+  {% if compra.estado == "PENDIENTE" %}Confirmá tu compra{% elif compra.estado == "CONFIRMADA" %}Compra confirmada{% elif compra.estado == "ANULADA" %}Compra anulada{% else %}Compra cancelada{% endif %} | Global Exchange
 {% endblock %}
 
 {% block contenido %}
@@ -18,6 +18,10 @@
   {% elif compra.estado == "CONFIRMADA" %}
     <h1>Compra confirmada</h1>
     <p>Operación #{{ compra.pk }} confirmada el {{ compra.confirmado_en|date:"d/m/Y H:i" }}.</p>
+  {% elif compra.estado == "ANULADA" %}
+    <h1>Compra anulada</h1>
+    <p>Operación #{{ compra.pk }} anulada el {{ compra.anulado_en|date:"d/m/Y H:i" }}.
+      La devolución quedó registrada en el pago o en la trazabilidad de estados.</p>
   {% else %}
     <h1>Compra cancelada</h1>
     {% if compra.motivo_cancelacion == "CAMBIO_COTIZACION" %}
@@ -82,8 +86,12 @@
     </script>
     {% endif %}
   {% else %}
-    <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
-    <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>
+    {% if es_administrador %}
+      <a class="boton boton-secundario" href="{% url 'conversiones:compras_administracion' %}">Volver a Compras y anulaciones</a>
+    {% else %}
+      <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}">Realizar otra compra</a>
+      <a class="boton boton-secundario" href="{% url 'conversiones:comprar' %}?cliente={{ compra.cliente_id }}&moneda_pagada={{ compra.moneda_pagada_id }}&moneda_adquirida={{ compra.moneda_adquirida_id }}&monto_pagado={{ compra.monto_pagado|stringformat:'.2f' }}">Repetir esta operación</a>
+    {% endif %}
   {% endif %}
 
   {% with pago=compra.pagos.first %}
@@ -93,6 +101,37 @@
       <p>Referencia: {{ pago.order_id }}{% if pago.id_externo %} ({{ pago.id_externo }}){% endif %}</p>
     {% endif %}
   {% endwith %}
+
+  {% if compra.estado == "CONFIRMADA" and es_administrador %}
+    <h2>Anular compra</h2>
+    {% if anulacion_bloqueada %}
+      <p class="mensaje">La compra tiene un pago pendiente de resolución. No se
+        puede anular hasta resolver el estado de ese pago.</p>
+    {% elif reembolso_en_revision %}
+      <p class="mensaje">El reembolso no obtuvo confirmación automática. Verificá
+        su estado con el proveedor antes de confirmar manualmente la devolución.</p>
+    {% elif requiere_reembolso_manual %}
+      <p>La compra no tiene un reembolso automático disponible. Realizá la
+        devolución fuera del sistema y confirmala aquí para dejar trazabilidad.</p>
+    {% else %}
+      <p>Al confirmar, se solicitará el reembolso al proveedor del pago. La compra
+        solo se anulará si el proveedor confirma la devolución.</p>
+    {% endif %}
+    {% if not anulacion_bloqueada %}
+      <form method="post" action="{% url 'conversiones:anular_compra' compra.pk %}">
+        {% csrf_token %}
+        <label for="motivo-anulacion-compra">Motivo de anulación</label>
+        <textarea id="motivo-anulacion-compra" name="motivo" rows="3" maxlength="255" required></textarea>
+        {% if requiere_reembolso_manual %}
+          <label>
+            <input type="checkbox" name="confirmar_reembolso_manual" required>
+            Confirmo que la devolución manual ya fue realizada o verificada.
+          </label>
+        {% endif %}
+        <button class="boton boton-secundario" type="submit">Reembolsar y anular compra</button>
+      </form>
+    {% endif %}
+  {% endif %}
 
   {% with factura=compra.facturas.first %}
     {% include "facturacion/_factura.html" %}
@@ -107,6 +146,7 @@
           {% if cambio.estado_anterior %}{{ cambio.get_estado_anterior_display }} → {% endif %}{{ cambio.get_estado_nuevo_display }}
         </span>
         {% if cambio.motivo %}<span class="linea-tiempo-motivo">{{ cambio.motivo }}</span>{% endif %}
+        {% if cambio.usuario %}<span class="linea-tiempo-motivo">Realizado por: {{ cambio.usuario }}</span>{% endif %}
       </li>
     {% endfor %}
   </ul>
@@ -151,6 +191,11 @@
   .linea-tiempo-item.estado-CANCELADA::before {
     background: #b91c1c;
     box-shadow: 0 0 0 3px #fff, 0 0 0 4px #fef2f2;
+  }
+
+  .linea-tiempo-item.estado-ANULADA::before {
+    background: #64748b;
+    box-shadow: 0 0 0 3px #fff, 0 0 0 4px #f1f5f9;
   }
 
   .linea-tiempo-item.estado-ANULADA::before {

@@ -16,6 +16,7 @@ from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.tasa_cambios.models import TasaCambio
 from apps.usuarios.services import cliente_habilitado_para
+from apps.horarios.services import exigir_horario_operativo
 
 from .models import CambioEstado, CompraDivisa, VentaDivisa
 
@@ -145,6 +146,7 @@ def iniciar_compra(*, usuario, cliente_id, moneda_pagada, moneda_adquirida, mont
     su cuenta que esa persona pueda operar en nombre del cliente, en vez de
     confiar en que la vista ya lo verificó.
     """
+    exigir_horario_operativo()
     if desde_terminal:
         if not usuario_es_terminal(usuario):
             raise CompraNoDisponible(
@@ -261,6 +263,133 @@ def confirmar_pago_compra(*, pk, usuario):
     return _confirmar_compra_pendiente(compra, usuario=usuario)
 
 
+@transaction.atomic
+def confirmar_pago_compra_efectivo(*, pk, usuario, billetes_recibidos):
+    """Confirma una compra cobrando efectivo por denominación (RF057).
+
+    El cajero recibe el efectivo exacto de la compra. El ingreso queda
+    registrado en su fondo, con detalle de billetes, y la compra se confirma
+    únicamente si la cotización congelada sigue vigente.
+    """
+    exigir_horario_operativo()
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="cajero").exists()
+    ):
+        raise CompraNoConfirmable(
+            "Solo un cajero puede recibir efectivo de una compra."
+        )
+
+    compra = (
+        CompraDivisa.objects.select_for_update()
+        .filter(
+            pk=pk,
+            cliente__activo=True,
+        )
+        .first()
+    )
+
+    if compra is None:
+        raise CompraNoConfirmable("La compra no existe o el cliente está inactivo.")
+
+    if compra.espera_transferencia:
+        raise CompraNoDisponible(
+            "Esta compra espera la conciliación de una transferencia y no puede "
+            "cobrarse en efectivo."
+        )
+
+    if compra.estado != CompraDivisa.Estado.PENDIENTE:
+        raise CompraNoConfirmable(
+            "Esta compra ya fue confirmada o cancelada."
+        )
+
+    compra = expirar_compra_si_corresponde(compra)
+
+    if compra.estado == CompraDivisa.Estado.CANCELADA:
+        return compra
+
+    tasa_vigente = (
+        TasaCambio.objects.filter(
+            moneda_origen=compra.moneda_pagada,
+            moneda_destino=compra.moneda_adquirida,
+            activo=True,
+            vigente_desde__lte=timezone.now(),
+        )
+        .order_by("-vigente_desde")
+        .first()
+    )
+
+    if tasa_vigente is None or tasa_vigente.pk != compra.tasa_cambio_id:
+        estado_anterior = compra.estado
+        compra.estado = CompraDivisa.Estado.CANCELADA
+        compra.motivo_cancelacion = CompraDivisa.MotivoCancelacion.CAMBIO_COTIZACION
+        compra.cancelado_en = timezone.now()
+        compra.save(update_fields=["estado", "motivo_cancelacion", "cancelado_en"])
+
+        registrar_cambio_estado(
+            compra,
+            estado_anterior,
+            compra.estado,
+            motivo="La cotización cambió antes de recibir el efectivo.",
+            usuario=usuario,
+        )
+        return compra
+
+    caja = (
+        Caja.objects.select_for_update()
+        .filter(sucursal__activa=True)
+        .select_related("sucursal")
+        .first()
+    )
+
+    if caja is None:
+        raise CompraNoDisponible(
+            "No hay una caja activa configurada para recibir el efectivo."
+        )
+
+    try:
+        movimiento = registrar_movimiento(
+            caja_id=caja.pk,
+            tipo=MovimientoCaja.Tipo.INGRESO_CAJERO,
+            moneda_id=compra.moneda_pagada_id,
+            realizado_por=usuario,
+            cajero_id=usuario.pk,
+            nota=f"Efectivo recibido del cliente por compra #{compra.pk}",
+            billetes=billetes_recibidos,
+        )
+    except MovimientoNoPermitido as error:
+        raise CompraNoDisponible(str(error)) from error
+
+    if movimiento.importe != compra.total_a_pagar:
+        raise CompraNoDisponible(
+            "El desglose recibido debe sumar exactamente "
+            f"{compra.total_a_pagar:.2f} {compra.moneda_pagada.codigo}."
+        )
+
+    estado_anterior = compra.estado
+    compra.estado = CompraDivisa.Estado.CONFIRMADA
+    compra.confirmado_en = timezone.now()
+    compra.movimiento_efectivo_recibido = movimiento
+    compra.save(
+        update_fields=[
+            "estado",
+            "confirmado_en",
+            "movimiento_efectivo_recibido",
+        ]
+    )
+
+    registrar_cambio_estado(
+        compra,
+        estado_anterior,
+        compra.estado,
+        usuario=usuario,
+    )
+    _facturar(compra)
+
+    return compra
+
+
 def _confirmar_compra_pendiente(compra, *, usuario, motivo=""):
     """Núcleo de la confirmación de una compra pendiente.
 
@@ -274,6 +403,7 @@ def _confirmar_compra_pendiente(compra, *, usuario, motivo=""):
     `motivo` queda en el historial de estados: vacío en el pago normal, y con
     la referencia de la transferencia en la conciliación.
     """
+    exigir_horario_operativo()
     compra = expirar_compra_si_corresponde(compra)
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         return compra
@@ -474,6 +604,231 @@ def cancelar_compra(*, pk, usuario):
     return compra
 
 
+class AnulacionCompraNoPermitida(Exception):
+    """La compra confirmada no se puede anular de forma segura."""
+
+
+@transaction.atomic
+def anular_compra(
+    *, pk, usuario, motivo, confirmar_reembolso_manual=False
+):
+    """Anula una compra pagada tras confirmar su reembolso.
+
+    Los pagos de pasarela se reembolsan con el proveedor que los procesó. Las
+    transferencias conciliadas y las compras sin un Pago asociado requieren
+    confirmación administrativa de que la devolución manual ya se realizó.
+    """
+    if (
+        not usuario
+        or not usuario.is_authenticated
+        or not usuario.groups.filter(name="administrador").exists()
+    ):
+        raise AnulacionCompraNoPermitida(
+            "Solo un administrador puede anular una compra confirmada."
+        )
+
+    motivo = (motivo or "").strip()
+    if not motivo or len(motivo) > 255:
+        raise AnulacionCompraNoPermitida(
+            "Indicá un motivo de anulación de hasta 255 caracteres."
+        )
+
+    compra = CompraDivisa.objects.select_for_update().filter(pk=pk).first()
+    if compra is None:
+        raise AnulacionCompraNoPermitida("La compra no existe.")
+    if compra.estado != CompraDivisa.Estado.CONFIRMADA:
+        raise AnulacionCompraNoPermitida(
+            "Solo se pueden anular compras que ya fueron confirmadas."
+        )
+
+    from apps.pagos.models import Pago
+
+    pagos = list(
+        Pago.objects.select_for_update()
+        .filter(compra=compra)
+        .order_by("-creado_en", "-pk")
+    )
+    pago_reembolsado = next(
+        (pago for pago in pagos if pago.estado == Pago.Estado.REEMBOLSADO),
+        None,
+    )
+    pago_en_revision = next(
+        (
+            pago
+            for pago in pagos
+            if pago.estado == Pago.Estado.REQUIERE_REVISION
+            and "reembolso_anulacion" in pago.respuesta_cruda
+        ),
+        None,
+    )
+    pago_aprobado = next(
+        (pago for pago in pagos if pago.estado == Pago.Estado.APROBADO),
+        None,
+    )
+    if any(pago.estado == Pago.Estado.PENDIENTE for pago in pagos):
+        raise AnulacionCompraNoPermitida(
+            "La compra tiene un pago pendiente de resolución y no se puede "
+            "anular todavía."
+        )
+
+    ahora = timezone.now()
+    detalle_reembolso = None
+    if pago_en_revision is not None:
+        if not confirmar_reembolso_manual:
+            raise AnulacionCompraNoPermitida(
+                "El reembolso requiere revisión. Verificá la devolución con el "
+                "proveedor antes de confirmarla manualmente."
+            )
+        pago_en_revision.estado = Pago.Estado.REEMBOLSADO
+        detalle_reembolso = dict(
+            pago_en_revision.respuesta_cruda["reembolso_anulacion"]
+        )
+        detalle_reembolso["resolucion_manual"] = {
+            "estado": "REEMBOLSADO",
+            "resuelto_por": usuario.get_username(),
+            "resuelto_en": ahora.isoformat(),
+            "motivo": motivo,
+        }
+        pago_en_revision.respuesta_cruda = {
+            **pago_en_revision.respuesta_cruda,
+            "reembolso_anulacion": detalle_reembolso,
+        }
+        pago_en_revision.save(
+            update_fields=["estado", "respuesta_cruda", "actualizado_en"]
+        )
+    elif pago_reembolsado is not None:
+        detalle_reembolso = pago_reembolsado.respuesta_cruda.get(
+            "reembolso_anulacion"
+        )
+    elif pago_aprobado is not None and pago_aprobado.proveedor == "manual":
+        if not confirmar_reembolso_manual:
+            raise AnulacionCompraNoPermitida(
+                "Confirmá que la transferencia ya fue devuelta antes de anular "
+                "la compra."
+            )
+        pago_aprobado.estado = Pago.Estado.REEMBOLSADO
+        detalle_reembolso = {
+            "estado": "REEMBOLSADO",
+            "proveedor": "manual",
+            "confirmado_por": usuario.get_username(),
+            "confirmado_en": ahora.isoformat(),
+            "motivo": motivo,
+        }
+        pago_aprobado.respuesta_cruda = {
+            **pago_aprobado.respuesta_cruda,
+            "reembolso_anulacion": detalle_reembolso,
+        }
+        pago_aprobado.save(
+            update_fields=["estado", "respuesta_cruda", "actualizado_en"]
+        )
+    elif pago_aprobado is not None:
+        from apps.pagos.services import (
+            ReembolsoPagoNoDisponible,
+            solicitar_reembolso_pago,
+        )
+
+        try:
+            resultado = solicitar_reembolso_pago(pago_aprobado)
+        except ReembolsoPagoNoDisponible as error:
+            raise AnulacionCompraNoPermitida(str(error)) from error
+
+        detalle_reembolso = {
+            "estado": resultado["estado"],
+            "solicitado_por": usuario.get_username(),
+            "solicitado_en": ahora.isoformat(),
+            "motivo": motivo,
+            "respuesta": resultado["respuesta_cruda"],
+        }
+        pago_aprobado.respuesta_cruda = {
+            **pago_aprobado.respuesta_cruda,
+            "reembolso_anulacion": detalle_reembolso,
+        }
+        if resultado["estado"] == Pago.Estado.REEMBOLSADO:
+            pago_aprobado.estado = Pago.Estado.REEMBOLSADO
+        else:
+            pago_aprobado.estado = Pago.Estado.REQUIERE_REVISION
+        pago_aprobado.save(
+            update_fields=["estado", "respuesta_cruda", "actualizado_en"]
+        )
+        if resultado["estado"] != Pago.Estado.REEMBOLSADO:
+            return compra, False
+    else:
+        pagos_pendientes = any(
+            pago.estado
+            in (Pago.Estado.PENDIENTE, Pago.Estado.REQUIERE_REVISION)
+            for pago in pagos
+        )
+        if pagos_pendientes:
+            raise AnulacionCompraNoPermitida(
+                "La compra tiene un pago pendiente de resolución y no se puede "
+                "anular todavía."
+            )
+        if not confirmar_reembolso_manual:
+            raise AnulacionCompraNoPermitida(
+                "No hay un pago registrado para esta compra. Confirmá que la "
+                "devolución manual ya fue realizada antes de anularla."
+            )
+
+    if compra.movimiento_efectivo_recibido_id:
+        movimiento = (
+            MovimientoCaja.objects.select_for_update()
+            .filter(pk=compra.movimiento_efectivo_recibido_id)
+            .prefetch_related("detalle_billetes")
+            .first()
+        )
+        if movimiento is None:
+            raise AnulacionCompraNoPermitida(
+                "No se encuentra el movimiento de efectivo de la compra."
+            )
+        if movimiento.tipo != MovimientoCaja.Tipo.INGRESO_CAJERO:
+            raise AnulacionCompraNoPermitida(
+                "El movimiento de efectivo de la compra no es un ingreso "
+                "válido para revertir."
+            )
+
+        billetes = dict(
+            movimiento.detalle_billetes.values_list(
+                "denominacion_id", "cantidad"
+            )
+        )
+        if not billetes:
+            raise AnulacionCompraNoPermitida(
+                "Falta el desglose de billetes del efectivo recibido."
+            )
+
+        try:
+            registrar_movimiento(
+                caja_id=movimiento.caja_id,
+                tipo=MovimientoCaja.Tipo.RETIRO_CAJERO,
+                moneda_id=movimiento.moneda_id,
+                realizado_por=usuario,
+                cajero_id=movimiento.cajero_id,
+                nota=(
+                    f"Anulación de compra #{compra.pk}; reversión del "
+                    f"movimiento #{movimiento.pk}: {motivo}"
+                ),
+                billetes=billetes,
+                reversion_de=movimiento,
+            )
+        except MovimientoNoPermitido as error:
+            raise AnulacionCompraNoPermitida(
+                f"No se puede completar la reversión de efectivo: {error}"
+            ) from error
+
+    estado_anterior = compra.estado
+    compra.estado = CompraDivisa.Estado.ANULADA
+    compra.anulado_en = ahora
+    compra.save(update_fields=["estado", "anulado_en"])
+    registrar_cambio_estado(
+        compra,
+        estado_anterior,
+        compra.estado,
+        motivo=motivo,
+        usuario=usuario,
+    )
+    return compra, True
+
+
 class VentaNoDisponible(Exception):
     """La venta no puede iniciarse con la configuración vigente."""
 
@@ -496,6 +851,7 @@ def iniciar_venta(
     `usuario` es obligatorio desde RF010 (GEG9-20), igual que en
     `iniciar_compra`.
     """
+    exigir_horario_operativo()
     if desde_terminal:
         if not usuario_es_terminal(usuario):
             raise VentaNoDisponible(
@@ -597,6 +953,7 @@ def confirmar_pago_venta(
     La divisa del cliente ingresa y el efectivo entregado sale del fondo del
     cajero, con ambos movimientos vinculados a la venta en la misma transacción.
     """
+    exigir_horario_operativo()
     if not usuario or not usuario.is_authenticated or not usuario.groups.filter(
         name="cajero"
     ).exists():

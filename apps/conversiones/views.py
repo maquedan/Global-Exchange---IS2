@@ -4,16 +4,24 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
+from django.http import HttpResponse
 
 from apps.cajas.models import Caja
 from apps.cajas.services import proponer_billetes_entrega
+from apps.pagos.models import Pago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.auditoria import registrar_auditoria
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.models import RegistroAuditoria
 from apps.usuarios.services import requiere_cliente_activo
+from apps.horarios.services import FueraDeHorarioOperativo
 
 from .forms import (
+    AnularCompraForm,
     ConciliacionForm,
     AnularVentaForm,
     CompraDivisaForm,
@@ -21,9 +29,15 @@ from .forms import (
     SimulacionConversionForm,
     VentaDivisaForm,
     construir_resultado,
+    RecepcionEfectivoCompraForm,
+    ReporteTransaccionesForm,
 )
+
 from .models import CompraDivisa, VentaDivisa
+from apps.comun.exportaciones import crear_pdf_reporte, crear_xlsx, fecha_generacion
+
 from .services import (
+    AnulacionCompraNoPermitida,
     ConciliacionNoPermitida,
     compras_pendientes_de_conciliar,
     conciliar_compra,
@@ -35,6 +49,7 @@ from .services import (
     VentaNoDisponible,
     cancelar_compra,
     cancelar_venta,
+    anular_compra,
     anular_venta,
     confirmar_pago_compra,
     confirmar_pago_venta,
@@ -42,6 +57,7 @@ from .services import (
     expirar_venta_si_corresponde,
     iniciar_compra,
     iniciar_venta,
+    confirmar_pago_compra_efectivo,
 )
 
 
@@ -69,6 +85,17 @@ def requiere_administrador(vista):
     @wraps(vista)
     def envoltura(request, *args, **kwargs):
         if not tiene_rol(request.user, "administrador"):
+            raise PermissionDenied
+        return vista(request, *args, **kwargs)
+
+    return envoltura
+
+
+def requiere_administracion(vista):
+    """Permite consultar reportes a administración y al analista cambiario."""
+    @wraps(vista)
+    def envoltura(request, *args, **kwargs):
+        if not tiene_rol(request.user, "administrador", "analista_cambiario"):
             raise PermissionDenied
         return vista(request, *args, **kwargs)
 
@@ -126,7 +153,7 @@ def comprar(request):
                 moneda_adquirida=datos["moneda_adquirida"],
                 monto_pagado=datos["monto_pagado"],
             )
-        except CompraNoDisponible as error:
+        except (CompraNoDisponible, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             return redirect("conversiones:comprobante_compra", pk=compra.pk)
@@ -135,21 +162,58 @@ def comprar(request):
 
 
 @login_required
-@requiere_cliente
 def comprobante_compra(request, pk):
     """Muestra el estado de la compra (pendiente, confirmada o cancelada)."""
+    es_administrador = tiene_rol(request.user, "administrador")
+    filtros = {"pk": pk}
+    if not es_administrador:
+        if not tiene_rol(request.user, "usuario_cliente"):
+            raise PermissionDenied
+        filtros["cliente__asociaciones_usuarios__usuario"] = request.user
+
     compra = get_object_or_404(
         CompraDivisa.objects.select_related(
             "cliente", "moneda_pagada", "moneda_adquirida"
-        ),
-        pk=pk,
-        cliente__asociaciones_usuarios__usuario=request.user,
+        ).prefetch_related("cambios_estado__usuario", "pagos", "facturas"),
+        **filtros,
     )
-    compra = expirar_compra_si_corresponde(compra)
+    if not es_administrador:
+        compra = expirar_compra_si_corresponde(compra)
+
+    pagos = list(compra.pagos.all())
+    pago_aprobado = next(
+        (pago for pago in pagos if pago.estado == Pago.Estado.APROBADO),
+        None,
+    )
+    pago_en_revision = next(
+        (
+            pago
+            for pago in pagos
+            if pago.estado == Pago.Estado.REQUIERE_REVISION
+            and "reembolso_anulacion" in pago.respuesta_cruda
+        ),
+        None,
+    )
+    hay_pago_sin_resolver = any(
+        pago.estado in (Pago.Estado.PENDIENTE, Pago.Estado.REQUIERE_REVISION)
+        and pago is not pago_en_revision
+        for pago in pagos
+    )
     return render(
         request,
         "conversiones/comprobante_compra.html",
-        {"compra": compra, "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE},
+        {
+            "compra": compra,
+            "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE,
+            "es_administrador": es_administrador,
+            "requiere_reembolso_manual": (
+                pago_aprobado is None
+                or pago_aprobado.proveedor == "manual"
+                or pago_en_revision is not None
+            ),
+            "reembolso_en_revision": pago_en_revision is not None,
+            "anulacion_bloqueada": hay_pago_sin_resolver,
+        },
     )
 
 
@@ -183,6 +247,9 @@ def confirmar_compra_view(request, pk):
         compra = confirmar_pago_compra(pk=pk, usuario=request.user)
     except CompraNoConfirmable as error:
         raise PermissionDenied from error
+    except FueraDeHorarioOperativo as error:
+        messages.error(request, str(error))
+        return redirect("conversiones:comprobante_compra", pk=pk)
 
     if compra.estado == CompraDivisa.Estado.CANCELADA:
         messages.error(
@@ -216,6 +283,95 @@ def cancelar_compra_view(request, pk):
 
 
 @login_required
+@requiere_cajero
+def compras_pendientes_view(request):
+    """Lista las compras pendientes de cobro en efectivo (RF057)."""
+    compras = (
+        CompraDivisa.objects.filter(
+            estado=CompraDivisa.Estado.PENDIENTE,
+            espera_transferencia=False,
+        )
+        .select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        )
+        .order_by("creado_en", "pk")
+    )
+
+    return render(
+        request,
+        "conversiones/compras_pendientes.html",
+        {"compras": compras},
+    )
+
+
+@login_required
+@requiere_cajero
+def confirmar_compra_efectivo_view(request, pk):
+    """Permite al cajero recibir efectivo y confirmar una compra (RF057)."""
+    compra = get_object_or_404(
+        CompraDivisa.objects.select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        ),
+        pk=pk,
+    )
+
+    compra = expirar_compra_si_corresponde(compra)
+
+    if compra.estado != CompraDivisa.Estado.PENDIENTE:
+        messages.info(
+            request,
+            "Esta compra ya fue procesada, cancelada o vencida.",
+        )
+        return redirect("conversiones:compras_pendientes")
+
+    formulario = RecepcionEfectivoCompraForm(
+        request.POST if request.method == "POST" else None,
+        moneda_recibida=compra.moneda_pagada,
+        importe_esperado=compra.total_a_pagar,
+    )
+
+    if request.method == "POST" and formulario.is_valid():
+        try:
+            compra = confirmar_pago_compra_efectivo(
+                pk=compra.pk,
+                usuario=request.user,
+                billetes_recibidos=formulario.cleaned_data["billetes_recibidos"],
+            )
+        except CompraNoConfirmable as error:
+            raise PermissionDenied from error
+        except (CompraNoDisponible, FueraDeHorarioOperativo) as error:
+            formulario.add_error(None, str(error))
+        else:
+            if compra.estado == CompraDivisa.Estado.CANCELADA:
+                messages.error(
+                    request,
+                    "La cotización cambió o venció antes de recibir el efectivo; "
+                    "la compra fue cancelada.",
+                )
+            else:
+                messages.success(
+                    request,
+                    "La compra fue confirmada y el efectivo recibido quedó "
+                    "registrado en el fondo del cajero.",
+                )
+
+            return redirect("conversiones:compras_pendientes")
+
+    return render(
+        request,
+        "conversiones/recibir_efectivo_compra.html",
+        {
+            "compra": compra,
+            "formulario": formulario,
+        },
+    )
+
+
+@login_required
 @requiere_cliente
 @requiere_cliente_activo
 def vender(request):
@@ -239,7 +395,7 @@ def vender(request):
                 moneda_acreditada=datos["moneda_acreditada"],
                 monto_entregado=datos["monto_entregado"],
             )
-        except VentaNoDisponible as error:
+        except (VentaNoDisponible, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             return redirect("conversiones:comprobante_venta", pk=venta.pk)
@@ -250,9 +406,10 @@ def vender(request):
 @login_required
 def comprobante_venta(request, pk):
     """Muestra el estado de la venta (pendiente, confirmada o cancelada)."""
-    es_cajero = tiene_rol(request.user, "cajero", "administrador")
+    puede_consultar = tiene_rol(request.user, "cajero", "administrador")
+    es_cajero = tiene_rol(request.user, "cajero")
     filtros = {"pk": pk}
-    if not es_cajero:
+    if not puede_consultar:
         if not tiene_rol(request.user, "usuario_cliente"):
             raise PermissionDenied
         filtros["cliente__asociaciones_usuarios__usuario"] = request.user
@@ -284,6 +441,10 @@ def comprobante_venta(request, pk):
             "minutos_expiracion": MINUTOS_EXPIRACION_PENDIENTE,
             "es_cajero": es_cajero,
             "es_administrador": tiene_rol(request.user, "administrador"),
+            "puede_cancelar": (
+                not puede_consultar
+                and tiene_rol(request.user, "usuario_cliente")
+            ),
         },
     )
 
@@ -316,6 +477,26 @@ def ventas_administracion_view(request):
         request,
         "conversiones/ventas_administracion.html",
         {"ventas": pagina, "ventas_page_obj": pagina},
+    )
+
+
+@login_required
+@requiere_administrador
+def compras_administracion_view(request):
+    """Lista compras para que administración pueda consultar y anular."""
+    compras = (
+        CompraDivisa.objects.select_related(
+            "cliente",
+            "moneda_pagada",
+            "moneda_adquirida",
+        )
+        .order_by("-creado_en", "-pk")
+    )
+    pagina = Paginator(compras, 50).get_page(request.GET.get("page"))
+    return render(
+        request,
+        "conversiones/compras_administracion.html",
+        {"compras": pagina, "compras_page_obj": pagina},
     )
 
 
@@ -441,11 +622,69 @@ def anular_venta_view(request, pk):
         messages.error(request, str(error))
         return redirect("conversiones:comprobante_venta", pk=pk)
 
+    registrar_auditoria(
+        request.user,
+        RegistroAuditoria.Accion.VENTA_ANULADA,
+        f"Venta #{venta.pk}; cliente #{venta.cliente_id}; "
+        f"motivo: {formulario.cleaned_data['motivo']}.",
+    )
     messages.success(
         request,
         "La venta fue anulada y se registraron los movimientos inversos.",
     )
     return redirect("conversiones:comprobante_venta", pk=venta.pk)
+
+
+@login_required
+@require_POST
+def anular_compra_view(request, pk):
+    """Reembolsa y anula una compra pagada, solo por decisión administrativa."""
+    if not tiene_rol(request.user, "administrador"):
+        raise PermissionDenied
+
+    formulario = AnularCompraForm(request.POST)
+    if not formulario.is_valid():
+        messages.error(request, "Indicá un motivo válido para anular la compra.")
+        return redirect("conversiones:comprobante_compra", pk=pk)
+
+    try:
+        compra, reembolso_completado = anular_compra(
+            pk=pk,
+            usuario=request.user,
+            motivo=formulario.cleaned_data["motivo"],
+            confirmar_reembolso_manual=formulario.cleaned_data[
+                "confirmar_reembolso_manual"
+            ],
+        )
+    except AnulacionCompraNoPermitida as error:
+        messages.error(request, str(error))
+        return redirect("conversiones:comprobante_compra", pk=pk)
+
+    if not reembolso_completado:
+        pago = compra.pagos.order_by("-creado_en", "-pk").first()
+        estado_reembolso = (
+            pago.respuesta_cruda.get("reembolso_anulacion", {}).get("estado")
+            if pago
+            else "REQUIERE_REVISION"
+        )
+        messages.error(
+            request,
+            "El reembolso no fue confirmado por el proveedor "
+            f"(estado: {estado_reembolso}). La compra sigue pagada.",
+        )
+        return redirect("conversiones:comprobante_compra", pk=compra.pk)
+
+    registrar_auditoria(
+        request.user,
+        RegistroAuditoria.Accion.COMPRA_ANULADA,
+        f"Compra #{compra.pk}; cliente #{compra.cliente_id}; "
+        f"motivo: {formulario.cleaned_data['motivo']}.",
+    )
+    messages.success(
+        request,
+        "La compra fue reembolsada y anulada correctamente.",
+    )
+    return redirect("conversiones:comprobante_compra", pk=compra.pk)
 
 
 @login_required
@@ -533,6 +772,128 @@ def historial(request):
         {"transacciones": transacciones},
     )
 
+
+@login_required
+@requiere_administracion
+def reporte_transacciones(request):
+    """Reporte global de compras y ventas para auditoría (RF030 — GEG9-66).
+
+    Se mantiene separado de ``historial``, que representa únicamente al
+    cliente activo y solo muestra operaciones confirmadas.
+    """
+    formulario, transacciones = _reporte_transacciones_data(request)
+    return render(request, "conversiones/reporte_transacciones.html", {"formulario": formulario, "transacciones": transacciones})
+
+
+def _reporte_transacciones_data(request):
+    formulario = ReporteTransaccionesForm(request.GET or None)
+    compras = CompraDivisa.objects.select_related(
+        "cliente", "moneda_pagada", "moneda_adquirida"
+    )
+    ventas = VentaDivisa.objects.select_related(
+        "cliente", "moneda_entregada", "moneda_acreditada"
+    )
+
+    if formulario.is_valid():
+        datos = formulario.cleaned_data
+        if datos["cliente"]:
+            compras = compras.filter(cliente=datos["cliente"])
+            ventas = ventas.filter(cliente=datos["cliente"])
+        if datos["moneda"]:
+            compras = compras.filter(
+                Q(moneda_pagada=datos["moneda"])
+                | Q(moneda_adquirida=datos["moneda"])
+            )
+            ventas = ventas.filter(
+                Q(moneda_entregada=datos["moneda"])
+                | Q(moneda_acreditada=datos["moneda"])
+            )
+        if datos["estado"]:
+            compras = compras.filter(estado=datos["estado"])
+            ventas = ventas.filter(estado=datos["estado"])
+        if datos["fecha_desde"]:
+            compras = compras.filter(creado_en__date__gte=datos["fecha_desde"])
+            ventas = ventas.filter(creado_en__date__gte=datos["fecha_desde"])
+        if datos["fecha_hasta"]:
+            compras = compras.filter(creado_en__date__lte=datos["fecha_hasta"])
+            ventas = ventas.filter(creado_en__date__lte=datos["fecha_hasta"])
+
+        tipo = datos["tipo_operacion"]
+        if tipo == "compra":
+            ventas = ventas.none()
+        elif tipo == "venta":
+            compras = compras.none()
+
+    transacciones = []
+    for compra in compras:
+        transacciones.append(
+            {
+                "id": compra.pk,
+                "tipo": "Compra",
+                "tipo_codigo": "compra",
+                "fecha": compra.creado_en,
+                "cliente": compra.cliente,
+                "origen": compra.moneda_pagada,
+                "destino": compra.moneda_adquirida,
+                "monto_origen": compra.total_a_pagar,
+                "monto_final": compra.monto_recibido,
+                "comision": compra.monto_comision,
+                "moneda_comision": compra.moneda_pagada,
+                "porcentaje_comision": compra.porcentaje_comision,
+                "tasa": compra.tasa_aplicada,
+                "estado": compra.get_estado_display(),
+            }
+        )
+    for venta in ventas:
+        transacciones.append(
+            {
+                "id": venta.pk,
+                "tipo": "Venta",
+                "tipo_codigo": "venta",
+                "fecha": venta.creado_en,
+                "cliente": venta.cliente,
+                "origen": venta.moneda_entregada,
+                "destino": venta.moneda_acreditada,
+                "monto_origen": venta.monto_entregado,
+                "monto_final": venta.monto_acreditado,
+                "comision": venta.monto_comision,
+                "moneda_comision": venta.moneda_acreditada,
+                "porcentaje_comision": venta.porcentaje_comision,
+                "tasa": venta.tasa_aplicada,
+                "estado": venta.get_estado_display(),
+            }
+        )
+
+    transacciones.sort(key=lambda transaccion: transaccion["fecha"], reverse=True)
+    return formulario, transacciones
+
+
+def _filas_exportacion(transacciones):
+    return [[
+        item["fecha"].strftime("%d/%m/%Y %H:%M") if item["fecha"] else "",
+        item["tipo"], str(item["cliente"]),
+        f'{item["monto_origen"]} {item["origen"].codigo} -> {item["monto_final"]} {item["destino"].codigo}',
+        item["tasa"], f'{item["comision"]} {item["moneda_comision"].codigo}', item["estado"],
+    ] for item in transacciones]
+
+
+@login_required
+@requiere_administracion
+def exportar_reporte_transacciones(request, formato):
+    _, transacciones = _reporte_transacciones_data(request)
+    encabezados = ["Fecha", "Tipo", "Cliente", "Monto", "Tasa aplicada", "Comisión", "Estado"]
+    filas = _filas_exportacion(transacciones)
+    totales = {"Operaciones": len(filas), "Fecha de generación": fecha_generacion()}
+    if formato == "excel":
+        respuesta = HttpResponse(crear_xlsx("Transacciones", encabezados, filas, totales, {4}), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        respuesta["Content-Disposition"] = 'attachment; filename="reporte-transacciones.xlsx"'
+        return respuesta
+    if formato == "pdf":
+        respuesta = HttpResponse(crear_pdf_reporte("Reporte de transacciones", encabezados, filas, totales), content_type="application/pdf")
+        respuesta["Content-Disposition"] = 'attachment; filename="reporte-transacciones.pdf"'
+        return respuesta
+    return HttpResponse("Formato no soportado.", status=404)
+
 @login_required
 @requiere_administrador
 def conciliaciones(request):
@@ -564,13 +925,21 @@ def conciliar(request, pk):
 
     if request.method == "POST" and formulario.is_valid():
         try:
-            conciliada = conciliar_compra(
-                pk=compra.pk,
-                usuario=request.user,
-                referencia=formulario.cleaned_data["referencia"],
-                observacion=formulario.cleaned_data["observacion"],
-            )
-        except ConciliacionNoPermitida as error:
+            with transaction.atomic():
+                conciliada = conciliar_compra(
+                    pk=compra.pk,
+                    usuario=request.user,
+                    referencia=formulario.cleaned_data["referencia"],
+                    observacion=formulario.cleaned_data["observacion"],
+                )
+                if conciliada.estado == CompraDivisa.Estado.CONFIRMADA:
+                    registrar_auditoria(
+                        request.user,
+                        RegistroAuditoria.Accion.COMPRA_CONCILIADA,
+                        f"Compra #{conciliada.pk}; referencia "
+                        f"{formulario.cleaned_data['referencia']}.",
+                    )
+        except (ConciliacionNoPermitida, FueraDeHorarioOperativo) as error:
             formulario.add_error(None, str(error))
         else:
             if conciliada.estado != CompraDivisa.Estado.CONFIRMADA:

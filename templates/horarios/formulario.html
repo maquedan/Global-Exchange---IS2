@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block titulo %}{{ accion }} horario | Global Exchange{% endblock %}
+{% block contenido %}
+<div class="tarjeta"><h1>{{ accion }} rango horario</h1>
+  <form method="post">{% csrf_token %}
+    {% if formulario.non_field_errors %}<div class="mensaje error">{{ formulario.non_field_errors }}</div>{% endif %}
+    {% for campo in formulario %}<p><label for="{{ campo.id_for_label }}">{{ campo.label }}</label><br>{{ campo }}{% for error in campo.errors %}<span class="mensaje error">{{ error }}</span>{% endfor %}</p>{% endfor %}
+    <div class="acciones"><button class="boton" type="submit">{{ accion }}</button><a class="boton boton-secundario" href="{% url 'horarios:lista' %}">Cancelar</a></div>
+  </form>
+</div>
+{% endblock %}

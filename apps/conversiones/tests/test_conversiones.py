@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from decimal import Decimal
+from unittest.mock import patch
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -22,22 +23,28 @@ from apps.cajas.services import proponer_billetes_entrega, registrar_movimiento
 from apps.comisiones.models import ComisionCategoria
 from apps.cuentas.models import CuentaPago
 from apps.monedas.models import Moneda
+from apps.pagos.models import Pago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.models import RegistroAuditoria
 
 from apps.conversiones.models import CambioEstado, CompraDivisa, VentaDivisa
 from apps.conversiones.services import (
+    AnulacionCompraNoPermitida,
     CompraNoConfirmable,
     AnulacionVentaNoPermitida,
     VentaNoConfirmable,
     VentaNoDisponible,
     anular_venta,
+    anular_compra,
     cancelar_compra,
     cancelar_venta,
     calcular_comision,
     calcular_conversion,
     confirmar_pago_compra,
     confirmar_pago_venta,
+    confirmar_pago_compra_efectivo,
     iniciar_venta,
+    iniciar_compra,
 )
 
 
@@ -176,6 +183,23 @@ def cargar_billete(cajero, moneda, valor):
         billetes={denominacion.pk: 1},
     )
     return denominacion
+
+
+def preparar_billetes_compra(moneda, importe):
+    sucursal, _ = Sucursal.objects.get_or_create(
+        es_unica=True,
+        defaults={"nombre": "Centro", "direccion": "Centro"},
+    )
+    Caja.objects.get_or_create(sucursal=sucursal)
+
+    denominacion = DenominacionBillete.objects.create(
+        moneda=moneda,
+        valor=importe,
+    )
+
+    return {
+        f"billete_recibido_{denominacion.pk}": "1",
+    }, denominacion
 
 
 def preparar_desgloses_venta(cajero, venta, importes_entregados=None):
@@ -699,17 +723,28 @@ def test_administrador_anula_venta_y_registra_los_movimientos_inversos(
     venta.refresh_from_db()
     movimiento_recibido.refresh_from_db()
     movimiento_entregado.refresh_from_db()
+    cambio_anulacion = CambioEstado.objects.get(
+        venta=venta,
+        estado_nuevo=VentaDivisa.Estado.ANULADA,
+    )
     reverso_recibido = movimiento_recibido.movimiento_reversion
     reverso_entregado = movimiento_entregado.movimiento_reversion
     assert respuesta.status_code == 200
     assert venta.estado == VentaDivisa.Estado.ANULADA
     assert venta.anulado_en is not None
+    assert cambio_anulacion.estado_anterior == VentaDivisa.Estado.CONFIRMADA
+    assert cambio_anulacion.usuario == administrador
+    assert cambio_anulacion.motivo == "Anulada por administrador: Error en la operación"
+    assert cambio_anulacion.fecha is not None
     assert reverso_recibido.tipo == MovimientoCaja.Tipo.RETIRO_CAJERO
     assert reverso_recibido.reversion_de == movimiento_recibido
     assert reverso_entregado.tipo == MovimientoCaja.Tipo.INGRESO_CAJERO
     assert reverso_entregado.reversion_de == movimiento_entregado
     assert reverso_recibido.importe == movimiento_recibido.importe
     assert reverso_entregado.importe == movimiento_entregado.importe
+    assert RegistroAuditoria.objects.get(
+        accion=RegistroAuditoria.Accion.VENTA_ANULADA
+    ).usuario == administrador
     assert dict(
         SaldoCaja.objects.filter(caja=movimiento_recibido.caja).values_list(
             "moneda_id", "saldo"
@@ -726,6 +761,7 @@ def test_administrador_anula_venta_y_registra_los_movimientos_inversos(
         moneda=monedas[1],
     ).saldo == movimiento_entregado.importe
     assert "Venta anulada" in respuesta.content.decode()
+    assert "Realizado por: admin-rf059" in respuesta.content.decode()
     assert f"movimiento #{reverso_recibido.pk}" in respuesta.content.decode()
 
     historial = client.get(reverse("cajas:historial_movimientos"))
@@ -800,6 +836,278 @@ def test_solo_administrador_puede_anular_una_venta(
         {"motivo": "No autorizado"},
     )
     assert respuesta.status_code == 403
+
+
+def crear_compra_confirmada(
+    usuario_cliente, cliente_asociado, monedas
+):
+    compra = iniciar_compra(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        monto_pagado=Decimal("100.00"),
+    )
+    return confirmar_pago_compra(pk=compra.pk, usuario=usuario_cliente)
+
+
+@pytest.mark.django_db
+def test_administrador_reembolsa_y_anula_compra_de_pasarela(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_confirmada(usuario_cliente, cliente_asociado, monedas)
+    pago = Pago.objects.create(
+        compra=compra,
+        proveedor="simulado",
+        id_externo="SIMULADO-ANULACION",
+        order_id=f"ANULACION-{compra.pk}",
+        monto=compra.total_a_pagar,
+        moneda=monedas[0].codigo,
+        estado=Pago.Estado.APROBADO,
+    )
+    administrador = get_user_model().objects.create_user(
+        username="admin-anula-compra"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    lista = client.get(reverse("conversiones:compras_administracion"))
+    assert lista.status_code == 200
+    assert reverse(
+        "conversiones:comprobante_compra", args=[compra.pk]
+    ) in lista.content.decode()
+
+    with patch(
+        "apps.pagos.services.solicitar_reembolso_pago",
+        return_value={
+            "estado": Pago.Estado.REEMBOLSADO,
+            "respuesta_cruda": {"proveedor": "simulado"},
+        },
+    ) as solicitar_reembolso:
+        respuesta = client.post(
+            reverse("conversiones:anular_compra", args=[compra.pk]),
+            {"motivo": "Cobro duplicado"},
+            follow=True,
+        )
+
+    compra.refresh_from_db()
+    pago.refresh_from_db()
+    cambio = CambioEstado.objects.get(
+        compra=compra,
+        estado_nuevo=CompraDivisa.Estado.ANULADA,
+    )
+    assert respuesta.status_code == 200
+    assert compra.estado == CompraDivisa.Estado.ANULADA
+    assert compra.anulado_en is not None
+    assert pago.estado == Pago.Estado.REEMBOLSADO
+    assert cambio.estado_anterior == CompraDivisa.Estado.CONFIRMADA
+    assert cambio.usuario == administrador
+    assert cambio.fecha is not None
+    assert cambio.motivo == "Cobro duplicado"
+    assert "Realizado por: admin-anula-compra" in respuesta.content.decode()
+    assert RegistroAuditoria.objects.get(
+        accion=RegistroAuditoria.Accion.COMPRA_ANULADA
+    ).usuario == administrador
+    solicitar_reembolso.assert_called_once_with(pago)
+
+    client.force_login(usuario_cliente)
+    historial = client.get(reverse("conversiones:historial"))
+    assert all(
+        transaccion["id"] != compra.pk
+        for transaccion in historial.context["transacciones"]
+    )
+
+    with pytest.raises(
+        AnulacionCompraNoPermitida,
+        match="Solo se pueden anular compras que ya fueron confirmadas",
+    ):
+        anular_compra(
+            pk=compra.pk,
+            usuario=administrador,
+            motivo="Segundo intento",
+        )
+
+
+@pytest.mark.django_db
+def test_anulacion_de_compra_manual_exige_confirmar_devolucion(
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_confirmada(usuario_cliente, cliente_asociado, monedas)
+    pago = Pago.objects.create(
+        compra=compra,
+        proveedor="manual",
+        id_externo="TRF-DEMO",
+        order_id=f"MANUAL-ANULACION-{compra.pk}",
+        monto=compra.total_a_pagar,
+        moneda=monedas[0].codigo,
+        estado=Pago.Estado.APROBADO,
+    )
+    administrador = get_user_model().objects.create_user(
+        username="admin-devolucion-manual"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+
+    with pytest.raises(
+        AnulacionCompraNoPermitida,
+        match="transferencia ya fue devuelta",
+    ):
+        anular_compra(
+            pk=compra.pk,
+            usuario=administrador,
+            motivo="Transferencia devuelta",
+        )
+
+    compra.refresh_from_db()
+    assert compra.estado == CompraDivisa.Estado.CONFIRMADA
+    assert pago.estado == Pago.Estado.APROBADO
+
+    compra, reembolso_completado = anular_compra(
+        pk=compra.pk,
+        usuario=administrador,
+        motivo="Transferencia devuelta",
+        confirmar_reembolso_manual=True,
+    )
+
+    pago.refresh_from_db()
+    assert reembolso_completado
+    assert compra.estado == CompraDivisa.Estado.ANULADA
+    assert pago.estado == Pago.Estado.REEMBOLSADO
+    assert pago.respuesta_cruda["reembolso_anulacion"]["confirmado_por"] == (
+        "admin-devolucion-manual"
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "estado_reembolso",
+    [Pago.Estado.PENDIENTE, Pago.Estado.RECHAZADO],
+)
+def test_reembolso_no_confirmado_no_anula_compra_y_requiere_revision_manual(
+    estado_reembolso,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_confirmada(usuario_cliente, cliente_asociado, monedas)
+    pago = Pago.objects.create(
+        compra=compra,
+        proveedor="dlocal",
+        id_externo="DLOCAL-PENDIENTE",
+        order_id=f"DLOCAL-ANULACION-{compra.pk}",
+        monto=compra.total_a_pagar,
+        moneda=monedas[0].codigo,
+        estado=Pago.Estado.APROBADO,
+    )
+    administrador = get_user_model().objects.create_user(
+        username="admin-reembolso-pendiente"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+
+    with patch(
+        "apps.pagos.services.solicitar_reembolso_pago",
+        return_value={
+            "estado": estado_reembolso,
+            "respuesta_cruda": {"estado": estado_reembolso},
+        },
+    ) as solicitar_reembolso:
+        compra, reembolso_completado = anular_compra(
+            pk=compra.pk,
+            usuario=administrador,
+            motivo="Error de monto",
+        )
+
+        assert not reembolso_completado
+        assert compra.estado == CompraDivisa.Estado.CONFIRMADA
+        assert CambioEstado.objects.filter(
+            compra=compra,
+            estado_nuevo=CompraDivisa.Estado.ANULADA,
+        ).count() == 0
+        pago.refresh_from_db()
+        assert pago.estado == Pago.Estado.REQUIERE_REVISION
+
+        with pytest.raises(
+            AnulacionCompraNoPermitida,
+            match="Verificá la devolución",
+        ):
+            anular_compra(
+                pk=compra.pk,
+                usuario=administrador,
+                motivo="Error de monto",
+            )
+        solicitar_reembolso.assert_called_once()
+
+    compra, reembolso_completado = anular_compra(
+        pk=compra.pk,
+        usuario=administrador,
+        motivo="Error de monto",
+        confirmar_reembolso_manual=True,
+    )
+    pago.refresh_from_db()
+    assert reembolso_completado
+    assert compra.estado == CompraDivisa.Estado.ANULADA
+    assert pago.estado == Pago.Estado.REEMBOLSADO
+
+
+@pytest.mark.django_db
+def test_compra_confirmada_sin_pago_exige_devolucion_manual(
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_confirmada(usuario_cliente, cliente_asociado, monedas)
+    administrador = get_user_model().objects.create_user(
+        username="admin-compra-sin-pago"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+
+    with pytest.raises(
+        AnulacionCompraNoPermitida,
+        match="No hay un pago registrado",
+    ):
+        anular_compra(
+            pk=compra.pk,
+            usuario=administrador,
+            motivo="Devolución",
+        )
+
+    compra, reembolso_completado = anular_compra(
+        pk=compra.pk,
+        usuario=administrador,
+        motivo="Devolución manual de operación heredada",
+        confirmar_reembolso_manual=True,
+    )
+    assert reembolso_completado
+    assert compra.estado == CompraDivisa.Estado.ANULADA
+
+
+@pytest.mark.django_db
+def test_solo_administrador_puede_listar_o_anular_compras(client, usuario_cliente):
+    client.force_login(usuario_cliente)
+
+    assert (
+        client.get(reverse("conversiones:compras_administracion")).status_code
+        == 403
+    )
+    assert (
+        client.post(
+            reverse("conversiones:anular_compra", args=[1]),
+            {"motivo": "No autorizado"},
+        ).status_code
+        == 403
+    )
 
 
 @pytest.mark.django_db
@@ -1222,6 +1530,59 @@ def test_comprobante_de_compra_cancelada_ofrece_repetir_la_operacion(
     assert "Repetir esta operación" in contenido
     assert f"monto_pagado={compra.monto_pagado}" in contenido.replace("&amp;", "&")
 
+
+@pytest.mark.django_db
+def test_administrador_ve_retorno_y_no_repeticion_en_comprobante_compra(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    compra = iniciar_compra(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        monto_pagado=Decimal("100.00"),
+    )
+    cancelar_compra(pk=compra.pk, usuario=usuario_cliente)
+    administrador = get_user_model().objects.create_user(username="admin-comprobante-compra")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.get(reverse("conversiones:comprobante_compra", args=[compra.pk]))
+    contenido = respuesta.content.decode()
+
+    assert respuesta.status_code == 200
+    assert "Volver a Compras y anulaciones" in contenido
+    assert reverse("conversiones:compras_administracion") in contenido
+    assert "Realizar otra compra" not in contenido
+    assert "Repetir esta operación" not in contenido
+
+
+@pytest.mark.django_db
+def test_administrador_ve_retorno_y_no_repeticion_en_comprobante_venta(
+    client, usuario_cliente, cliente_asociado, monedas, tasa, comision_minorista
+):
+    venta = iniciar_venta(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_entregada=monedas[0],
+        moneda_acreditada=monedas[1],
+        monto_entregado=Decimal("100.00"),
+    )
+    cancelar_venta(pk=venta.pk, usuario=usuario_cliente)
+    administrador = get_user_model().objects.create_user(username="admin-comprobante-venta")
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+    client.force_login(administrador)
+
+    respuesta = client.get(reverse("conversiones:comprobante_venta", args=[venta.pk]))
+    contenido = respuesta.content.decode()
+
+    assert respuesta.status_code == 200
+    assert "Volver a Ventas y anulaciones" in contenido
+    assert reverse("conversiones:ventas_administracion") in contenido
+    assert "Realizar otra venta" not in contenido
+    assert "Repetir esta operación" not in contenido
+
+
 # --------------------------------------------------------------------------
 # RF030 (GEG9-34) — Consulta de historial de transacciones
 # --------------------------------------------------------------------------
@@ -1609,3 +1970,267 @@ def test_comprobante_no_lo_puede_ver_un_usuario_que_no_es_dueno_de_la_operacion(
     respuesta = client.get(reverse("conversiones:comprobante_compra", args=[compra.pk]))
 
     assert respuesta.status_code == 404
+
+
+# --------------------------------------------------------------------------
+# RF057 (GEG9-58) — Recepción de efectivo en compra
+# --------------------------------------------------------------------------
+
+def crear_compra_pendiente_efectivo(
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+):
+    return iniciar_compra(
+        usuario=usuario_cliente,
+        cliente_id=cliente_asociado.pk,
+        moneda_pagada=monedas[0],
+        moneda_adquirida=monedas[1],
+        monto_pagado=Decimal("100.00"),
+    )
+
+
+@pytest.mark.django_db
+def test_cajero_recibe_efectivo_y_confirma_compra(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    datos, denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        compra.total_a_pagar,
+    )
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+        follow=True,
+    )
+
+    compra.refresh_from_db()
+
+    assert respuesta.status_code == 200
+    assert compra.estado == CompraDivisa.Estado.CONFIRMADA
+    assert compra.confirmado_en is not None
+    assert compra.movimiento_efectivo_recibido is not None
+
+    movimiento = compra.movimiento_efectivo_recibido
+    assert movimiento.tipo == MovimientoCaja.Tipo.INGRESO_CAJERO
+    assert movimiento.importe == compra.total_a_pagar
+    assert movimiento.cajero == usuario_cajero
+    assert movimiento.nota == (
+        f"Efectivo recibido del cliente por compra #{compra.pk}"
+    )
+
+    fondo = FondoCajero.objects.get(
+        cajero=usuario_cajero,
+        moneda=compra.moneda_pagada,
+    )
+    assert fondo.saldo == compra.total_a_pagar
+
+    inventario = InventarioBilleteCajero.objects.get(
+        cajero=usuario_cajero,
+        denominacion=denominacion,
+    )
+    assert inventario.cantidad == 1
+
+    assert compra.cambios_estado.filter(
+        estado_nuevo=CompraDivisa.Estado.CONFIRMADA
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_cajero_no_confirma_compra_si_el_desglose_no_coincide(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+
+    importe_incorrecto = compra.total_a_pagar - Decimal("1.00")
+    datos, _denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        importe_incorrecto,
+    )
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+    )
+
+    compra.refresh_from_db()
+
+    assert respuesta.status_code == 200
+    assert "difiere por 1.00 USD" in respuesta.content.decode()
+    assert compra.estado == CompraDivisa.Estado.PENDIENTE
+    assert compra.movimiento_efectivo_recibido is None
+    assert MovimientoCaja.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_compra_en_efectivo_se_cancela_si_cambia_la_cotizacion(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    datos, _denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        compra.total_a_pagar,
+    )
+
+    _cambiar_cotizacion(tasa, Decimal("7.50"), Decimal("7.60"))
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+    )
+
+    compra.refresh_from_db()
+
+    assert respuesta.status_code == 302
+    assert compra.estado == CompraDivisa.Estado.CANCELADA
+    assert (
+        compra.motivo_cancelacion
+        == CompraDivisa.MotivoCancelacion.CAMBIO_COTIZACION
+    )
+    assert compra.movimiento_efectivo_recibido is None
+    assert MovimientoCaja.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_compra_por_transferencia_no_aparece_en_cola_de_efectivo(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    compra.espera_transferencia = True
+    compra.save(update_fields=["espera_transferencia"])
+
+    client.force_login(usuario_cajero)
+    respuesta = client.get(reverse("conversiones:compras_pendientes"))
+
+    assert respuesta.status_code == 200
+    assert compra not in respuesta.context["compras"]
+
+
+@pytest.mark.django_db
+def test_cliente_no_puede_recibir_efectivo_de_una_compra(
+    client,
+    usuario_cliente,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+
+    client.force_login(usuario_cliente)
+
+    assert client.get(
+        reverse("conversiones:compras_pendientes")
+    ).status_code == 403
+
+    assert client.get(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk])
+    ).status_code == 403
+
+
+@pytest.mark.django_db
+def test_anular_compra_en_efectivo_revierte_el_movimiento_de_caja(
+    client,
+    usuario_cliente,
+    usuario_cajero,
+    cliente_asociado,
+    monedas,
+    tasa,
+    comision_minorista,
+):
+    compra = crear_compra_pendiente_efectivo(
+        usuario_cliente,
+        cliente_asociado,
+        monedas,
+    )
+    datos, denominacion = preparar_billetes_compra(
+        compra.moneda_pagada,
+        compra.total_a_pagar,
+    )
+
+    client.force_login(usuario_cajero)
+    respuesta = client.post(
+        reverse("conversiones:confirmar_compra_efectivo", args=[compra.pk]),
+        datos,
+    )
+    assert respuesta.status_code == 302
+
+    administrador = get_user_model().objects.create_user(
+        username="admin-anula-compra-efectivo"
+    )
+    administrador.groups.add(Group.objects.get_or_create(name="administrador")[0])
+
+    compra, reembolso_completado = anular_compra(
+        pk=compra.pk,
+        usuario=administrador,
+        motivo="Cobro anulado",
+        confirmar_reembolso_manual=True,
+    )
+    movimiento = compra.movimiento_efectivo_recibido
+    reversion = movimiento.movimiento_reversion
+
+    assert reembolso_completado
+    assert compra.estado == CompraDivisa.Estado.ANULADA
+    assert reversion.tipo == MovimientoCaja.Tipo.RETIRO_CAJERO
+    assert reversion.importe == movimiento.importe
+    assert reversion.reversion_de == movimiento
+
+    fondo = FondoCajero.objects.get(
+        cajero=usuario_cajero,
+        moneda=compra.moneda_pagada,
+    )
+    inventario = InventarioBilleteCajero.objects.get(
+        cajero=usuario_cajero,
+        denominacion=denominacion,
+    )
+    assert fondo.saldo == Decimal("0.00")
+    assert inventario.cantidad == 0

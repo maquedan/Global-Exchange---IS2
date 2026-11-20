@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% load formato_extras %}
+
+{% block titulo %}
+  Recibir efectivo — Compra #{{ compra.pk }} | Global Exchange
+{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <p>
+    <a href="{% url 'conversiones:compras_pendientes' %}">
+      Volver a compras pendientes
+    </a>
+  </p>
+
+  <h1>Recepción de efectivo — Compra #{{ compra.pk }}</h1>
+
+  <p>Cliente: {{ compra.cliente }}</p>
+  <p>
+    Total a cobrar:
+    <strong>
+      {{ compra.total_a_pagar|monto_con_codigo:compra.moneda_pagada }}
+    </strong>
+  </p>
+  <p>
+    Monto base:
+    {{ compra.monto_pagado|monto_con_codigo:compra.moneda_pagada }}
+  </p>
+  <p>
+    Comisión:
+    {{ compra.monto_comision|monto_con_codigo:compra.moneda_pagada }}
+  </p>
+  <p>
+    El cliente recibirá:
+    {{ compra.monto_recibido|monto_con_codigo:compra.moneda_adquirida }}
+  </p>
+  <p>
+    Tasa aceptada: {{ compra.tasa_aplicada|tasa }}.
+    La cotización debe seguir vigente al confirmar el cobro.
+  </p>
+
+  <form method="post" novalidate>
+    {% csrf_token %}
+
+    {% for error in formulario.non_field_errors %}
+      <p class="mensaje error">{{ error }}</p>
+    {% endfor %}
+
+    <fieldset>
+      <legend>
+        Billetes recibidos —
+        {{ compra.total_a_pagar|monto_con_codigo:compra.moneda_pagada }}
+      </legend>
+
+      {% for item in formulario.campos_billetes_recibidos %}
+        <p>
+          <label for="{{ item.campo.id_for_label }}">
+            {{ item.denominacion.valor|monto_con_codigo:compra.moneda_pagada }}
+          </label>
+          <br>
+          {{ item.campo }}
+
+          {% for error in item.campo.errors %}
+            <span class="mensaje error">{{ error }}</span>
+          {% endfor %}
+        </p>
+      {% empty %}
+        <p>
+          No hay denominaciones configuradas para
+          {{ compra.moneda_pagada.codigo }}.
+        </p>
+      {% endfor %}
+    </fieldset>
+
+    <button class="boton" type="submit">
+      Recibir efectivo y confirmar compra
+    </button>
+  </form>
+</div>
+{% endblock %}

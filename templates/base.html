@@ -7,6 +7,18 @@
   <title>{% block titulo %}Global Exchange{% endblock %}</title>
   <link rel="stylesheet" href="{% static 'css/app.css' %}">
   <style>
+    /* Columnas de montos y tasas, alineadas a la derecha (GEG9-82).
+       `tabular-nums` hace que todos los digitos ocupen lo mismo, asi las
+       comas de una columna quedan una debajo de la otra. */
+    .num {
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+      font-feature-settings: "tnum";
+      white-space: nowrap;
+    }
+
+    th.num, td.num { text-align: right; }
+
     .operando-como {
       display: inline-block;
       max-width: 22rem;
@@ -69,7 +81,7 @@
     }
   </style>
 </head>
-<body class="min-h-screen bg-[#f2f6fb] text-slate-800 antialiased">
+<body class="min-h-screen bg-[#f2f6fb] text-slate-800 antialiased"{% if user.is_authenticated %} data-session-idle-timeout="{{ request.session.get_expiry_age }}"{% endif %}>
   <header class="relative overflow-hidden bg-[#071f36] text-white shadow-2xl">
     <div class="pointer-events-none absolute -right-24 -top-32 h-96 w-96 rounded-full border-[48px] border-cyan-300/10"></div>
     <div class="pointer-events-none absolute right-1/4 top-0 h-full w-px bg-white/10"></div>
@@ -129,5 +141,88 @@
     <span class="font-semibold tracking-wide text-slate-600">GLOBAL EXCHANGE</span>
     <span>Gestión segura de clientes y operaciones.</span>
   </footer>
+  {% if user.is_authenticated %}
+    <form id="logout-inactividad" method="post" action="{% url 'usuarios:cerrar_sesion_inactividad' %}" hidden>
+      {% csrf_token %}
+    </form>
+    <script>
+      (() => {
+        const logoutForm = document.getElementById("logout-inactividad");
+        const idleTimeoutMs = Number(document.body.dataset.sessionIdleTimeout) * 1000;
+        if (!logoutForm || !idleTimeoutMs) return;
+
+        const logoutDelayMs = Math.max(
+          0,
+          idleTimeoutMs - Math.min(2000, idleTimeoutMs * 0.1)
+        );
+        const cerrarSesion = () => logoutForm.requestSubmit();
+        window.setTimeout(cerrarSesion, logoutDelayMs);
+      })();
+    </script>
+  {% endif %}
+  {# ---- Puntos de miles mientras se escribe un monto (GEG9-82) ---- #}
+  {# Solo en .monto-entrada. Las tasas (.tasa-entrada) quedan afuera a      #}
+  {# proposito: ahi un punto suelto es decimal, asi que convertir 7120 en   #}
+  {# "7.120" lo volveria 7,12 — mil veces menos.                           #}
+  <script>
+    (function () {
+      function soloDigitosYComa(texto) {
+        // Se conserva una sola coma: la primera. Lo demas que no sea digito
+        // se descarta, asi pegar "Gs. 10.000" tambien funciona.
+        var limpio = texto.replace(/[^\d,]/g, "");
+        var partes = limpio.split(",");
+        return partes.length > 1
+          ? partes[0] + "," + partes.slice(1).join("")
+          : partes[0];
+      }
+
+      function agruparMiles(entero) {
+        return entero.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+      }
+
+      function formatear(texto) {
+        var limpio = soloDigitosYComa(texto);
+        if (!limpio) return "";
+        var corte = limpio.indexOf(",");
+        if (corte === -1) return agruparMiles(limpio);
+        // La parte decimal no se agrupa, y se corta en dos digitos.
+        return agruparMiles(limpio.slice(0, corte)) + "," + limpio.slice(corte + 1, corte + 3);
+      }
+
+      function digitosAntesDe(texto, posicion) {
+        return (texto.slice(0, posicion).match(/[\d,]/g) || []).length;
+      }
+
+      function posicionTras(texto, cantidadDigitos) {
+        // Donde cae el cursor despues de reformatear: se avanza hasta haber
+        // visto la misma cantidad de digitos que habia antes de el.
+        var vistos = 0;
+        for (var i = 0; i < texto.length; i++) {
+          if (/[\d,]/.test(texto[i])) vistos++;
+          if (vistos >= cantidadDigitos) return i + 1;
+        }
+        return texto.length;
+      }
+
+      function alEscribir(evento) {
+        var campo = evento.target;
+        var antes = campo.value;
+        var digitos = digitosAntesDe(antes, campo.selectionStart);
+        var despues = formatear(antes);
+        if (despues === antes) return;
+        campo.value = despues;
+        // Sin esto el cursor salta al final en cada tecla.
+        var nueva = posicionTras(despues, digitos);
+        campo.setSelectionRange(nueva, nueva);
+      }
+
+      document.querySelectorAll("input.monto-entrada").forEach(function (campo) {
+        // Si viene con un valor cargado (edicion, o el formulario volvio con
+        // un error), se formatea de entrada.
+        campo.value = formatear(campo.value);
+        campo.addEventListener("input", alEscribir);
+      });
+    })();
+  </script>
 </body>
 </html>

@@ -29,6 +29,11 @@ Accesos locales:
 - Keycloak: http://localhost:8080
 - Mailpit: http://localhost:8025
 
+Las sesiones de la aplicación vencen después de 15 minutos sin actividad; cada
+solicitud renueva ese plazo. Se puede ajustar en segundos con
+`DJANGO_SESSION_IDLE_TIMEOUT`. El botón **Cerrar sesión** también finaliza la
+sesión de Keycloak.
+
 La contraseña generada para el administrador inicial de Keycloak se guarda en
 `KC_ADMIN_PASSWORD` dentro de `.env`. Para crear un superusuario de Django:
 
@@ -136,6 +141,17 @@ Al ejecutar de nuevo el comando no se duplican datos ni se sobrescriben
 configuraciones existentes. Las tasas de demostración no representan precios
 de mercado; en producción, confirmá la cotización y las comisiones antes de
 habilitar operaciones.
+
+### Anular una compra pagada
+
+El administrador puede consultar las compras desde **Compras y anulaciones**.
+Para pagos por dLocal o el proveedor simulado, la anulación solicita primero
+el reembolso y solo cambia la compra a `ANULADA` cuando el proveedor lo confirma.
+Si el reembolso queda pendiente o requiere revisión, la compra permanece pagada
+hasta que se verifique la devolución. En transferencias conciliadas manualmente
+(o compras heredadas sin pago asociado), el administrador debe realizar la
+devolución por fuera del sistema y confirmarla en el comprobante. El motivo,
+el usuario y la fecha quedan en la trazabilidad de estados.
 
 ## Scripts de Keycloak dentro de Docker
 

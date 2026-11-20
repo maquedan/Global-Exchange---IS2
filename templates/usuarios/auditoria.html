@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+
+{% block titulo %}Auditoría | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Registro de auditoría</h1>
+  <p>Consulta de solo lectura de las operaciones críticas realizadas por administradores.</p>
+
+  <form method="get" style="margin:1rem 0; padding:1rem; border:1px solid #dde3e9; border-radius:8px; background:#f9fafb;">
+    <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:1rem;">
+      <div>
+        <label for="{{ formulario.usuario.id_for_label }}">Usuario</label><br>
+        {{ formulario.usuario }}
+      </div>
+      <div>
+        <label for="{{ formulario.accion.id_for_label }}">Acción</label><br>
+        {{ formulario.accion }}
+      </div>
+      <div>
+        <label for="{{ formulario.fecha_desde.id_for_label }}">Desde</label><br>
+        {{ formulario.fecha_desde }}
+      </div>
+      <div>
+        <label for="{{ formulario.fecha_hasta.id_for_label }}">Hasta</label><br>
+        {{ formulario.fecha_hasta }}
+      </div>
+    </div>
+    {% if formulario.errors %}
+      <p class="mensaje">{{ formulario.errors }}</p>
+    {% endif %}
+    <div style="margin-top:1rem; display:flex; gap:.75rem;">
+      <button type="submit" class="boton">Aplicar filtros</button>
+      <a class="boton boton-secundario" href="{% url 'usuarios:auditoria' %}">Limpiar</a>
+    </div>
+  </form>
+
+  {% if registros %}
+    <table class="datos">
+      <thead>
+        <tr>
+          <th>Fecha y hora</th>
+          <th>Usuario</th>
+          <th>Acción</th>
+          <th>Detalles</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for registro in registros %}
+          <tr>
+            <td>{{ registro.creado_en|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ registro.usuario_nombre }}</td>
+            <td>{{ registro.get_accion_display }}</td>
+            <td>{{ registro.detalles|default:"—" }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>No hay operaciones que coincidan con los filtros.</p>
+  {% endif %}
+</div>
+{% endblock %}

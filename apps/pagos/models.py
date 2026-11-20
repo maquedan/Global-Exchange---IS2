@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 from apps.conversiones.models import CompraDivisa, VentaDivisa
@@ -66,3 +67,73 @@ class Pago(models.Model):
 
     def __str__(self):
         return f"Pago {self.order_id} ({self.estado})"
+
+
+class MetodoPago(models.Model):
+    """Forma de pago que se le ofrece al cliente (RF035 — GEG9-77).
+
+    Antes de esta historia los métodos estaban escritos a mano en
+    `templates/pagos/elegir_pago.html`: habilitar o deshabilitar uno exigía
+    editar el HTML y desplegar.
+
+    Ojo con no confundir esto con `PAGO_PROVEEDOR`, la variable de entorno
+    que elige la **pasarela** (dLocal o el proveedor simulado). Esa es una
+    decisión técnica —"¿llamo a la API real o al doble de pruebas?"— y no
+    tiene nada que ver con qué formas de pago ofrece el negocio.
+    """
+
+    class Flujo(models.TextChoices):
+        # Cómo se procesa el cobro. Define a qué vista manda el botón, así
+        # que la plantilla no necesita conocer cada método por su nombre.
+        PASARELA = "PASARELA", "Cobro por pasarela"
+        MANUAL = "MANUAL", "Verificación manual"
+
+    codigo = models.SlugField(max_length=30, unique=True)
+    nombre = models.CharField(max_length=60)
+    descripcion = models.CharField(max_length=200, blank=True)
+    flujo = models.CharField(max_length=10, choices=Flujo.choices)
+    habilitado = models.BooleanField(default=True, db_index=True)
+    orden = models.PositiveSmallIntegerField(
+        default=0, help_text="En qué orden se muestran al cliente."
+    )
+
+    class Meta:
+        ordering = ["orden", "nombre"]
+        verbose_name = "método de pago"
+        verbose_name_plural = "métodos de pago"
+
+    def __str__(self):
+        return self.nombre
+
+
+class CambioMetodoPago(models.Model):
+    """Quién habilitó o deshabilitó un método y cuándo (RF035 — GEG9-77).
+
+    Se crea un registro por cada cambio y nunca se edita ni se borra, igual
+    que `CambioEstado` en RF023. Guardar solo el último cambio en el propio
+    `MetodoPago` habría perdido el historial: si alguien deshabilita un
+    método y otro lo vuelve a habilitar, el primero desaparecía.
+    """
+
+    metodo = models.ForeignKey(
+        MetodoPago, on_delete=models.CASCADE, related_name="cambios"
+    )
+    habilitado = models.BooleanField(help_text="Estado en el que quedó.")
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="cambios_metodos_pago",
+        help_text="Vacío si el cambio lo hizo el sistema (por ejemplo, una migración).",
+    )
+    fecha = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-fecha", "-pk"]
+        verbose_name = "cambio de método de pago"
+        verbose_name_plural = "cambios de métodos de pago"
+
+    def __str__(self):
+        estado = "habilitado" if self.habilitado else "deshabilitado"
+        return f"{self.metodo}: {estado}"

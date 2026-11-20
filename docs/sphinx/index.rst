@@ -17,18 +17,23 @@ El sitio queda en ``docs/sphinx/_build/index.html``.
    :maxdepth: 2
    :caption: Módulos del proyecto
 
+   comun
    usuarios
    clientes
    cuentas
    monedas
    tasa_cambios
    tasas
+   ganancias
    conversiones
    comisiones
    notificaciones
    cajas
    pagos
    facturacion
+   horarios
+   terminal
+   tablero
 
 .. toctree::
    :maxdepth: 1
