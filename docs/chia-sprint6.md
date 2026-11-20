@@ -1047,6 +1047,8 @@ de los extremos de la conversión—, tipo de operación, estado y rango inclusi
 
 **Verificación.** Se añadieron pruebas para ambos comprobantes: confirman que el administrador ve el retorno administrativo y no ve acciones de repetición.
 
+---
+
 ## 16. Fabrizio Cardozo — RF037, Gestión de Horarios Operativos (GEG9-79)
 
 ### 16.1. «¿Cómo representar los días y rangos horarios?»
@@ -1429,6 +1431,8 @@ bien; la aserción, mal.
 - `manage.py check` sin errores. La app no define modelos, así que no hay
   migraciones. Sphinx genera sin warnings.
 
+---
+
 ## 19. Fabrizio Cardozo — RF032, Exportación de Reportes (GEG9-65)
 
 ### 19.1. «¿Qué información debe exportarse?»
@@ -1473,21 +1477,21 @@ acceso de los reportes: solo `administrador` y `analista_cambiario`.
 
 ---
 
-## 19. Daniela González — Verificación del manejo de roles (GEG9-71)
+## 20. Daniela González — Verificación del manejo de roles (GEG9-71)
 
-### 19.1. «¿Basta con configurar los roles para asegurar los permisos?»
+### 20.1. «¿Basta con configurar los roles para asegurar los permisos?»
 
 **Contexto.** La pantalla administrativa permite crear roles en Keycloak, asignarlos a usuarios y vincular permisos funcionales. Sin embargo, esa configuración por sí sola no demuestra que cada perfil vea solamente las opciones permitidas ni que las rutas directas estén protegidas.
 
 **Decisión.** Verificar la matriz de roles mediante pruebas automatizadas y revisión manual del menú y de las URLs. Se comprobó el comportamiento de administrador, analista cambiario, usuario cliente, cajero y terminal; también se verificó que un usuario sin cliente asociado quede limitado a las consultas permitidas.
 
-### 19.2. «¿Qué hacer cuando el menú y la autorización no coinciden?»
+### 20.2. «¿Qué hacer cuando el menú y la autorización no coinciden?»
 
 **Lo que aprendimos.** Una ruta puede estar correctamente protegida y aun así existir un problema de experiencia o seguridad si el menú ofrece una acción que el rol no puede utilizar. También una pantalla interna puede responder a usuarios anónimos aunque no exponga datos sensibles.
 
 **Decisión.** Registrar los hallazgos como errores independientes en Jira: GEG9-83 para ocultar **Clientes** al analista cambiario, manteniendo el acceso administrativo y el `403` por URL directa; y GEG9-84 para exigir autenticación en `/elegir-cliente/`. La tarea GEG9-71 no se considerará cerrada hasta aplicar ambas correcciones y repetir la verificación.
 
-### 19.3. «¿Cuándo se considera cerrada una auditoría de roles?»
+### 20.3. «¿Cuándo se considera cerrada una auditoría de roles?»
 
 **Lo que aprendimos.** Detectar un problema no basta para aprobar la matriz de roles. Debe corregirse en una rama independiente, integrarse en `develop` y volver a comprobarse junto con las pantallas nuevas que aparecieron durante el Sprint, como el Tablero administrativo de GEG9-67.
 
