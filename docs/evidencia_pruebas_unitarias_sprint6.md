@@ -780,3 +780,28 @@ intentó ejecutar; quedó un fallo preexistente en
 relacionado con una notificación al editar una tasa sin cambiar sus valores.
 
 ---
+
+## Daniela González — Revisión del flujo crítico de compra/venta y terminal (GEG9-70)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | viernes 20 de noviembre de 2026, 05:00:53 (-03, hora de Paraguay) |
+| **Artefactos probados** | `apps/conversiones/tests/test_conversiones.py`, `apps/terminal/tests/test_terminal.py`, `apps/cajas/tests/test_cajas.py`, `apps/pagos/tests/`, `apps/facturacion/tests/` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/tests/test_conversiones.py apps/terminal/tests/test_terminal.py apps/cajas/tests/test_cajas.py apps/pagos/tests apps/facturacion/tests -v` |
+| **Resultado** | **199 passed**, 1 warning en 101.57s |
+
+```text
+$ docker compose exec web pytest apps/conversiones/tests/test_conversiones.py apps/terminal/tests/test_terminal.py apps/cajas/tests/test_cajas.py apps/pagos/tests apps/facturacion/tests -v
+collected 199 items
+
+================== 199 passed, 1 warning in 101.57s (0:01:41) ==================
+
+$ docker compose exec web python manage.py check
+System check identified no issues (0 silenced).
+```
+
+La ejecución cubre los flujos automatizados de simulación, tasa y comisión, confirmación, cancelación por cambio de cotización o vencimiento, efectivo, movimientos de caja, terminal, pagos y facturación controlada. El detalle de los casos, sus límites y los recorridos manuales documentados se encuentra en [`qa-sprint6.md`](qa-sprint6.md).
+
+Las pruebas no llaman a dLocal ni a Factura Segura reales: esos proveedores se simulan o controlan dentro de la suite. La verificación contra servicios externos requiere credenciales y datos autorizados del ambiente correspondiente.
+
+---
