@@ -58,3 +58,22 @@ Permisos por rol
 
 .. automodule:: apps.usuarios.keycloak_admin
    :members:
+
+Configuración de sesiones
+----------------------------------------
+
+
+Aplica el tiempo de inactividad configurado por el administrador
+a las sesiones autenticadas.
+
+.. automodule:: apps.usuarios.middleware_seguridad
+   :members:
+
+Registro de auditoría
+----------------------------------------
+
+Registra las acciones administrativas, identificando al usuario
+responsable y los detalles de la operación.
+
+.. automodule:: apps.usuarios.auditoria
+   :members:

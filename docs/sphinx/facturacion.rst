@@ -68,3 +68,22 @@ Comando de reintento
 
 .. automodule:: apps.facturacion.management.commands.emitir_facturas_pendientes
    :members:
+
+Vistas de facturación
+----------------------------------------
+
+Permiten consultar el listado y detalle de las facturas, descargar
+documentos y exportar el historial de facturación. El acceso depende
+del rol del usuario y del cliente activo de su sesión.
+
+.. automodule:: apps.facturacion.views
+   :members:
+
+Generación de documentos
+----------------------------------------
+
+Funciones auxiliares para generar documentos PDF a partir
+del contenido de los comprobantes.
+
+.. automodule:: apps.facturacion.documentos
+   :members:
