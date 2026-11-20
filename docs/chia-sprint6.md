@@ -1123,6 +1123,7 @@ cerrados.
 **Decisión.** Registrar el resultado exacto de la batería (`199 passed`) como evidencia del comportamiento controlado, y dejar explícito que la integración externa requiere credenciales, rango fiscal y ambiente autorizados. No se debe marcar como aprobada una pasarela o factura real solo por una prueba simulada.
 
 ---
+
 ## 18. Leyda Fleitas — RF038, Panel de Control Central (GEG9-67)
 
 **Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
@@ -1427,5 +1428,27 @@ bien; la aserción, mal.
   anterior a esta rama, quedó arreglada con una prueba nueva que la fija.
 - `manage.py check` sin errores. La app no define modelos, así que no hay
   migraciones. Sphinx genera sin warnings.
+
+---
+
+## 19. Daniela González — Verificación del manejo de roles (GEG9-71)
+
+### 19.1. «¿Basta con configurar los roles para asegurar los permisos?»
+
+**Contexto.** La pantalla administrativa permite crear roles en Keycloak, asignarlos a usuarios y vincular permisos funcionales. Sin embargo, esa configuración por sí sola no demuestra que cada perfil vea solamente las opciones permitidas ni que las rutas directas estén protegidas.
+
+**Decisión.** Verificar la matriz de roles mediante pruebas automatizadas y revisión manual del menú y de las URLs. Se comprobó el comportamiento de administrador, analista cambiario, usuario cliente, cajero y terminal; también se verificó que un usuario sin cliente asociado quede limitado a las consultas permitidas.
+
+### 19.2. «¿Qué hacer cuando el menú y la autorización no coinciden?»
+
+**Lo que aprendimos.** Una ruta puede estar correctamente protegida y aun así existir un problema de experiencia o seguridad si el menú ofrece una acción que el rol no puede utilizar. También una pantalla interna puede responder a usuarios anónimos aunque no exponga datos sensibles.
+
+**Decisión.** Registrar los hallazgos como errores independientes en Jira: GEG9-83 para ocultar **Clientes** al analista cambiario, manteniendo el acceso administrativo y el `403` por URL directa; y GEG9-84 para exigir autenticación en `/elegir-cliente/`. La tarea GEG9-71 no se considerará cerrada hasta aplicar ambas correcciones y repetir la verificación.
+
+### 19.3. «¿Cuándo se considera cerrada una auditoría de roles?»
+
+**Lo que aprendimos.** Detectar un problema no basta para aprobar la matriz de roles. Debe corregirse en una rama independiente, integrarse en `develop` y volver a comprobarse junto con las pantallas nuevas que aparecieron durante el Sprint, como el Tablero administrativo de GEG9-67.
+
+**Decisión.** Reejecutar una batería consolidada de 150 pruebas después de integrar GEG9-83 y GEG9-84. La verificación confirmó que el analista ya no ve Clientes, que `/elegir-cliente/` exige autenticación y que el Tablero queda reservado al administrador. Con esa evidencia, GEG9-71 puede considerarse aprobado.
 
 ---
