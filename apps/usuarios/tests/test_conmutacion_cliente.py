@@ -15,6 +15,7 @@ import pytest
 from django.contrib.auth.models import Group
 from django.urls import reverse
 from django.utils import timezone
+from django.conf import settings
 
 from apps.clientes.models import AsociacionUsuarioCliente, Cliente
 from apps.comisiones.models import ComisionCategoria
@@ -75,6 +76,19 @@ def comision(db):
     return ComisionCategoria.objects.create(
         categoria=Cliente.Categoria.MINORISTA, porcentaje=Decimal("2.50")
     )
+
+# ---------------------------------------------------------------------------
+# Autenticación
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_elegir_cliente_exige_inicio_de_sesion(client):
+    """La selección de cliente es una pantalla interna autenticada."""
+    respuesta = client.get(reverse("usuarios:seleccionar_cliente"))
+
+    assert respuesta.status_code == 302
+    assert respuesta.url.startswith(settings.LOGIN_URL)
 
 
 # ---------------------------------------------------------------------------
