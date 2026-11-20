@@ -68,3 +68,45 @@ prueba que confirma que ambas etiquetas no aparecen para el rol administrador.
 
 **Verificación.** Las 13 pruebas de `apps/usuarios/tests/test_menu.py`
 aprobaron.
+
+## 3. Ryuto Maehara - RF024, Gestión de Anulaciones
+
+### 3.1. «¿La anulación debe incluir compras y se puede reembolsar?»
+
+**Lo que aprendimos.** La anulación de ventas ya registraba el motivo, el
+administrador y la fecha, además de revertir los movimientos de efectivo
+asociados. Las compras no tenían un flujo equivalente de anulación. Los pagos
+electrónicos sí permiten solicitar el reembolso al proveedor original; una
+transferencia conciliada requiere una devolución manual verificada por un
+administrador.
+
+**Decisión.** Incorporar la anulación de compras confirmadas, exigir un motivo y
+registrar la transición a `ANULADA` con el actor y la fecha. Para pagos de
+pasarela, anular solo si el proveedor confirma el reembolso. Para pagos manuales
+o compras sin un pago asociado, exigir confirmación administrativa de que la
+devolución ya se realizó. Si el proveedor deja el reembolso pendiente o lo
+rechaza, mantener la compra pagada y dejar el pago para revisión; la anulación
+se puede completar después de verificar manualmente la devolución.
+
+### 3.2. «¿Cómo se accede y qué se muestra?»
+
+- Se agregó «Compras y anulaciones» al menú del administrador y un listado de
+  compras con acceso al comprobante y a la trazabilidad.
+- El comprobante permite anular solo compras confirmadas; una compra anulada
+  no se puede anular nuevamente.
+- La migración agrega `anulado_en` a las compras. Las vistas de historial que
+  filtran por estado confirmado dejan de incluir las compras anuladas.
+- Se actualizaron las pruebas de menú y permisos para limitar las acciones al
+  administrador.
+
+### 3.3. Verificaciones y alcance
+
+- Pasaron las pruebas focalizadas de conversiones, pagos y menú; también
+  `python manage.py check`, `makemigrations --check --dry-run` y `git diff
+  --check`.
+- Se aplicó la migración `0012_compradivisa_anulado_en` y se verificó en el
+  navegador el listado y el comprobante con compras de ejemplo. No se ejecutó
+  un reembolso real de dLocal.
+- Las compras actuales no generan movimientos de caja; por eso no hay un
+  movimiento de efectivo de compra que este flujo pueda revertir. Si se agrega
+  el pago de compras en efectivo, habrá que modelar ese movimiento.
