@@ -33,6 +33,11 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        "texto": "Seguridad",
+        "url": "usuarios:configuracion_seguridad",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Mis medios de pago",
         "necesita_cliente": True,
         "url": "cuentas:lista",

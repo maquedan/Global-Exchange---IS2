@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block titulo %}Configuración de seguridad | Global Exchange{% endblock %}
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Configuración de seguridad</h1>
+  <p>Define cuánto tiempo puede permanecer inactiva una sesión antes de cerrarse. El cambio se aplica a las sesiones activas en su siguiente solicitud.</p>
+  {% for message in messages %}<p class="mensaje {{ message.tags }}">{{ message }}</p>{% endfor %}
+
+  <form method="post" class="formulario">
+    {% csrf_token %}
+    {{ formulario.non_field_errors }}
+    <label for="{{ formulario.tiempo_inactividad_minutos.id_for_label }}">
+      {{ formulario.tiempo_inactividad_minutos.label }} (minutos)
+      {{ formulario.tiempo_inactividad_minutos }}
+      <small>{{ formulario.tiempo_inactividad_minutos.help_text }}</small>
+      {{ formulario.tiempo_inactividad_minutos.errors }}
+    </label>
+    <button class="boton" type="submit">Guardar configuración</button>
+  </form>
+
+  <h2>Historial de cambios</h2>
+  {% if cambios %}
+    <table class="datos">
+      <thead><tr><th>Fecha y hora</th><th>Usuario</th><th>Tiempo anterior</th><th>Tiempo nuevo</th></tr></thead>
+      <tbody>
+        {% for cambio in cambios %}
+          <tr>
+            <td>{{ cambio.creado_en|date:"d/m/Y H:i:s" }}</td>
+            <td>{{ cambio.usuario_nombre }}</td>
+            <td>{{ cambio.tiempo_inactividad_anterior_minutos }} min</td>
+            <td>{{ cambio.tiempo_inactividad_nuevo_minutos }} min</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <p>Aún no hay cambios registrados.</p>
+  {% endif %}
+</div>
+{% endblock %}

@@ -118,3 +118,48 @@ Se comprobó en el navegador el listado administrativo y el comprobante de una
 compra de ejemplo. No se envió un reembolso real al proveedor dLocal; los casos
 automatizados de reembolso usan proveedores simulados o mocks. El warning de
 pytest es la deprecación futura de `EMAIL_BACKEND` y no produjo fallos.
+
+## Ryuto Maehara - GEG9-78, Configuración de seguridad (RF036)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 23:14:58 (-03) |
+| **Ambiente** | Docker Compose, servicio `web` |
+| **Artefactos probados** | `apps/usuarios/tests/test_configuracion_seguridad.py` |
+| **Comando** | `docker compose exec -T web python -m pytest -v apps/usuarios/tests/test_configuracion_seguridad.py` |
+| **Resultado** | **6 passed**, 1 warning en 0.84s |
+
+```text
+$ docker compose exec -T web python -m pytest -v apps/usuarios/tests/test_configuracion_seguridad.py
+============================= test session starts ==============================
+platform linux -- Python 3.12.16, pytest-9.2.0, pluggy-1.7.0
+django: version: 6.1.3, settings: config.settings.dev (from env)
+rootdir: /app
+configfile: pytest.ini
+plugins: django-4.14.0
+collected 6 items
+
+apps/usuarios/tests/test_configuracion_seguridad.py ......               [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================= 6 passed, 1 warning in 0.84s =========================
+```
+
+### Casos cubiertos
+
+- Un usuario con rol de cliente no puede acceder a la configuración; el acceso
+  está limitado al administrador.
+- El administrador puede cambiar el tiempo de inactividad y se auditan el
+  usuario, la fecha y los valores anterior y nuevo.
+- Se rechazan valores menores a 5 minutos, mayores a 480 minutos y entradas no
+  numéricas; los intentos inválidos no generan registros de auditoría.
+- El nuevo plazo se refleja en la expiración de una sesión autenticada sin
+  reiniciar el sistema.
+
+El warning corresponde a la deprecación futura de `EMAIL_BACKEND` informada
+por `pytest-django`; no produjo fallos.

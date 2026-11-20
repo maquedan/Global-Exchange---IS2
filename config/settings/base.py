@@ -46,6 +46,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    # Aplica el timeout vigente de sesión, editable por RF036 sin reinicio.
+    "apps.usuarios.middleware_seguridad.ConfiguracionSesionMiddleware",
     # Deja request.cliente_activo y manda a elegir antes de operar (RF008).
     # Va después del de autenticación: necesita request.user ya resuelto.
     "apps.usuarios.middleware.ClienteActivoMiddleware",

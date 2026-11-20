@@ -15,4 +15,9 @@ urlpatterns = [
     path("elegir-cliente/", views.seleccionar_cliente, name="seleccionar_cliente"),
     path("sin-cliente/", views.sin_cliente, name="sin_cliente"),
     path("administracion/roles-permisos/", views.roles_permisos, name="roles_permisos"),
+    path(
+        "administracion/seguridad/",
+        views.configuracion_seguridad,
+        name="configuracion_seguridad",
+    ),
 ]
