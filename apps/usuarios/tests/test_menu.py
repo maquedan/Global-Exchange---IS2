@@ -71,9 +71,16 @@ def test_historial_y_diferencias_de_caja_no_aparecen_en_el_menu():
 
 @pytest.mark.django_db
 def test_ventas_y_anulaciones_solo_se_muestra_al_administrador():
-    assert "Ventas y anulaciones" in textos_del_menu(usuario_con("administrador"))
-    assert "Ventas y anulaciones" not in textos_del_menu(usuario_con("cajero"))
-    assert "Ventas y anulaciones" not in textos_del_menu(usuario_con("usuario_cliente"))
+    menu_administrador = textos_del_menu(usuario_con("administrador"))
+    menu_cajero = textos_del_menu(usuario_con("cajero"))
+    menu_cliente = textos_del_menu(usuario_con("usuario_cliente"))
+
+    assert "Ventas y anulaciones" in menu_administrador
+    assert "Ventas y anulaciones" not in menu_cajero
+    assert "Ventas y anulaciones" not in menu_cliente
+    assert "Compras y anulaciones" in menu_administrador
+    assert "Compras y anulaciones" not in menu_cajero
+    assert "Compras y anulaciones" not in menu_cliente
 
 
 @pytest.mark.django_db

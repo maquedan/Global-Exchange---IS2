@@ -8,6 +8,7 @@ import logging
 import uuid
 from decimal import ROUND_HALF_UP, Decimal
 
+import requests
 from django.conf import settings
 from django.db import transaction
 from django.urls import reverse
@@ -22,7 +23,11 @@ from apps.conversiones.services import (
 )
 
 from .models import Pago
-from .proveedores.dlocal import DLocalProveedor
+from .proveedores.dlocal import (
+    DLocalErrorDeRed,
+    DLocalNoConfigurado,
+    DLocalProveedor,
+)
 from .proveedores.simulado import SimuladoProveedor
 
 logger = logging.getLogger(__name__)
@@ -32,10 +37,32 @@ class OperacionNoDisponibleParaPago(Exception):
     """La compra no está en condiciones de iniciar o resolver un pago."""
 
 
+class ReembolsoPagoNoDisponible(Exception):
+    """No se puede solicitar un reembolso para el proveedor del pago."""
+
+
 def _instancia_proveedor(nombre):
     if nombre == "dlocal":
         return DLocalProveedor()
     return SimuladoProveedor()
+
+
+def solicitar_reembolso_pago(pago):
+    """Solicita el reembolso de un pago aprobado a su proveedor original."""
+    if pago.proveedor not in {"dlocal", "simulado"}:
+        raise ReembolsoPagoNoDisponible(
+            "El pago no tiene un proveedor con reembolso automático."
+        )
+
+    proveedor = _instancia_proveedor(pago.proveedor)
+    try:
+        return proveedor.reembolsar(pago.id_externo, pago.monto, pago.moneda)
+    except (DLocalNoConfigurado, DLocalErrorDeRed, requests.RequestException) as error:
+        logger.exception("No se pudo solicitar el reembolso del pago %s", pago.order_id)
+        return {
+            "estado": "REQUIERE_REVISION",
+            "respuesta_cruda": {"error": type(error).__name__},
+        }
 
 
 def _proveedor_configurado():

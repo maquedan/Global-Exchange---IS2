@@ -253,6 +253,16 @@ class AnularVentaForm(forms.Form):
     )
 
 
+class AnularCompraForm(forms.Form):
+    motivo = forms.CharField(
+        label="Motivo de anulación",
+        max_length=255,
+        strip=True,
+        widget=forms.Textarea(attrs={"rows": 3}),
+    )
+    confirmar_reembolso_manual = forms.BooleanField(required=False)
+
+
 class ConciliacionForm(forms.Form):
     """Datos con los que el administrador concilia una transferencia (RF025).
 

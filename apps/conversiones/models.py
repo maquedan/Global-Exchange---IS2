@@ -29,8 +29,6 @@ class CompraDivisa(models.Model):
         # solo cambia la etiqueta visible.
         CONFIRMADA = "CONFIRMADA", "Pagada"
         CANCELADA = "CANCELADA", "Cancelada"
-        # Agregado para RF023. La lógica para anular una operación es RF024 y
-        # todavía no existe: por ahora el valor solo está disponible.
         ANULADA = "ANULADA", "Anulada"
 
     class MotivoCancelacion(models.TextChoices):
@@ -86,6 +84,7 @@ class CompraDivisa(models.Model):
     creado_en = models.DateTimeField(auto_now_add=True)
     confirmado_en = models.DateTimeField(null=True, blank=True)
     cancelado_en = models.DateTimeField(null=True, blank=True)
+    anulado_en = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ["-creado_en"]
