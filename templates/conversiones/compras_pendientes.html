@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% load formato_extras %}
+
+{% block titulo %}Compras pendientes | Global Exchange{% endblock %}
+
+{% block contenido %}
+<div class="tarjeta">
+  <h1>Compras pendientes de cobro</h1>
+  <p>Revisá el efectivo recibido por denominación antes de confirmar cada compra.</p>
+
+  {% for compra in compras %}
+    <article>
+      <h2>Compra #{{ compra.pk }} — {{ compra.cliente }}</h2>
+      <p>
+        El cliente debe pagar
+        <strong>
+          {{ compra.total_a_pagar|monto_con_codigo:compra.moneda_pagada }}
+        </strong>
+        para adquirir
+        {{ compra.monto_recibido|monto_con_codigo:compra.moneda_adquirida }}.
+      </p>
+      <p>Iniciada: {{ compra.creado_en|date:"d/m/Y H:i" }}</p>
+
+      <a
+        class="boton"
+        href="{% url 'conversiones:confirmar_compra_efectivo' compra.pk %}"
+      >
+        Recibir efectivo
+      </a>
+    </article>
+  {% empty %}
+    <p>No hay compras pendientes de cobro en efectivo.</p>
+  {% endfor %}
+</div>
+{% endblock %}

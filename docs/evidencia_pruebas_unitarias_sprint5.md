@@ -474,405 +474,46 @@ de terminal.
 
 ---
 
-## Leyda Fleitas — RF025, Conciliación Manual (GEG9-75)
+## Daniela González — RF057, Recepción de Efectivo en Compra (GEG9-58)
 
 | Campo | Valor |
 |---|---|
-| **Fecha y hora** | lunes 16 de noviembre de 2026, 10:26:24 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/conversiones/tests/test_conciliacion.py` |
-| **Comando** | `docker compose exec web pytest apps/conversiones/tests/test_conciliacion.py -v` |
-| **Resultado** | **16 passed** en 3.29s |
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 23:18:38 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/conversiones/tests/test_conversiones.py` |
+| **Comando** | `docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v` |
+| **Resultado** | **64 passed**, 1 warning en 9.44s |
 
 ```text
-$ date
-Mon Nov 16 10:26:24 -03 2026
-
-$ docker compose exec web pytest apps/conversiones/tests/test_conciliacion.py -v
+$ docker compose exec web pytest apps/conversiones/tests/test_conversiones.py -v
 ============================= test session starts ==============================
 platform linux -- Python 3.12.14, pytest-9.1.1, pluggy-1.6.0
-django: version: 6.1.1, settings: config.settings.dev (from env)
+django: version: 6.1.2, settings: config.settings.dev (from env)
 rootdir: /app
 configfile: pytest.ini
 plugins: django-4.14.0
-collected 16 items
+collected 64 items
 
-apps/conversiones/tests/test_conciliacion.py ................            [100%]
-
-=============================== warnings summary ===============================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 16 passed, 1 warning in 3.29s =========================
-```
-
-Ninguna prueba llama a Factura Segura ni a dLocal: se agregó un
-`conftest.py` en la raíz del proyecto con fixtures `autouse` que fuerzan los
-proveedores simulados en **todas** las pruebas (el motivo está en
-`docs/chia-sprint5.md`, sección 4.5).
-
-Casos cubiertos:
-
-- **Camino feliz:** conciliar deja la compra `CONFIRMADA`, con
-  `confirmado_en` y con la factura electrónica `GENERADA` — o sea que la
-  conciliación dispara RF026 por el mismo camino que un pago con tarjeta.
-- **Trazabilidad (RF023):** el `CambioEstado` queda con el administrador como
-  autor y con la referencia y la observación en el motivo.
-- **Registro del cobro:** se crea un `Pago` con proveedor `manual`, estado
-  `APROBADO`, la referencia en `id_externo`, el importe en la moneda de la
-  operación y el usuario que concilió en `respuesta_cruda`.
-- **Lo que no se puede conciliar:** una compra cancelada; dos veces seguidas
-  (no duplica ni el pago, ni la factura, ni el cambio de estado); sin
-  referencia.
-- **RF051 sigue valiendo:** si la cotización cambió, la compra se cancela, no
-  se registra ningún pago y la cancelación **queda guardada** — esto último
-  fue un bug propio: lanzar la excepción dentro de la transacción la
-  revertía.
-- **El vencimiento:** una compra marcada para pagar por transferencia no se
-  vence ni a los dos días y se puede conciliar; una normal con dos horas sí
-  se cancela por `EXPIRADA`. La lista del administrador solo trae las que
-  esperan transferencia.
-- **Acceso:** el servicio rechaza a quien no tiene el rol `administrador`, y
-  las dos vistas devuelven 403 con GET y con POST (parametrizado).
-- **RNF011:** un fallo de la facturación no deshace la conciliación.
-
-También se corrió la suite completa: **328 passed** (eran 312), sin
-regresiones en las historias de los compañeros ni en las propias.
-
----
-
-## Leyda Fleitas — RF012, Recuperación de Acceso (GEG9-22)
-
-| Campo | Valor |
-|---|---|
-| **Fecha y hora** | lunes 16 de noviembre de 2026, 11:02:53 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/usuarios/tests/test_realm_keycloak.py` |
-| **Comando** | `docker compose exec web pytest apps/usuarios/tests/test_realm_keycloak.py -v` |
-| **Resultado** | **7 passed** en 0.11s |
-
-```text
-$ date
-Mon Nov 16 11:02:53 -03 2026
-
-$ docker compose exec web pytest apps/usuarios/tests/test_realm_keycloak.py -v
-apps/usuarios/tests/test_realm_keycloak.py .......                       [100%]
+apps/conversiones/tests/test_conversiones.py ........................... [ 42%]
+.....................................                                    [100%]
 
 =============================== warnings summary ===============================
 ../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango2028Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 2028.
     dj_settings.DATABASES  # noqa: B018
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-========================= 7 passed, 1 warning in 0.11s =========================
+======================== 64 passed, 1 warning in 9.44s =========================
 ```
 
-Keycloak no se puede levantar dentro de pytest, así que las pruebas leen el
-**archivo del realm versionado** y verifican que la configuración de la que
-depende la recuperación esté efectivamente ahí y no librada a los valores por
-defecto: recuperación habilitada, verificación de correo exigida, servidor
-SMTP definido, **ningún usuario ni contraseña en el archivo**, vencimiento del
-enlace fijado en 5 minutos, idioma español y que todos los usuarios de prueba
-tengan dirección de correo.
+Las pruebas de RF057 verifican que el cajero pueda atender una compra pendiente mediante efectivo, registrando la cantidad de billetes recibidos por denominación. El total de los billetes debe coincidir exactamente con el monto a cobrar; si existe una diferencia, la operación permanece pendiente y no se crea ningún movimiento de caja.
 
-El flujo en sí se recorrió **a mano contra el Keycloak real**, porque es lo
-único que lo demuestra:
+Cuando la recepción es válida, la compra pasa a `CONFIRMADA`, queda registrada su trazabilidad de estado y se genera un movimiento de ingreso vinculado a la operación. Dicho movimiento actualiza las existencias de la caja según la divisa, denominación y cantidad de los billetes recibidos.
 
-| Comprobación | Resultado |
-|---|---|
-| Pedido de recuperación → correo | Llega a Mailpit con asunto *"Reiniciar contraseña"* |
-| Enlace → contraseña nueva → ingreso | Funciona |
-| Reutilizar el mismo enlace | **Rechazado:** *"Action expired. Please continue with login now."* |
-| Mensaje para usuario inexistente | **Idéntico** al de uno existente: no se puede enumerar correos |
-| Correo sin verificar | Keycloak **manda el enlace igual** (ver `docs/chia-sprint5.md` 5.4) |
+También se comprueba que la operación no se confirme si la cotización cambió
+respecto de la tasa congelada, preservando el flujo de cancelación de RF051.
+Las compras pendientes de conciliación por transferencia no pueden cobrarse en efectivo. Finalmente, se verifica que solo el rol `cajero` pueda consultar y confirmar la recepción de efectivo.
 
-También se corrió la suite completa: **343 passed** (eran 336), sin
-regresiones.
+La integración con RF024 verifica además que, al anular una compra cobrada en
+efectivo, se registra un movimiento de retiro inverso con el mismo desglose de billetes. El saldo y el inventario del cajero vuelven a su estado anterior, sin dejar efectivo registrado en una operación anulada.
 
 ---
-
-## Leyda Fleitas — RF009, Conmutación de Cliente en Sesión (GEG9-19)
-
-| Campo | Valor |
-|---|---|
-| **Fecha y hora** | jueves 19 de noviembre de 2026, 16:55:24 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/usuarios/tests/test_conmutacion_cliente.py` |
-| **Comando** | `docker compose exec web pytest apps/usuarios/tests/test_conmutacion_cliente.py -v` |
-| **Resultado** | **13 passed** en 3.06s |
-
-```text
-$ date
-Thu Nov 19 16:55:24 -03 2026
-
-$ docker compose exec web pytest apps/usuarios/tests/test_conmutacion_cliente.py -v
-apps/usuarios/tests/test_conmutacion_cliente.py .............            [100%]
-
-=============================== warnings summary ===============================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 13 passed, 1 warning in 3.06s =========================
-```
-
-RF008 dejó el mecanismo hecho, así que estas pruebas cubren lo propio de
-RF009: **cambiar** de cliente estando ya operando con otro, y que ese cambio
-no abra ninguna puerta. De las 10 pruebas que ya existían en
-`test_cliente_activo.py`, ninguna probaba el cambio.
-
-- **El cambio en sí:** se hace sin cerrar sesión (se verifica que la clave de
-  sesión sea la misma antes y después); el encabezado pasa a mostrar el
-  cliente nuevo y deja de mostrar el anterior; el enlace *Cambiar* aparece con
-  dos clientes y desaparece cuando queda uno.
-- **Redirección abierta (hallazgo de seguridad):** prueba parametrizada con
-  cuatro variantes —URL absoluta, `//dominio`, otro dominio por `http` y
-  `javascript:`— tanto por POST como por query string. Todas terminan en el
-  panel. Antes de esta historia, la primera redirigía al sitio externo.
-- **Volver a la pantalla de origen:** con una ruta interna válida, sí vuelve.
-- **Que el cambio no abra puertas:** no se puede elegir un cliente ajeno
-  mandando su id en el POST; y una compra pendiente del cliente anterior
-  **deja de ser confirmable** tras cambiar de cliente, cosa que antes sí se
-  podía.
-- **Cliente desactivado:** si se desactiva el activo y queda otro, se pasa a
-  ese solo; si se desactivan todos, se vuelve a pedir elegir.
-
-También se corrió la suite completa: **356 passed** (eran 343), sin
-regresiones. El detalle de los dos hallazgos está en `docs/chia-sprint5.md`,
-secciones 6.1 y 6.2.
-
----
-
-## Leyda Fleitas — RF016, Gráficos de Evolución de Tasas (GEG9-68)
-
-| Campo | Valor |
-|---|---|
-| **Fecha y hora** | jueves 19 de noviembre de 2026, 17:15:10 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/tasas/tests/test_tasas.py` |
-| **Comando** | `docker compose exec web pytest apps/tasas/ -v` |
-| **Resultado** | **20 passed** en 42.96s |
-
-```text
-$ date
-Thu Nov 19 17:15:10 -03 2026
-
-$ docker compose exec web pytest apps/tasas/ -v
-apps/tasas/tests/test_tasas.py ....................                      [100%]
-
-=============================== warnings summary ===============================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 20 passed, 1 warning in 42.96s ========================
-```
-
-El gráfico ya existía y cumple los seis criterios de la historia, así que
-**no se cambió el gráfico ni se agregó ninguna librería**. Se sumaron las
-**8 pruebas** que faltaban (de 12 a 20) y un aviso que corrige un problema de
-información, no de funcionamiento.
-
-**Lo que ya cumplía:** gráfico de evolución por par con líneas de compra y
-venta, selector de período (7D / 1M / 3M / Todo), datos del historial real de
-`TasaCambio`, acceso para cualquier rol autenticado —incluido el usuario sin
-cliente asociado, ya cubierto por pruebas de RF008 y RF010—, y estados
-razonables para un par sin historial o con una sola tasa.
-
-**Lo que faltaba y se agregó:**
-
-- **El aviso de rango sin datos.** Con los datos de demostración, todas las
-  tasas tienen entre 74 y 101 días: al tocar **7D** no queda ningún punto en
-  el rango y el gráfico caía a los dos más recientes **sin decirlo**, con el
-  botón marcado como activo. Parecía dato de la última semana. Ahora aparece
-  *"No hay registros en los últimos 7 días. Se muestran los 2 más recientes."*
-- **Las pruebas del selector de período**, que no tenía ninguna: los cuatro
-  rangos presentes; el filtrado es del lado del navegador (el historial
-  completo viaja embebido, así que ningún botón recarga la página); cada punto
-  lleva fecha, compra y venta, ordenados de más viejo a más nuevo; el JSON
-  embebido es válido; las dos líneas del gráfico son compra y venta; el
-  usuario sin cliente ve el panel; y el servidor no recorta el historial.
-
-Durante el trabajo, las pruebas nuevas destaparon un error propio: el modelo
-tiene una restricción de **una sola tasa activa por par**, y las primeras
-versiones creaban varias activas del mismo par. Se corrigieron para armar el
-historial con `activo=False` y dejar activa solo la última, que es lo que
-ocurre en la realidad. Detalle en `docs/chia-sprint5.md`, sección 7.3.
-
----
-
-## Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
-
-| Campo | Valor |
-|---|---|
-| **Fecha y hora** | jueves 19 de noviembre de 2026, 17:56:10 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/notificaciones/tests/test_alertas_operacion.py` |
-| **Comando** | `docker compose exec web pytest apps/notificaciones/ -v` |
-| **Resultado** | **22 passed** en 9.83s |
-
-```text
-$ date
-Thu Nov 19 17:56:10 -03 2026
-
-$ docker compose exec web pytest apps/notificaciones/ -v
-apps/notificaciones/tests/test_alertas_operacion.py ............         [ 54%]
-apps/notificaciones/tests/test_notificaciones.py ..........              [100%]
-
-=============================== warnings summary ===============================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 22 passed, 1 warning in 9.83s =========================
-```
-
-Las 12 pruebas nuevas llaman a los **servicios de negocio de verdad**
-—confirmar, cancelar, vencer, anular— y no al servicio de notificaciones
-directamente: así verifican también que el enganche esté puesto en
-`registrar_cambio_estado`, que es el único punto por donde pasan los once
-cambios de estado del proyecto.
-
-- **Cada transición avisa con su tipo:** confirmar genera
-  `OPERACION_CONFIRMADA`; cancelar y vencer generan `OPERACION_CANCELADA` con
-  el motivo dentro del mensaje; anular genera `OPERACION_ANULADA`.
-- **Crear la operación no avisa:** `estado_anterior` vacío es el nacimiento,
-  no un cambio.
-- **Solo al dueño:** un usuario asociado a otro cliente no recibe nada, y
-  todos los usuarios del cliente de la operación sí reciben.
-- **Cliente sin usuarios no rompe:** es el caso de la terminal de
-  autoservicio, donde el cliente puede no tener cuenta. No se crea ningún
-  aviso y la operación sigue su curso.
-- **Un fallo al avisar no deshace la confirmación:** se tumba el servicio de
-  notificaciones a propósito y la compra queda `CONFIRMADA` igual.
-- **Sin duplicados:** registrar el mismo cambio dos veces genera un solo
-  aviso, garantizado por la restricción de unicidad en la base.
-- **Se ve y se usa:** aparece en la lista, suma al contador del menú (que no
-  filtra por tipo, así que los tipos nuevos entran solos) y se puede marcar
-  como leída.
-- **Formato de montos:** un único punto (`formatear_monto`), listo para
-  cuando se integre GEG9-82.
-
-También se corrió la suite completa: **377 passed** (eran 364), sin
-regresiones. Las decisiones de diseño están en `docs/chia-sprint5.md`,
-sección 8 — en particular por qué los destinatarios salen del cliente de la
-operación y no de quien la disparó (8.2).
-
----
-
-## Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
-
-| Campo | Valor |
-|---|---|
-| **Fecha y hora** | jueves 19 de noviembre de 2026, 21:10:29 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/pagos/tests/test_metodos_pago.py` |
-| **Comando** | `docker compose exec web pytest apps/pagos/tests/test_metodos_pago.py -v` |
-| **Resultado** | **16 passed** en 4.45s |
-
-```text
-$ date
-Thu Nov 19 21:10:29 -03 2026
-
-$ docker compose exec web pytest apps/pagos/tests/test_metodos_pago.py -v
-apps/pagos/tests/test_metodos_pago.py ................                   [100%]
-
-=============================== warnings summary ===============================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 16 passed, 1 warning in 4.45s =========================
-```
-
-- **La migración de datos** crea exactamente los dos métodos que ya
-  funcionaban (tarjeta y transferencia), ambos habilitados. No se agregó
-  billetera: no tiene código detrás y sería un botón que no hace nada.
-- **Habilitar y deshabilitar** funciona en los dos sentidos, queda registro
-  de **quién y cuándo**, el historial guarda **todos** los cambios —no solo
-  el último— y no se registra un cambio que no ocurrió.
-- **Un método deshabilitado** desaparece de la pantalla de pago y no se puede
-  usar ni forzando el POST, ni por pasarela ni por transferencia.
-- **Sin ningún método habilitado** la pantalla responde 200 con un mensaje
-  claro; no hay error 500.
-- **Lo que ya estaba en curso no se traba** (punto 5 del ERS, y el más fácil
-  de incumplir sin darse cuenta): un pago por pasarela ya iniciado se
-  confirma igual; una compra que espera transferencia se cancela igual; y la
-  conciliación manual de RF025 sigue funcionando. El cliente ya transfirió el
-  dinero: dejarlo trabado sería quedarse con su plata.
-- **Acceso:** un usuario que no es administrador recibe 403 tanto por GET
-  como por POST, y cambiar el estado exige POST con CSRF.
-
-También se corrió la suite completa: **400 passed** (eran 384), sin
-regresiones. Las decisiones están en `docs/chia-sprint5.md`, sección 9 — en
-particular por qué la comprobación va solo al iniciar el pago (9.3).
-
----
-
-## Leyda Fleitas — GEG9-82, Formato de Números y Montos
-
-| Campo | Valor |
-|---|---|
-| **Fecha y hora** | jueves 19 de noviembre de 2026, 21:38:52 (-03, hora de Paraguay) |
-| **Artefacto probado** | `apps/comun/tests/test_formato.py` |
-| **Comando** | `docker compose exec web pytest apps/comun/ -v` |
-| **Resultado** | **42 passed** en 2.44s |
-
-```text
-$ date
-Thu Nov 19 21:38:52 -03 2026
-
-$ docker compose exec web pytest apps/comun/ -v
-apps/comun/tests/test_formato.py ..........................................  [100%]
-
-=============================== warnings summary ===============================
-../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
-  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
-    dj_settings.DATABASES  # noqa: B018
-
--- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
-======================== 42 passed, 1 warning in 2.44s =========================
-```
-
-### El antes y el después
-
-| Dónde | Antes | Después |
-|---|---|---|
-| Historial de transacciones | `712000.0` | **`712.000`** |
-| Tasa aplicada | `7120.00` | **`7.120,00`** |
-| Factura en guaraníes | `72980000` | **`72.980.000`** |
-| Importe en dólares | `102.5` | **`102,50`** |
-| Columnas de montos | a la izquierda | **a la derecha**, con cifras tabulares |
-| Excel | todo texto, no se sumaba | **números alineados a la derecha** |
-
-### Lo que cubren las pruebas
-
-- **El formato:** enteros, decimales, **cero, negativos y números grandes**
-  (hasta `999.999.999.999,99`), y el redondeo hacia arriba en el medio exacto.
-- **Que no use float:** `Decimal("1.005")` redondea a `1,01`. En float daría
-  `1,00`, porque 1.005 en binario es en realidad 1.00499999999999989…
-- **Cada moneda con sus decimales:** PYG y JPY sin decimales, USD y EUR con
-  dos. Sale del campo `decimales` de cada moneda, no de una lista en el
-  código.
-- **Las tasas conservan su precisión:** `0,000125` no se redondea a `0,00`.
-- **Los formularios aceptan las dos formas** de escribir (`10.000` y `10000`,
-  `1.234,56` y `1234.56`) y **el valor guardado no cambia**: sigue siendo el
-  mismo `Decimal`. Se verifica además que siga validando el mínimo.
-- **La alineación llega a las pantallas:** la clase está definida una sola vez
-  y los encabezados numéricos del historial la llevan.
-- **Las descargas:** el Excel lleva los importes como `ss:Type="Number"` con
-  alineación derecha —antes iban como texto y ni se podían sumar— y el PDF
-  rellena las columnas con espacios para alinearlas.
-- **El gráfico de tasas** usa `Intl.NumberFormat("es-PY")`, el mismo formato
-  sin reimplementarlo.
-
-También se corrió la suite completa: **442 passed** (eran 400), sin
-regresiones. Dos pruebas existentes de tasas se adaptaron porque verificaban
-el atributo `step` del widget anterior.
-
-Las decisiones están en `docs/chia-sprint5.md`, sección 10 — en particular
-por qué se descartó `USE_THOUSAND_SEPARATOR` (10.1) y el riesgo de leer una
-tasa de `7.120` como siete mil ciento veinte (10.3).
-
----
-

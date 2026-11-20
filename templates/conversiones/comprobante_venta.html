@@ -112,12 +112,14 @@
       <p>Esta venta está pendiente de entrega de efectivo en caja.</p>
       <a class="boton" href="{% url 'conversiones:confirmar_venta' venta.pk %}">Preparar entrega</a>
       <a class="boton boton-secundario" href="{% url 'conversiones:ventas_pendientes' %}">Volver a ventas pendientes</a>
-    {% else %}
+    {% elif puede_cancelar %}
       <p>La entrega se procesa desde la caja. Consultá con un cajero para completar la operación.</p>
       <form method="post" action="{% url 'conversiones:cancelar_venta' venta.pk %}" style="display:inline">
         {% csrf_token %}
         <button class="boton boton-secundario" type="submit">Cancelar</button>
       </form>
+    {% else %}
+      <p>Esta venta está pendiente de atención por un cajero.</p>
     {% endif %}
     <script>
       (function () {
