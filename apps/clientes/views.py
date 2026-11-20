@@ -3,10 +3,12 @@ from functools import wraps
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import models
+from django.db import models, transaction
 from django.shortcuts import get_object_or_404, redirect, render
 
+from apps.usuarios.auditoria import registrar_auditoria
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.models import RegistroAuditoria
 
 from .forms import AsociacionUsuarioClienteForm, ClienteForm
 from .models import AsociacionUsuarioCliente, Cliente
@@ -82,7 +84,15 @@ def eliminados(request):
 def activar(request, pk):
     """Rehabilita un cliente que había sido dado de baja."""
     cliente = get_object_or_404(Cliente, pk=pk)
-    cliente.activar()
+    with transaction.atomic():
+        estaba_activo = cliente.activo
+        cliente.activar()
+        if not estaba_activo:
+            registrar_auditoria(
+                request.user,
+                RegistroAuditoria.Accion.CLIENTE_ACTIVADO,
+                f"Cliente #{cliente.pk}.",
+            )
     messages.success(request, f"Cliente {cliente} activado correctamente.")
     return redirect("clientes:eliminados")
 
@@ -95,7 +105,14 @@ def crear(request):
         formulario = ClienteForm(request.POST)
 
         if formulario.is_valid():
-            formulario.save()
+            with transaction.atomic():
+                cliente = formulario.save()
+                registrar_auditoria(
+                    request.user,
+                    RegistroAuditoria.Accion.CLIENTE_CREADO,
+                    f"Cliente #{cliente.pk}; tipo {cliente.get_tipo_display()}; "
+                    f"categoría {cliente.get_categoria_display()}.",
+                )
             messages.success(request, "Cliente registrado correctamente.")
             return redirect("clientes:lista")
     else:
@@ -117,7 +134,16 @@ def editar(request, pk):
     if request.method == "POST":
         formulario = ClienteForm(request.POST, instance=cliente)
         if formulario.is_valid():
-            formulario.save()
+            campos_modificados = formulario.changed_data
+            with transaction.atomic():
+                cliente = formulario.save()
+                if campos_modificados:
+                    registrar_auditoria(
+                        request.user,
+                        RegistroAuditoria.Accion.CLIENTE_MODIFICADO,
+                        f"Cliente #{cliente.pk}; campos modificados: "
+                        f"{', '.join(campos_modificados)}.",
+                    )
             messages.success(request, "Cliente actualizado correctamente.")
             return redirect("clientes:lista")
     else:
@@ -135,7 +161,15 @@ def editar(request, pk):
 def eliminar(request, pk):
     """Desactiva lógicamente un cliente."""
     cliente = Cliente.objects.get(pk=pk)
-    cliente.desactivar()
+    with transaction.atomic():
+        estaba_activo = cliente.activo
+        cliente.desactivar()
+        if estaba_activo:
+            registrar_auditoria(
+                request.user,
+                RegistroAuditoria.Accion.CLIENTE_DESACTIVADO,
+                f"Cliente #{cliente.pk}.",
+            )
     messages.success(request, f"Cliente {cliente} dado de baja lógicamente.")
     return redirect("clientes:lista")
 
@@ -153,22 +187,29 @@ def asociaciones(request):
             clientes = formulario.cleaned_data["clientes"]
             ids_clientes = set(clientes.values_list("pk", flat=True))
 
-            AsociacionUsuarioCliente.objects.filter(usuario=usuario).exclude(
-                cliente_id__in=ids_clientes,
-            ).delete()
-            existentes = set(
-                AsociacionUsuarioCliente.objects.filter(usuario=usuario).values_list(
-                    "cliente_id",
-                    flat=True,
-                ),
-            )
-            AsociacionUsuarioCliente.objects.bulk_create(
-                [
-                    AsociacionUsuarioCliente(usuario=usuario, cliente=cliente)
-                    for cliente in clientes
-                    if cliente.pk not in existentes
-                ],
-            )
+            with transaction.atomic():
+                AsociacionUsuarioCliente.objects.filter(usuario=usuario).exclude(
+                    cliente_id__in=ids_clientes,
+                ).delete()
+                existentes = set(
+                    AsociacionUsuarioCliente.objects.filter(usuario=usuario).values_list(
+                        "cliente_id",
+                        flat=True,
+                    ),
+                )
+                AsociacionUsuarioCliente.objects.bulk_create(
+                    [
+                        AsociacionUsuarioCliente(usuario=usuario, cliente=cliente)
+                        for cliente in clientes
+                        if cliente.pk not in existentes
+                    ],
+                )
+                registrar_auditoria(
+                    request.user,
+                    RegistroAuditoria.Accion.CLIENTE_ASOCIACIONES_ACTUALIZADAS,
+                    f"Usuario #{usuario.pk}; clientes asignados: "
+                    f"{', '.join(str(pk) for pk in sorted(ids_clientes)) or 'ninguno'}.",
+                )
             messages.success(request, "Asociaciones actualizadas correctamente.")
             return redirect(f"{request.path}?usuario={usuario.pk}")
     else:

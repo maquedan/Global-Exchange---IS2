@@ -4,6 +4,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -11,7 +12,9 @@ from apps.cajas.models import Caja
 from apps.cajas.services import proponer_billetes_entrega
 from apps.pagos.models import Pago
 from apps.tasa_cambios.models import TasaCambio
+from apps.usuarios.auditoria import registrar_auditoria
 from apps.usuarios.menu import tiene_rol
+from apps.usuarios.models import RegistroAuditoria
 from apps.usuarios.services import requiere_cliente_activo
 
 from .forms import (
@@ -502,6 +505,12 @@ def anular_venta_view(request, pk):
         messages.error(request, str(error))
         return redirect("conversiones:comprobante_venta", pk=pk)
 
+    registrar_auditoria(
+        request.user,
+        RegistroAuditoria.Accion.VENTA_ANULADA,
+        f"Venta #{venta.pk}; cliente #{venta.cliente_id}; "
+        f"motivo: {formulario.cleaned_data['motivo']}.",
+    )
     messages.success(
         request,
         "La venta fue anulada y se registraron los movimientos inversos.",
@@ -548,6 +557,12 @@ def anular_compra_view(request, pk):
         )
         return redirect("conversiones:comprobante_compra", pk=compra.pk)
 
+    registrar_auditoria(
+        request.user,
+        RegistroAuditoria.Accion.COMPRA_ANULADA,
+        f"Compra #{compra.pk}; cliente #{compra.cliente_id}; "
+        f"motivo: {formulario.cleaned_data['motivo']}.",
+    )
     messages.success(
         request,
         "La compra fue reembolsada y anulada correctamente.",
@@ -671,12 +686,20 @@ def conciliar(request, pk):
 
     if request.method == "POST" and formulario.is_valid():
         try:
-            conciliada = conciliar_compra(
-                pk=compra.pk,
-                usuario=request.user,
-                referencia=formulario.cleaned_data["referencia"],
-                observacion=formulario.cleaned_data["observacion"],
-            )
+            with transaction.atomic():
+                conciliada = conciliar_compra(
+                    pk=compra.pk,
+                    usuario=request.user,
+                    referencia=formulario.cleaned_data["referencia"],
+                    observacion=formulario.cleaned_data["observacion"],
+                )
+                if conciliada.estado == CompraDivisa.Estado.CONFIRMADA:
+                    registrar_auditoria(
+                        request.user,
+                        RegistroAuditoria.Accion.COMPRA_CONCILIADA,
+                        f"Compra #{conciliada.pk}; referencia "
+                        f"{formulario.cleaned_data['referencia']}.",
+                    )
         except ConciliacionNoPermitida as error:
             formulario.add_error(None, str(error))
         else:

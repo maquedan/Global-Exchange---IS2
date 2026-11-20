@@ -20,4 +20,5 @@ urlpatterns = [
         views.configuracion_seguridad,
         name="configuracion_seguridad",
     ),
+    path("administracion/auditoria/", views.auditoria, name="auditoria"),
 ]

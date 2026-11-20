@@ -146,3 +146,36 @@ y la pantalla de seguridad cargaran correctamente.
   y `makemigrations --check --dry-run` no detectaron problemas.
 - Se verificó en el navegador el panel y la pantalla de seguridad después de
   aplicar la migración `0002_cambioconfiguracionseguridad_configuracionseguridad`.
+
+## 5. Ryuto Maehara — GEG9-81, Registro de auditoría
+
+### 5.1. «¿Cómo registrar las operaciones críticas de administración?»
+
+**Decisión.** Agregar un registro con usuario, acción, fecha y hora, además de
+detalles para identificar el objeto afectado. Se auditan altas y cambios de
+tasas, comisiones y clientes, anulaciones de compras y ventas, y conciliaciones
+de compras. Los registros se generan al completar las operaciones.
+
+### 5.2. «¿Quién puede consultar los registros y qué filtros hay?»
+
+- Se agregó la pantalla «Auditoría», accesible solo para el rol administrador,
+  con filtros por usuario, acción y rango de fechas.
+- La pantalla y la entrada del modelo en Django Admin son de solo lectura; no
+  se ofrecen acciones de alta, edición ni borrado.
+
+### 5.3. «¿Por qué aparecía `ProgrammingError` en `/administracion/auditoria/`?»
+
+**Causa y resolución.** El contenedor web aún no tenía aplicada la migración que
+crea `usuarios_registroauditoria`. Se ejecutó
+`docker compose exec -T web python manage.py migrate usuarios` en el entorno
+local y se comprobó que la migración `0003_registroauditoria` quedara aplicada.
+Después de recargar, la pantalla abrió correctamente; quedó vacía porque todavía
+no se habían registrado operaciones desde su activación.
+
+### 5.4. Verificaciones realizadas
+
+- Aprobaron las pruebas enfocadas de auditoría, clientes, comisiones, tasas,
+  anulaciones y conciliaciones; `python manage.py check`,
+  `makemigrations --check --dry-run` y `git diff --check` finalizaron sin
+  errores.
+- Se verificó la pantalla en el navegador después de aplicar la migración.
