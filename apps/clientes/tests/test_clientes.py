@@ -43,6 +43,14 @@ class RegistroClientesTests(TestCase):
 
         self.assertEqual(respuesta.status_code, 403)
 
+    def test_analista_no_puede_ver_lista_de_clientes(self):
+        """El analista no accede al centro de gestión de clientes."""
+        self.client.force_login(self.analista)
+
+        respuesta = self.client.get(reverse("clientes:lista"))
+
+        self.assertEqual(respuesta.status_code, 403)
+
     def test_registra_persona_fisica(self):
         self.client.force_login(self.administrador)
 
