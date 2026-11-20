@@ -73,8 +73,11 @@ def test_formulario_guarda_tasas_con_seis_decimales(monedas):
 
 	assert tasa.tasa_compra == Decimal("7.123456")
 	assert tasa.tasa_venta == Decimal("7.654321")
-	assert formulario.fields["tasa_compra"].widget.attrs["step"] == "0.000001"
-	assert formulario.fields["tasa_venta"].widget.attrs["step"] == "0.000001"
+	# Desde GEG9-82 las tasas entran por un campo de texto que entiende el
+	# formato local, asi que ya no hay atributo "step" del navegador. Lo que
+	# importa sigue siendo que acepte los seis decimales, verificado arriba.
+	assert formulario.fields["tasa_compra"].widget.attrs["inputmode"] == "decimal"
+	assert formulario.fields["tasa_venta"].widget.attrs["inputmode"] == "decimal"
 
 
 @pytest.mark.django_db

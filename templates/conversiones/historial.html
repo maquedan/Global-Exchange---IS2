@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load formato_extras %}
 
 {% block titulo %}Historial de transacciones | Global Exchange{% endblock %}
 
@@ -16,9 +17,9 @@
             <th>Tipo</th>
             <th>Cliente</th>
             <th>Conversión</th>
-            <th>Tasa aplicada</th>
-            <th>Comisión</th>
-            <th>Importe final</th>
+            <th class="num">Tasa aplicada</th>
+            <th class="num">Comisión</th>
+            <th class="num">Importe final</th>
             <th>Estado</th>
           </tr>
         </thead>
@@ -31,22 +32,22 @@
               </td>
               <td>{{ transaccion.cliente }}</td>
               <td>
-                {{ transaccion.monto_origen|floatformat:2 }}
+                {{ transaccion.monto_origen|monto:transaccion.origen }}
                 {{ transaccion.origen.codigo }}
                 →
                 {{ transaccion.destino.codigo }}
               </td>
-              <td>
-                {{ transaccion.tasa|floatformat:2 }}
+              <td class="num">
+                {{ transaccion.tasa|tasa }}
               </td>
-              <td>
-                {{ transaccion.comision|floatformat:2 }}
+              <td class="num">
+                {{ transaccion.comision|monto:transaccion.moneda_comision }}
                 {{ transaccion.moneda_comision.codigo }}
-                ({{ transaccion.porcentaje_comision|floatformat:2 }}%)
+                ({{ transaccion.porcentaje_comision|numero:2 }}%)
               </td>
-              <td>
+              <td class="num">
                 <strong>
-                  {{ transaccion.monto_final|floatformat:2 }}
+                  {{ transaccion.monto_final|monto:transaccion.destino }}
                   {{ transaccion.destino.codigo }}
                 </strong>
               </td>

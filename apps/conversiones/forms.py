@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+from apps.comun.campos import MontoField
+
 from django import forms
 
 from apps.cajas.models import DenominacionBillete
@@ -22,12 +24,11 @@ class SimulacionConversionForm(forms.Form):
         queryset=Moneda.objects.filter(activo=True),
         label="Moneda de destino",
     )
-    monto = forms.DecimalField(
+    monto = MontoField(
         label="Monto",
         min_value=Decimal("0.01"),
         max_digits=12,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
     tipo_operacion = forms.ChoiceField(
         choices=TIPOS_OPERACION,
@@ -81,12 +82,11 @@ class CompraDivisaForm(forms.Form):
         queryset=Moneda.objects.filter(activo=True),
         label="Moneda que querés adquirir",
     )
-    monto_pagado = forms.DecimalField(
+    monto_pagado = MontoField(
         label="Monto base a pagar",
         min_value=Decimal("0.01"),
         max_digits=16,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
         help_text="La comisión se calcula aparte y se suma al total.",
     )
 
@@ -117,12 +117,11 @@ class VentaDivisaForm(forms.Form):
     moneda_acreditada = forms.ModelChoiceField(
         queryset=Moneda.objects.filter(activo=True), label="Moneda a acreditar"
     )
-    monto_entregado = forms.DecimalField(
+    monto_entregado = MontoField(
         label="Monto de la divisa que vendés",
         min_value=Decimal("0.01"),
         max_digits=16,
         decimal_places=2,
-        widget=forms.NumberInput(attrs={"step": "0.01", "min": "0.01"}),
     )
 
     def __init__(self, *args, **kwargs):
