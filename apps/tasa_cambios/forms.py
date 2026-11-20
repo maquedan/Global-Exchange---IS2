@@ -1,5 +1,7 @@
 from django import forms
 
+from apps.comun.campos import TasaField
+
 from apps.monedas.models import Moneda
 
 from .models import TasaCambio
@@ -18,13 +20,14 @@ class TasaCambioForm(forms.ModelForm):
             "vigente_desde",
             "activo",
         )
+        # Las tasas entran con el mismo formato que los montos: 7.120,00
+        # (GEG9-82). Se usa `field_classes` y no `widgets` porque hay que
+        # cambiar cómo se interpreta el texto, no solo cómo se dibuja.
+        field_classes = {
+            "tasa_compra": TasaField,
+            "tasa_venta": TasaField,
+        }
         widgets = {
-            "tasa_compra": forms.NumberInput(
-                attrs={"step": "0.000001", "min": "0.000001"}
-            ),
-            "tasa_venta": forms.NumberInput(
-                attrs={"step": "0.000001", "min": "0.000001"}
-            ),
             "vigente_desde": forms.DateTimeInput(
                 format="%Y-%m-%dT%H:%M",
                 attrs={"type": "datetime-local"},

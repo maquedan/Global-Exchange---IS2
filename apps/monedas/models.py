@@ -18,6 +18,13 @@ class Moneda(models.Model):
     )
     nombre = models.CharField(max_length=100)
     simbolo = models.CharField(max_length=10)
+    decimales = models.PositiveSmallIntegerField(
+        default=2,
+        help_text=(
+            "Cuántos decimales se muestran de esta moneda. El guaraní usa 0; "
+            "el dólar y el euro, 2 (GEG9-82)."
+        ),
+    )
     activo = models.BooleanField(default=True, db_index=True)
     creado_en = models.DateTimeField(auto_now_add=True)
     actualizado_en = models.DateTimeField(auto_now=True)

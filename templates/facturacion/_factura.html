@@ -1,3 +1,4 @@
+{% load formato_extras %}
 {# Factura electrónica de la operación (RF026 — GEG9-50).                    #}
 {# Se incluye desde los comprobantes de compra y de venta. Espera `factura`  #}
 {# en el contexto; si la operación todavía no tiene factura, no muestra nada #}
@@ -24,9 +25,9 @@
     {% endif %}
 
     <p class="factura-importes">
-      Total facturado: <strong>{{ factura.monto|floatformat:0 }} {{ factura.moneda }}</strong>
+      Total facturado: <strong>{{ factura.monto|monto:factura.moneda }} {{ factura.moneda }}</strong>
       {% if factura.moneda_origen != factura.moneda %}
-        — importe de la operación: {{ factura.monto_origen|floatformat:2 }} {{ factura.moneda_origen }}
+        — importe de la operación: {{ factura.monto_origen|monto:factura.moneda_origen }} {{ factura.moneda_origen }}
         (convertido con la tasa congelada de la operación)
       {% endif %}
     </p>

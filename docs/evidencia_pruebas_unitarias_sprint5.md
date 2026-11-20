@@ -701,3 +701,178 @@ ocurre en la realidad. Detalle en `docs/chia-sprint5.md`, sección 7.3.
 
 ---
 
+## Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 17:56:10 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/notificaciones/tests/test_alertas_operacion.py` |
+| **Comando** | `docker compose exec web pytest apps/notificaciones/ -v` |
+| **Resultado** | **22 passed** en 9.83s |
+
+```text
+$ date
+Thu Nov 19 17:56:10 -03 2026
+
+$ docker compose exec web pytest apps/notificaciones/ -v
+apps/notificaciones/tests/test_alertas_operacion.py ............         [ 54%]
+apps/notificaciones/tests/test_notificaciones.py ..........              [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 22 passed, 1 warning in 9.83s =========================
+```
+
+Las 12 pruebas nuevas llaman a los **servicios de negocio de verdad**
+—confirmar, cancelar, vencer, anular— y no al servicio de notificaciones
+directamente: así verifican también que el enganche esté puesto en
+`registrar_cambio_estado`, que es el único punto por donde pasan los once
+cambios de estado del proyecto.
+
+- **Cada transición avisa con su tipo:** confirmar genera
+  `OPERACION_CONFIRMADA`; cancelar y vencer generan `OPERACION_CANCELADA` con
+  el motivo dentro del mensaje; anular genera `OPERACION_ANULADA`.
+- **Crear la operación no avisa:** `estado_anterior` vacío es el nacimiento,
+  no un cambio.
+- **Solo al dueño:** un usuario asociado a otro cliente no recibe nada, y
+  todos los usuarios del cliente de la operación sí reciben.
+- **Cliente sin usuarios no rompe:** es el caso de la terminal de
+  autoservicio, donde el cliente puede no tener cuenta. No se crea ningún
+  aviso y la operación sigue su curso.
+- **Un fallo al avisar no deshace la confirmación:** se tumba el servicio de
+  notificaciones a propósito y la compra queda `CONFIRMADA` igual.
+- **Sin duplicados:** registrar el mismo cambio dos veces genera un solo
+  aviso, garantizado por la restricción de unicidad en la base.
+- **Se ve y se usa:** aparece en la lista, suma al contador del menú (que no
+  filtra por tipo, así que los tipos nuevos entran solos) y se puede marcar
+  como leída.
+- **Formato de montos:** un único punto (`formatear_monto`), listo para
+  cuando se integre GEG9-82.
+
+También se corrió la suite completa: **377 passed** (eran 364), sin
+regresiones. Las decisiones de diseño están en `docs/chia-sprint5.md`,
+sección 8 — en particular por qué los destinatarios salen del cliente de la
+operación y no de quien la disparó (8.2).
+
+---
+
+## Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 21:10:29 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/pagos/tests/test_metodos_pago.py` |
+| **Comando** | `docker compose exec web pytest apps/pagos/tests/test_metodos_pago.py -v` |
+| **Resultado** | **16 passed** en 4.45s |
+
+```text
+$ date
+Thu Nov 19 21:10:29 -03 2026
+
+$ docker compose exec web pytest apps/pagos/tests/test_metodos_pago.py -v
+apps/pagos/tests/test_metodos_pago.py ................                   [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 16 passed, 1 warning in 4.45s =========================
+```
+
+- **La migración de datos** crea exactamente los dos métodos que ya
+  funcionaban (tarjeta y transferencia), ambos habilitados. No se agregó
+  billetera: no tiene código detrás y sería un botón que no hace nada.
+- **Habilitar y deshabilitar** funciona en los dos sentidos, queda registro
+  de **quién y cuándo**, el historial guarda **todos** los cambios —no solo
+  el último— y no se registra un cambio que no ocurrió.
+- **Un método deshabilitado** desaparece de la pantalla de pago y no se puede
+  usar ni forzando el POST, ni por pasarela ni por transferencia.
+- **Sin ningún método habilitado** la pantalla responde 200 con un mensaje
+  claro; no hay error 500.
+- **Lo que ya estaba en curso no se traba** (punto 5 del ERS, y el más fácil
+  de incumplir sin darse cuenta): un pago por pasarela ya iniciado se
+  confirma igual; una compra que espera transferencia se cancela igual; y la
+  conciliación manual de RF025 sigue funcionando. El cliente ya transfirió el
+  dinero: dejarlo trabado sería quedarse con su plata.
+- **Acceso:** un usuario que no es administrador recibe 403 tanto por GET
+  como por POST, y cambiar el estado exige POST con CSRF.
+
+También se corrió la suite completa: **400 passed** (eran 384), sin
+regresiones. Las decisiones están en `docs/chia-sprint5.md`, sección 9 — en
+particular por qué la comprobación va solo al iniciar el pago (9.3).
+
+---
+
+## Leyda Fleitas — GEG9-82, Formato de Números y Montos
+
+| Campo | Valor |
+|---|---|
+| **Fecha y hora** | jueves 19 de noviembre de 2026, 21:38:52 (-03, hora de Paraguay) |
+| **Artefacto probado** | `apps/comun/tests/test_formato.py` |
+| **Comando** | `docker compose exec web pytest apps/comun/ -v` |
+| **Resultado** | **42 passed** en 2.44s |
+
+```text
+$ date
+Thu Nov 19 21:38:52 -03 2026
+
+$ docker compose exec web pytest apps/comun/ -v
+apps/comun/tests/test_formato.py ..........................................  [100%]
+
+=============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394
+  /usr/local/lib/python3.12/site-packages/pytest_django/plugin.py:394: RemovedInDjango70Warning: The EMAIL_BACKEND setting is deprecated. Migrate to MAILERS before Django 7.0.
+    dj_settings.DATABASES  # noqa: B018
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================== 42 passed, 1 warning in 2.44s =========================
+```
+
+### El antes y el después
+
+| Dónde | Antes | Después |
+|---|---|---|
+| Historial de transacciones | `712000.0` | **`712.000`** |
+| Tasa aplicada | `7120.00` | **`7.120,00`** |
+| Factura en guaraníes | `72980000` | **`72.980.000`** |
+| Importe en dólares | `102.5` | **`102,50`** |
+| Columnas de montos | a la izquierda | **a la derecha**, con cifras tabulares |
+| Excel | todo texto, no se sumaba | **números alineados a la derecha** |
+
+### Lo que cubren las pruebas
+
+- **El formato:** enteros, decimales, **cero, negativos y números grandes**
+  (hasta `999.999.999.999,99`), y el redondeo hacia arriba en el medio exacto.
+- **Que no use float:** `Decimal("1.005")` redondea a `1,01`. En float daría
+  `1,00`, porque 1.005 en binario es en realidad 1.00499999999999989…
+- **Cada moneda con sus decimales:** PYG y JPY sin decimales, USD y EUR con
+  dos. Sale del campo `decimales` de cada moneda, no de una lista en el
+  código.
+- **Las tasas conservan su precisión:** `0,000125` no se redondea a `0,00`.
+- **Los formularios aceptan las dos formas** de escribir (`10.000` y `10000`,
+  `1.234,56` y `1234.56`) y **el valor guardado no cambia**: sigue siendo el
+  mismo `Decimal`. Se verifica además que siga validando el mínimo.
+- **La alineación llega a las pantallas:** la clase está definida una sola vez
+  y los encabezados numéricos del historial la llevan.
+- **Las descargas:** el Excel lleva los importes como `ss:Type="Number"` con
+  alineación derecha —antes iban como texto y ni se podían sumar— y el PDF
+  rellena las columnas con espacios para alinearlas.
+- **El gráfico de tasas** usa `Intl.NumberFormat("es-PY")`, el mismo formato
+  sin reimplementarlo.
+
+También se corrió la suite completa: **442 passed** (eran 400), sin
+regresiones. Dos pruebas existentes de tasas se adaptaron porque verificaban
+el atributo `step` del widget anterior.
+
+Las decisiones están en `docs/chia-sprint5.md`, sección 10 — en particular
+por qué se descartó `USE_THOUSAND_SEPARATOR` (10.1) y el riesgo de leer una
+tasa de `7.120` como siete mil ciento veinte (10.3).
+
+---
+

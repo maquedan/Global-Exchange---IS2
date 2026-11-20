@@ -1381,3 +1381,341 @@ que pasa en la realidad: una tasa vigente y las anteriores como histórico.
 - `sphinx-build` sin warnings.
 
 ---
+
+## 8. Leyda Fleitas — RF034, Alertas de Operación (GEG9-76)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+El ticket sospechaba que el enganche era único y pedía confirmarlo leyendo el
+código antes de implementar.
+
+### 8.1. «¿De verdad hay un solo punto donde enganchar?»
+
+**Lo que aprendimos.** Sí: `registrar_cambio_estado` se llama en **once
+lugares**, todos dentro de `apps/conversiones/services.py` — iniciar compra y
+venta, vencimiento, cancelación por cambio de cotización, confirmación,
+cancelación por el cliente, anulación, y los flujos de terminal y
+conciliación manual, que reutilizan los mismos servicios.
+
+Enganchando **adentro** de esa función quedan cubiertas las once sin tocar
+ninguna, que es lo que RF023 había preparado sin saberlo.
+
+**Pero dos de esas once no deben avisar:** las que llaman con
+`estado_anterior=""`, que son el nacimiento de la operación. Avisarle a
+alguien "tu compra pasó de nada a pendiente" justo después de que la creó él
+mismo es ruido, no información.
+
+### 8.2. «La terminal rompía el enfoque obvio»
+
+**Lo que aprendimos**, y es el hallazgo que cambió el diseño: lo natural era
+avisarle al `usuario` que recibe `registrar_cambio_estado`. En el flujo de
+autoservicio (RF055) **ese usuario es la terminal**, no una persona: el
+cliente se identifica por documento o RUC.
+
+Tomando el destinatario de ahí, las notificaciones de las operaciones hechas
+en la terminal le habrían llegado **a la máquina**.
+
+**Decisión.** Los destinatarios salen del **cliente de la operación**, no de
+quien la disparó: `AsociacionUsuarioCliente.objects.filter(cliente=...)`.
+Y puede no haber ninguno —alguien que opera en la terminal sin cuenta—, lo
+cual **no es un error**: simplemente no hay a quién avisarle, y eso no puede
+romper la operación.
+
+### 8.3. «Los destinatarios no se resuelven como en RF033»
+
+**Lo que aprendimos.** `_destinatarios` de RF033 devuelve **todos** los
+usuarios con rol cliente, porque un cambio de tasa le interesa a cualquiera.
+Reutilizarlo acá habría sido un problema serio: el ticket exige que nadie
+reciba avisos de operaciones ajenas.
+
+**Decisión.** Una función aparte, `_usuarios_del_cliente`, acotada al cliente
+de esa operación. Se reutiliza la app, el modelo y la pantalla de RF033, pero
+no esa función: hacen cosas distintas aunque se parezcan.
+
+### 8.4. «Los duplicados: comprobar o hacerlos imposibles»
+
+El ticket pedía que registrar dos veces el mismo cambio no genere dos avisos.
+Se podía comparar el texto del mensaje, pero eso es frágil: cambia una coma y
+deja de detectarlos.
+
+**Decisión de la integrante:** una FK de `Notificacion` a `CambioEstado`, con
+una restricción de unicidad sobre (usuario, cambio de estado). El duplicado
+pasa a ser **imposible por construcción**, no algo que haya que acordarse de
+comprobar. De paso, el aviso queda ligado a la transición concreta, que le
+sirve a RF053.
+
+También decidió **tres tipos** (`OPERACION_CONFIRMADA`, `CANCELADA`,
+`ANULADA`) en vez de uno genérico, para poder distinguirlos en la lista sin
+otra migración. Esa decisión se aprovechó enseguida: ver 8.6.
+
+### 8.5. «Que avisar no pueda romper nada»
+
+Mismo criterio que la facturación (RF026): `transaction.on_commit` para no
+avisar de algo que luego se revierta, y un `except` amplio alrededor. El
+aviso es un efecto secundario; la transición es el hecho. Hay una prueba que
+tumba el servicio de notificaciones a propósito y verifica que la compra
+igual queda confirmada.
+
+### 8.6. «Color por tipo sin que quede chocante»
+
+**Lo que aprendimos** al colorear la lista: el borde izquierdo **ya estaba
+usado** para indicar leída o no leída. Agregar color por tipo encima habría
+dado dos significados al mismo elemento.
+
+**Decisión.** El borde pasa a indicar el **tipo** —que es el dato que cambia
+entre una fila y otra— y lo leído se sigue viendo por la opacidad y el badge
+"Nueva". Se agregó además una **etiqueta de texto** con el tipo: si el color
+fuera el único dato, quien no distingue verde de ámbar se quedaría sin esa
+información.
+
+Cancelada va en **ámbar y no en rojo**: merece atención, pero no es un error
+—muchas veces la canceló el propio cliente— y el rojo diría "algo salió mal".
+Queda anotado que la línea de tiempo del comprobante usa rojo para ese mismo
+estado desde RF023: son dos criterios distintos conviviendo, y conviene
+unificarlos en algún momento.
+
+### 8.7. Un error propio en las pruebas
+
+Una prueba fallaba con `TypeError: 'Cliente' object is not callable`: al
+desempaquetar el fixture con `usuario, _cliente = duenio`, la variable
+`_cliente` tapaba a la función `_cliente()` que crea clientes. Se renombró la
+variable.
+
+## 8.8. Verificaciones realizadas
+
+- **12 pruebas nuevas**, que llevan `apps/notificaciones` de 10 a **22**.
+- Suite completa: **377 aprobadas** (eran 364), sin regresiones.
+- Casos cubiertos: cada transición relevante (confirmar, cancelar, vencer,
+  anular) genera el aviso del tipo correcto y con el motivo; **crear la
+  operación no avisa**; un usuario de otro cliente no recibe nada; todos los
+  usuarios del cliente sí; un cliente **sin usuarios** no rompe; un fallo al
+  avisar **no deshace** la confirmación; registrar el mismo cambio dos veces
+  no duplica; el aviso aparece en la lista y en el contador del menú; se
+  puede marcar como leída; y el formateo de montos tiene un único punto.
+- `manage.py check` sin errores, migración `notificaciones.0002` aplicada y
+  Sphinx genera sin warnings.
+
+---
+
+## 9. Leyda Fleitas — RF035, Configuración de Pagos (GEG9-77)
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+### 9.1. «Proveedor y método de pago no son lo mismo»
+
+**Lo que aprendimos**, y era el malentendido que había que deshacer antes de
+modelar nada. El punto de partida del ticket mencionaba `PAGO_PROVEEDOR`
+como si fuera la configuración de métodos de pago. No lo es:
+
+| | Qué decide | Quién lo cambia |
+|---|---|---|
+| `PAGO_PROVEEDOR` | Qué **pasarela** se usa: dLocal o el simulado | Variable de entorno |
+| Método de pago | Con **qué paga** el cliente: tarjeta, transferencia | El administrador, desde la app |
+
+`PAGO_PROVEEDOR` es un interruptor técnico —"¿llamo a la API real o al doble
+de pruebas?"— y no tiene nada que hacer en una pantalla de negocio. **No se
+tocó.**
+
+Lo que el ERS llama método de pago **no existía como dato**: los dos botones
+estaban escritos a mano en `templates/pagos/elegir_pago.html`. Habilitar o
+deshabilitar uno exigía editar el HTML y desplegar.
+
+### 9.2. «¿Qué métodos se modelan?»
+
+**Decisión de la integrante:** solo los **dos que ya funcionaban**, tarjeta y
+transferencia. El ERS menciona también billeteras, pero no hay código detrás:
+crear esa fila habría puesto en la pantalla un botón que al tocarlo no hace
+nada, o una fila permanentemente deshabilitada que nadie puede habilitar sin
+programar.
+
+Cada fila de la tabla corresponde a algo que de verdad anda. Cuando se
+implemente billetera, se crea con la migración que traiga su código.
+
+### 9.3. «El punto delicado: deshabilitar no puede trabar lo que ya está en curso»
+
+**Lo que aprendimos**, y es el requisito del ERS que más fácil se incumple
+sin darse cuenta: la comprobación obvia sería *"¿este método está
+habilitado?"* en todo el flujo de pago. Eso rompería el punto 5.
+
+Si un administrador deshabilita la transferencia mientras hay compras
+esperando conciliación, esas compras quedarían **trabadas**: no se podrían
+confirmar ni cancelar. Y el cliente **ya transfirió el dinero**.
+
+**Decisión.** La comprobación va **solo al iniciar** un pago
+(`exigir_metodo_habilitado`), nunca al confirmarlo, cancelarlo o conciliarlo.
+Queda escrito en el docstring de esa función, porque es un invariante fácil
+de romper de buena fe: alguien que agregue la validación "por completitud" en
+`confirmar_pago` estaría introduciendo el problema.
+
+Hay tres pruebas dedicadas: un pago por pasarela ya iniciado se confirma
+igual, una compra que espera transferencia se cancela igual, y la
+conciliación manual de RF025 sigue funcionando.
+
+### 9.4. «¿Último cambio o historial completo?»
+
+**Decisión de la integrante:** historial completo, con una tabla
+`CambioMetodoPago`, en vez de dos campos `modificado_por` y `modificado_en`
+en el propio modelo.
+
+El motivo es concreto: con solo el último cambio, si alguien deshabilita un
+método y otra persona lo vuelve a habilitar, **el primer cambio desaparece**
+y no queda forma de saber quién lo apagó. Es el mismo patrón de
+`CambioEstado` (RF023).
+
+El servicio además no registra un cambio que no ocurrió: deshabilitar algo ya
+deshabilitado no ensucia el historial.
+
+### 9.5. «La plantilla deja de saber los métodos de memoria»
+
+El campo `flujo` (PASARELA o MANUAL) existe para que la plantilla sepa a qué
+vista mandar el botón **sin conocer cada método por su nombre**. Si tuviera
+un `{% if metodo.codigo == "tarjeta" %}`, agregar un método nuevo volvería a
+exigir editar el HTML, que es justo lo que esta historia vino a sacar.
+
+## 9.6. Verificaciones realizadas
+
+- **16 pruebas nuevas.** Suite completa: **400 aprobadas** (eran 384), sin
+  regresiones.
+- Casos cubiertos: la migración de datos crea exactamente los dos métodos
+  que funcionaban; habilitar y deshabilitar; queda registro de quién y
+  cuándo; el historial guarda **todos** los cambios y no inventa los que no
+  ocurrieron; un método deshabilitado no aparece en la pantalla de pago y no
+  se puede usar ni forzando el POST; sin ningún método habilitado avisa y no
+  rompe; **un pago ya iniciado se confirma, se cancela y se concilia aunque
+  se deshabilite el método**; un no administrador recibe 403 por GET y por
+  POST; y cambiar el estado exige POST.
+- `manage.py check` sin errores, migraciones `pagos.0002` y `0003` aplicadas
+  y Sphinx genera sin warnings.
+
+---
+
+## 10. Leyda Fleitas — GEG9-82, Formato de Números y Montos
+
+**Herramienta:** Claude (Anthropic), integrado en VS Code sobre WSL2.
+
+Pedido transversal de la cátedra, no del ERS: separador de miles y columnas
+numéricas alineadas a la derecha.
+
+### 10.1. «La opción más obvia de Django no sirve, y se comprobó»
+
+**Lo que aprendimos.** Lo primero que se evaluó fue activar
+`USE_THOUSAND_SEPARATOR = True`, que parecía resolver todo con una línea. Se
+probó antes de decidir:
+
+```
+HOY                    : 1250000,5
+CON THOUSAND_SEPARATOR : 1 250 000,5      ← espacio fino, no punto
+```
+
+El locale `es` de Django es el de España y agrupa con **espacio**. La cátedra
+pidió `1.250.000`. Activarlo habría cambiado el formato de **todas** las
+pantallas de golpe, y al que no corresponde.
+
+Cambiar a `es_PY` habría arrastrado también el formato de fechas en todo el
+sistema.
+
+**Decisión: filtro propio.** Formato exacto, aplicado donde se quiere, sin
+efectos a distancia.
+
+De paso se comprobó algo que tranquilizó el resto del trabajo: Django **no
+localiza los `NumberInput`**, así que esa opción nunca habría roto los
+formularios. Era un riesgo que valía la pena descartar con una prueba y no
+con una suposición.
+
+### 10.2. «Los formularios: donde el criterio chocaba con el HTML»
+
+**Lo que aprendimos.** El criterio pedía que los formularios acepten el valor
+escrito con separadores. Los campos de monto eran `<input type="number">`, y
+ese tipo de campo **solo admite un número con punto decimal**: escribir
+`10.000` hace que el navegador lo rechace o vacíe el campo antes de que llegue
+al servidor.
+
+**Decisión de la integrante:** pasar a campo de texto con un parser propio
+(`MontoField`). Cumple el criterio al pie de la letra.
+
+El contrapeso, que quedó anotado en el código: se pierde el teclado numérico
+del celular y la validación del navegador. La validación de Django sigue
+intacta —`MontoField` hereda de `DecimalField`, así que mínimos, máximos y
+dígitos siguen valiendo— y **el valor guardado no cambia**.
+
+**Las comisiones se dejaron como estaban**: son porcentajes de 0 a 100, nunca
+llevan separador de miles, y el `max="100"` del navegador es útil. Cambiarlas
+habría sido perder algo sin ganar nada.
+
+### 10.3. «Un riesgo que apareció a mitad de camino: `7.120` como tasa»
+
+**Lo que aprendimos**, y casi se cuela sin que nadie lo note. La regla para
+desambiguar `10.000` —punto con exactamente tres dígitos detrás es separador
+de miles— es correcta para importes. **Para tasas es peligrosa:** una
+cotización de `7.120` significa siete coma doce, no siete mil ciento veinte,
+porque las tasas llevan hasta seis decimales.
+
+Con la regla aplicada a todo, alguien cargando una tasa de `1.234` habría
+guardado mil doscientos treinta y cuatro.
+
+**Decisión.** Un `TasaField` que desactiva esa regla: en una tasa, un punto
+suelto siempre es decimal, y para los miles hay que usar la coma
+(`7.120,00`). Quedó escrito en el docstring, porque es exactamente el tipo de
+diferencia que alguien "unificaría" de buena fe.
+
+### 10.4. «Dónde viven los decimales de cada moneda»
+
+**Lo que aprendimos.** `Moneda` guardaba código, nombre, símbolo y poco más.
+Que el guaraní no lleve decimales estaba **implícito y repartido**:
+`to_integral_value()` en facturación, `quantize(Decimal("0.01"))` en pagos, y
+`floatformat` sueltos con criterios distintos en seis plantillas.
+
+**Decisión de la integrante:** un campo `decimales` en `Moneda`, con
+migración de datos. Es una propiedad de la moneda y ahí corresponde; cuando
+el administrador cargue una moneda nueva, lo define en la misma pantalla.
+
+Se puso **JPY en 0** además del guaraní: el yen tampoco usa decimales.
+
+### 10.5. «Las descargas no tienen ninguna librería»
+
+**Lo que aprendimos** al llegar al criterio de alinear en Excel y PDF: no hay
+`openpyxl` ni `reportlab`. El "Excel" es **SpreadsheetML escrito a mano**, con
+todas las celdas como `ss:Type="String"` —Excel las mostraba pegadas a la
+izquierda y no se podían sumar— y el PDF se arma **byte a byte**, uniendo los
+campos con `" | "`.
+
+**Decisión.** No agregar librerías a esta altura de la entrega:
+
+- **Excel:** los importes pasan a `ss:Type="Number"` con un estilo
+  `ss:Horizontal="Right"` y formato `#.##0,00`. Ahora además **se pueden
+  sumar**, que era un problema que nadie había notado.
+- **PDF:** las columnas se rellenan con espacios hasta el ancho máximo, y las
+  numéricas se alinean a la derecha. Funciona porque el PDF usa una sola
+  tipografía; con una proporcional los espacios no alcanzarían.
+
+### 10.6. «Cifras tabulares, no solo `text-align: right`»
+
+Alinear a la derecha no alcanza: en la mayoría de las tipografías los dígitos
+tienen anchos distintos, así que las comas de una columna quedan desparejas
+aunque el borde derecho esté alineado. La clase `.num` agrega
+`font-variant-numeric: tabular-nums`, que hace que todos los dígitos ocupen
+lo mismo.
+
+Vive en `templates/base.html` y no en cada pantalla, porque Tailwind no se
+puede recompilar en este entorno (Node 18 contra el 20 que pide).
+
+## 10.7. Verificaciones realizadas
+
+- **42 pruebas nuevas.** Suite completa: **442 aprobadas** (eran 400), sin
+  regresiones.
+- Casos cubiertos: enteros, decimales, **cero, negativos y números grandes**;
+  cada moneda con sus decimales (PYG y JPY sin, USD y EUR con dos); que la
+  tasa conserve la precisión; que **no se use float** —`Decimal("1.005")`
+  redondea a `1,01`, que en float daría `1,00`—; que el formulario acepte las
+  dos formas de escribir y que **el valor guardado no cambie**; que siga
+  validando el mínimo; que las columnas numéricas lleven la clase de
+  alineación; que el Excel lleve los importes como número alineados a la
+  derecha; que el PDF los alinee rellenando con espacios; y que el gráfico
+  use el mismo formato.
+- Dos pruebas existentes de tasas se adaptaron: verificaban el atributo
+  `step` del `NumberInput`, que ya no existe. Ahora verifican lo que importa,
+  que es que siga aceptando seis decimales.
+- `manage.py check` sin errores, migraciones `monedas.0002` y `0003`
+  aplicadas y Sphinx genera sin warnings.
+
+---

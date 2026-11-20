@@ -243,8 +243,16 @@
 <script>
 (function () {
   var svg = document.getElementById("grafico-principal");
+  // Mismo formato que el resto del sistema: punto para los miles y coma
+  // para los decimales (GEG9-82). Intl con "es-PY" da exactamente eso, asi
+  // que no hay que reimplementar el formateo en JavaScript.
   function formatearTasa(valor) {
-    return valor.toFixed(6).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, ".00");
+    var texto = valor.toFixed(6).replace(/(\.\d*?[1-9])0+$/, "$1").replace(/\.0+$/, ".00");
+    var decimales = (texto.split(".")[1] || "").length;
+    return new Intl.NumberFormat("es-PY", {
+      minimumFractionDigits: Math.max(2, decimales),
+      maximumFractionDigits: Math.max(2, decimales),
+    }).format(valor);
   }
 
   // OJO: antes esto era "if (!svg) return;", y ese return cortaba TODO el

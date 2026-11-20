@@ -63,6 +63,13 @@ MENU_PRINCIPAL = [
         "roles": ["administrador"],
     },
     {
+        # Sin "necesita_cliente": es configuración del negocio, el
+        # administrador no opera en nombre de nadie (RF010).
+        "texto": "Métodos de pago",
+        "url": "pagos:metodos",
+        "roles": ["administrador"],
+    },
+    {
         "texto": "Comisiones",
         "url": "comisiones:lista",
         "roles": ["administrador"],
